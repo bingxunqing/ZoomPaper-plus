@@ -7,7 +7,7 @@ import { TranslatePanel } from "@/components/TranslatePanel";
 import { FeynmanChat } from "@/components/FeynmanChat";
 import { PdfViewer, type PdfViewerHandle } from "@/components/PdfViewer";
 import { QaPanel, type QaPanelHandle } from "@/components/QaPanel";
-import { getPaper, type Paper } from "@/lib/api";
+import { openPaperForReading, type Paper } from "@/lib/api";
 import { ArrowLeft } from "lucide-react";
 
 interface Props {
@@ -26,7 +26,7 @@ export function Reader({ paperId, initialPageIdx, onBack }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    getPaper(paperId)
+    openPaperForReading(paperId)
       .then((p) => !cancelled && setPaper(p))
       .catch((e) => !cancelled && setError(String(e)))
       .finally(() => !cancelled && setLoading(false));
@@ -40,7 +40,7 @@ export function Reader({ paperId, initialPageIdx, onBack }: Props) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={onBack} className="pressable">
+        <Button variant="ghost" size="icon" onClick={onBack} aria-label="返回论文库" className="pressable">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="min-w-0">

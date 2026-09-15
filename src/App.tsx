@@ -37,10 +37,10 @@ function App() {
   return (
     <div className="flex h-screen">
       {/* 侧边栏 */}
-      <aside className="flex w-52 flex-col border-r bg-sidebar p-3">
-        <div className="mb-6 flex items-center gap-2 px-2 pt-2">
+      <aside className="app-sidebar flex flex-col border-r bg-sidebar p-3">
+        <div className="mb-9 flex items-center gap-2.5 px-2 pt-3">
           <BookOpen className="h-5 w-5 text-primary" />
-          <span className="text-lg font-bold tracking-tight">ZoomPaper</span>
+          <span className="brand-label text-base font-semibold tracking-tight">ZoomPaper</span>
         </div>
         <nav className="flex flex-col gap-1">
           {NAV.map((item) => {
@@ -50,6 +50,8 @@ function App() {
               <button
                 key={item.name}
                 onClick={() => setView({ name: item.name } as View)}
+                title={item.label}
+                aria-current={active ? "page" : undefined}
                 className={`pressable relative flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                   active
                     ? "text-accent-foreground"
@@ -64,15 +66,20 @@ function App() {
                   />
                 )}
                 <Icon className="relative z-10 h-4 w-4" />
-                <span className="relative z-10">{item.label}</span>
+                <span className="nav-label relative z-10">{item.label}</span>
               </button>
             );
           })}
         </nav>
+        <div className="sidebar-footer mt-auto px-3 pb-3 text-[11px] leading-5 text-muted-foreground">
+          <span className="mb-2 block h-px bg-border" />
+          你的私人研究空间<br />
+          <span className="text-muted-foreground/80">阅读 · 思考 · 沉淀</span>
+        </div>
       </aside>
 
       {/* 主内容区：页面自行控制滚动（问答/阅读需要定高布局） */}
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col p-6">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col p-4 lg:p-6">
         <motion.div
           key={view.name + ("paperId" in view ? view.paperId : "")}
           initial={{ opacity: 0 }}

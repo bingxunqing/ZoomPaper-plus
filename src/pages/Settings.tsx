@@ -20,7 +20,9 @@ const API_KEY_FIELDS: { key: keyof Settings["api_keys"]; label: string; hint: st
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [savedSnapshot, setSavedSnapshot] = useState("");
+  const saved = !!settings && JSON.stringify(settings) === savedSnapshot;
+  useEffect(() => { if (settings && !savedSnapshot) setSavedSnapshot(JSON.stringify(settings)); }, [settings, savedSnapshot]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -51,11 +53,11 @@ export function SettingsPage() {
 
   async function handleSave() {
     setSaving(true);
-    setSaved(false);
+
     setError(null);
     try {
       await updateSettings(current);
-      setSaved(true);
+      setSavedSnapshot(JSON.stringify(current));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -64,10 +66,10 @@ export function SettingsPage() {
   }
 
   async function pickLibraryPath() {
-    const dir = await open({ directory: true, multiple: false });
-    if (typeof dir === "string") {
-      setSettings({ ...current, paper_library_path: dir });
-    }
+    try {
+      const dir = await open({ directory: true, multiple: false });
+      if (typeof dir === "string") setSettings({ ...current, paper_library_path: dir });
+    } catch (e) { setError(String(e)); }
   }
 
   return (
@@ -121,6 +123,7 @@ export function SettingsPage() {
                 选择…
               </Button>
             </div>
+            <p className="text-xs leading-5 text-muted-foreground">此位置用于今后导入的论文；已有论文保留在原位置，不会自动迁移。</p>
           </div>
         </CardContent>
       </Card>
@@ -205,8 +208,8 @@ export function SettingsPage() {
 
       <Separator />
 
-      <div className="flex items-center gap-3">
-        <Button onClick={handleSave} disabled={saving}>
+      <div className="sticky bottom-0 flex items-center gap-3 border-t bg-background py-4">
+        <Button onClick={handleSave} disabled={saving || saved}>
           {saving ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (
@@ -214,7 +217,7 @@ export function SettingsPage() {
           )}
           保存设置
         </Button>
-        {saved && <span className="text-sm text-green-600">已保存</span>}
+        <span role="status" className="text-xs text-muted-foreground">{saved ? "所有更改已保存" : "有未保存的更改"}</span>
       </div>
     </div>
   );

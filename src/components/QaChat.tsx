@@ -5,8 +5,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { ChatComposer } from "@/components/ChatComposer";
 import { CitationBadge } from "@/components/CitationBadge";
 import { LiveClock } from "@/components/LiveClock";
 import { ThinkingPanel } from "@/components/ThinkingPanel";
@@ -33,7 +32,7 @@ import {
   type PendingAsk,
   type QaMessage,
 } from "@/lib/api";
-import { FileSearch, Loader2, MessageSquare, SendHorizonal, Square, X } from "lucide-react";
+import { FileSearch, Loader2, MessageSquare, Copy, Check, ArrowDown, X } from "lucide-react";
 
 interface Props {
   /** null/缺省 = 跨论文问答 */
@@ -116,8 +115,11 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
   const [messages, setMessages] = useState<QaMessage[]>([]);
   const [convId, setConvId] = useState<string | null>(conversationId ?? null);
   const [input, setInput] = useState("");
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
+  const followBottom = useRef(true);
   const [sending, setSending] = useState(false);
-  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(!!conversationId);
   const [error, setError] = useState<string | null>(null);
 
   // 发送状态上报（外层据此禁用会话切换等操作）
@@ -236,12 +238,15 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
     [],
   );
 
+  // A keyed chat mounts for each explicit history selection. Creating its first
+  // server ID must not reload history, reset mode, or discard the next draft.
+  const initialConversationId = useRef(conversationId).current;
   // 载入历史会话
   useEffect(() => {
-    if (!conversationId) return;
+    if (!initialConversationId) return;
     let cancelled = false;
     setLoadingHistory(true);
-    getConversation(conversationId)
+    getConversation(initialConversationId)
       .then((conv) => {
         if (cancelled) return;
         try {
@@ -255,7 +260,7 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
     return () => {
       cancelled = true;
     };
-  }, [conversationId]);
+  }, [initialConversationId]);
 
   // 切换会话时重置流式/澄清状态
   useEffect(() => {
@@ -267,7 +272,7 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
 
   // 新消息滚动到底部（含流式增量）
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    if (followBottom.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, sending, streamingText, thinkingText]);
 
   /** 实时事件分发：思考/正文增量、工具开始/完成 */
@@ -309,6 +314,8 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
   /** 提交澄清回答：续跑被 ask_user 中断的深度研究 */
   async function submitReply(reply: string) {
     if (!convId || sending) return;
+    followBottom.current = true;
+    setAwayFromBottom(false);
     setInput("");
     setSending(true);
     setError(null);
@@ -357,6 +364,8 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
     }
     // 发送时捕获当前引用列表；仅成功后清空（且用户未增删引用）
     const sentSelections = selections;
+    followBottom.current = true;
+    setAwayFromBottom(false);
     setInput("");
     setSending(true);
     setError(null);
@@ -422,33 +431,39 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto py-2">
+    <div className="chat-workspace flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+      <div ref={scrollRef} className="chat-transcript flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-1 py-4" aria-label="对话消息"
+        onScroll={() => { const el = scrollRef.current; if (!el) return; const away = el.scrollHeight - el.scrollTop - el.clientHeight > 80; followBottom.current = !away; setAwayFromBottom(away); }}>
         {loadingHistory ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             加载会话…
           </div>
         ) : messages.length === 0 && !sending ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
-            <MessageSquare className="h-10 w-10" />
+          <div className="flex flex-1 flex-col items-start justify-center gap-3 px-3 py-10 text-muted-foreground">
+            <div className="rounded-2xl bg-accent p-3 text-primary"><MessageSquare className="h-6 w-6" strokeWidth={1.5} /></div>
+            <h2 className="text-lg font-semibold text-foreground">{paperId ? "一起读懂这篇论文" : "连接你的研究线索"}</h2>
             <p className="text-sm">
               {paperId
                 ? "就这篇论文提问，回答会优先依据本篇内容并附原文引用"
                 : "跨论文提问，回答会附原文引用"}
             </p>
+            <div className="mt-3 flex w-full flex-col gap-2">
+              {(paperId ? ["概括这篇论文的核心贡献", "这篇论文有哪些局限？", "用通俗的语言解释核心方法"] : ["总结论文库中的主要研究方向", "比较相关论文的研究方法"]).map((prompt) => <button key={prompt} onClick={() => setInput(prompt)} className="rounded-xl border px-3 py-2.5 text-left text-xs transition-colors hover:bg-accent hover:text-foreground">{prompt}</button>)}
+            </div>
           </div>
         ) : (
           messages.map((m, i) =>
             m.role === "user" ? (
               <div key={i} className="flex justify-end">
-                <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-primary px-4 py-2.5 text-sm whitespace-pre-wrap text-primary-foreground">
+                <div className="max-w-[90%] break-words rounded-2xl rounded-br-md bg-accent px-4 py-3 text-sm leading-6 whitespace-pre-wrap text-foreground">
                   {m.content}
                 </div>
               </div>
             ) : (
               <div key={i} className="flex justify-start">
-                <div className="max-w-[85%] rounded-2xl rounded-bl-sm bg-muted px-4 py-2.5">
+                <div className="chat-assistant min-w-0 w-full px-1 py-1">
+                  <div className="mb-3 text-xs font-medium text-primary">ZoomPaper <span className="ml-1 text-muted-foreground">· AI 助手</span></div>
                   {/* 回答上方 meta 区：思考胶囊（本轮）+ 工具调用胶囊（均默认收纳，网页版风格） */}
                   {(m.role === "assistant" &&
                     i === messages.length - 1 &&
@@ -469,7 +484,10 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
                     onJumpPage={onJumpPage}
                     currentPaperId={paperId ?? null}
                   />
-                  <TimingLine timing={m.timing} />
+                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/60 pt-2">
+                    <TimingLine timing={m.timing} />
+                    <button aria-label="复制回答" title="复制回答" className="ml-auto rounded-md p-1.5 text-muted-foreground hover:bg-accent" onClick={async () => { try { await navigator.clipboard.writeText(m.content); setCopiedIndex(i); } catch { setError("复制失败，请重试"); } }}>{copiedIndex === i ? <Check size={14} /> : <Copy size={14} />}</button>
+                  </div>
                 </div>
               </div>
             ),
@@ -511,18 +529,12 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
             {thinkingText && <ThinkingPanel text={thinkingText} streaming />}
             {liveTrace.length > 0 && (
               <div className="flex justify-start">
-                <div className="max-w-[85%] rounded-2xl rounded-bl-sm bg-muted px-4 py-2.5">
+                <div className="chat-assistant min-w-0 w-full px-1 py-1">
                   <ToolTrace trace={liveTrace} />
                 </div>
               </div>
             )}
-            {streamingText && (
-              <div className="flex justify-start">
-                <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-bl-sm bg-muted px-4 py-2.5 text-sm">
-                  {streamingText}
-                </div>
-              </div>
-            )}
+            {streamingText && <div className="chat-assistant min-w-0 px-1"><AssistantBody content={streamingText} citations={[]} currentPaperId={paperId} onOpenPaper={onOpenPaper} onJumpPage={onJumpPage} /></div>}
             {!thinkingText && liveTrace.length === 0 && !streamingText && (
               <div className="flex justify-start">
                 <div className="flex items-center gap-2 rounded-2xl rounded-bl-sm bg-muted px-4 py-2.5 text-sm text-muted-foreground">
@@ -542,6 +554,7 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
         )}
       </div>
 
+      {awayFromBottom && <button onClick={() => { followBottom.current = true; setAwayFromBottom(false); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }); }} className="mx-auto flex items-center gap-1 rounded-full border bg-background px-3 py-1.5 text-xs shadow-sm"><ArrowDown size={13} />回到最新消息</button>}
       {error && (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
@@ -638,13 +651,18 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
         </div>
       )}
 
-      {/* 问答模式开关：快速（单轮 RAG）/ 深度（多步工具研究，默认） */}
-      <div className="flex items-center gap-2">
+      <ChatComposer value={input} onChange={setInput} onSend={() => void handleSend()}
+        sending={sending} disabled={loadingHistory}
+        onStop={() => { if (cancelTokenRef.current) void cancelGeneration(cancelTokenRef.current).catch((e) => setError(String(e))); }}
+        placeholder={pending ? "回答 AI 的问题…" : paperId ? "聊聊这篇论文…" : "向论文库提问…"}
+        controls={
+      <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-0.5 rounded-full border bg-muted/50 p-0.5 text-[11px]">
           <button
             type="button"
             onClick={() => setMode("quick")}
-            disabled={!!pending}
+            aria-pressed={mode === "quick"}
+            disabled={!!pending || sending}
             title="单轮检索，快而省"
             className={`pressable rounded-full px-2.5 py-0.5 transition-colors ${
               mode === "quick"
@@ -657,7 +675,8 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
           <button
             type="button"
             onClick={() => setMode("agent")}
-            disabled={!!pending}
+            aria-pressed={mode === "agent"}
+            disabled={!!pending || sending}
             title="AI 多角度研读论文并联网检索后再回答"
             className={`pressable rounded-full px-2.5 py-0.5 transition-colors ${
               mode === "agent"
@@ -668,48 +687,14 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
             深度
           </button>
         </div>
-        <WebToggle on={webOn} onChange={setWebOn} configured={webConfigured} disabled={!!pending} />
+        <WebToggle on={webOn} onChange={setWebOn} configured={webConfigured} disabled={!!pending || sending} />
         {pending && (
           <span className="text-[11px] text-muted-foreground">等待你回答 AI 的澄清问题</span>
         )}
       </div>
 
-      <div className="flex items-end gap-2">
-        <Textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              void handleSend();
-            }
-          }}
-          placeholder={pending ? "回答 AI 的澄清问题…（Enter 发送）" : paperId ? "针对这篇论文提问…（Enter 发送，Shift+Enter 换行）" : "向整个论文库提问…（Enter 发送，Shift+Enter 换行）"}
-          className="min-h-11 flex-1 resize-none"
-          rows={1}
-        />
-        {sending ? (
-          <Button
-            size="icon"
-            onClick={() => {
-              if (cancelTokenRef.current) void cancelGeneration(cancelTokenRef.current);
-            }}
-            title="暂停生成"
-            className="pressable h-11 w-11"
-          >
-            <Square className="h-4 w-4" />
-          </Button>
-        ) : (
-          <Button
-            size="icon"
-            onClick={() => void handleSend()}
-            disabled={!input.trim()}
-            className="pressable h-11 w-11"
-          >
-            <SendHorizonal className="h-4 w-4" />
-          </Button>
-        )}
-      </div>
+        }
+      />
     </div>
   );
 }

@@ -470,5 +470,22 @@ export const getAnnotations = (paperId: string, kind?: string) =>
   invoke<string | null>("get_annotations", { paperId, kind: kind ?? null });
 
 /** 把阅读标注 JSON 落盘为论文目录对应文件（kind 同上） */
-export const saveAnnotations = (paperId: string, data: string, kind?: string) =>
-  invoke<void>("save_annotations", { paperId, data, kind: kind ?? null });
+const annotationWrites = new Map<string, Promise<void>>();
+export const saveAnnotations = (paperId: string, data: string, kind?: string) => {
+  const key = `${paperId}:${kind ?? "annotations"}`;
+  const previous = annotationWrites.get(key) ?? Promise.resolve();
+  const next = previous.catch(() => {}).then(() => invoke<void>("save_annotations", { paperId, data, kind: kind ?? null }));
+  annotationWrites.set(key, next);
+  void next.finally(() => { if (annotationWrites.get(key) === next) annotationWrites.delete(key); }).catch(() => {});
+  return next;
+};
+
+export const translateSelection = (text: string, context = "") =>
+  invoke<string>("translate_selection", { text, context });
+
+export const openPaperForReading = (paperId: string) => invoke<Paper>("open_paper", { paperId });
+
+export const setReadingStatus = (paperIds: string[], status: string) => invoke<void>("set_reading_status", { paperIds, status });
+export const exportNotes = (paperId: string, destination: string) => invoke<void>("export_notes", { paperId, destination });
+
+export const keywordSearch = (query: string, paperId: string | null) => invoke<SearchHit[]>("keyword_search", { query, paperId });

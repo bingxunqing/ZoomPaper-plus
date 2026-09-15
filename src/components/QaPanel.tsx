@@ -84,8 +84,9 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
   const [conversations, setConversations] = useState<Conversation[]>([]);
   /** null = 新会话 */
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
+  const [chatRevision, setChatRevision] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
   /** 待删除确认的会话 */
   const [confirmDelete, setConfirmDelete] = useState<Conversation | null>(null);
@@ -210,6 +211,7 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
   function selectConversation(id: string) {
     if (sending) return;
     setActiveConvId(id);
+    setChatRevision((v) => v + 1);
     localStorage.setItem(lastConvKey(paperId), id);
     setSelections([]);
     setHistoryOpen(false);
@@ -219,6 +221,7 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
   function startNew() {
     if (sending) return;
     setActiveConvId(null);
+    setChatRevision((v) => v + 1);
     localStorage.removeItem(lastConvKey(paperId));
     setSelections([]);
     setHistoryOpen(false);
@@ -232,6 +235,7 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
       await deleteConversation(confirmDelete.id);
       if (activeConvId === confirmDelete.id) {
         setActiveConvId(null);
+        setChatRevision((v) => v + 1);
         localStorage.removeItem(lastConvKey(paperId));
       }
       setConfirmDelete(null);
@@ -289,9 +293,10 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
 
         {/* 展开态：display:none 保持挂载，不丢会话状态 */}
         <div className={`min-h-0 flex-1 flex-col ${collapsed ? "hidden" : "flex"}`}>
-          <div className="flex items-center justify-between border-b px-2 py-1.5">
-            <span className="px-1 text-xs font-medium text-muted-foreground">问答</span>
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <div><p className="text-sm font-semibold">论文助手</p><p className="mt-0.5 text-[11px] text-muted-foreground">围绕原文，深入讨论</p></div>
             <div className="flex items-center gap-0.5">
+              <button onClick={startNew} disabled={sending} title="新对话" aria-label="新对话" className="rounded-md p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-50"><Plus className="h-4 w-4" /></button>
               {/* 历史会话下拉：新对话 / 当前论文历史会话选择 / 删除 */}
               <Popover open={historyOpen} onOpenChange={setHistoryOpen}>
                 <PopoverTrigger
@@ -365,8 +370,8 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
             </div>
           </div>
           <div className="flex min-h-0 flex-1 flex-col p-3">
-            <QaChat
-              key={activeConvId ?? "new"}
+            {historyLoading ? <div role="status" className="flex flex-1 items-center justify-center text-sm text-muted-foreground">正在恢复对话…</div> : <QaChat
+              key={`${paperId}:${chatRevision}`}
               paperId={paperId}
               conversationId={activeConvId}
               onJumpPage={onJumpPage}
@@ -379,7 +384,7 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
               }
               onConversationCreated={handleConversationCreated}
               onSendingChange={setSending}
-            />
+            />}
           </div>
         </div>
       </aside>

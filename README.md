@@ -62,6 +62,15 @@ flowchart LR
 
 分块中译全文，参考文献自动跳过、不浪费 token；译文缓存复用，一键重新翻译。
 
+### 划选速译与快速找回论文
+
+在 PDF、AI 博客或译文中选中文字，点击浮动工具栏中的 **「速译」**，即可查看简洁中文释义。
+速译复用设置中的 AI 服务，会发送选中文字（最多 2000 字）及附近少量上下文（最多 1000 字），
+帮助区分学术词义；不会创建问答会话。支持加载提示、失败重试与 45 秒超时保护。
+
+论文库支持按标题、作者和摘要即时筛选；打开论文会记录最近阅读时间，首页可一键继续上次阅读，
+也可使用「最近阅读」排序。
+
 ### 语义搜索
 
 本地 embedding（`bge-small-en-v1.5`）+ `sqlite-vec`，无需云端即可跨论文检索段落。
@@ -140,7 +149,7 @@ curl -fsSL https://raw.githubusercontent.com/Flutter-Misdreavus/ZoomPaper/main/i
 ### 环境要求
 
 - **macOS 13+**（应用基于 Tauri v2 + WKWebView）
-- **Node.js ≥ 20**（Vite 7 要求）
+- **Node.js ≥ 20.19**（前端构建）；运行新增前端测试建议使用 **Node.js ≥ 24.15**
 - **Rust stable ≥ 1.77**（Tauri 2 要求）
 - Xcode Command Line Tools（`xcode-select --install`）
 

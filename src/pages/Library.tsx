@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/select";
 import {
   ChevronRight,
+  Search,
+  ArrowUpRight,
   FileText,
   LayoutGrid,
   List,
@@ -31,6 +33,8 @@ import {
 } from "lucide-react";
 import {
   addPapersToFolder,
+  setReadingStatus,
+  exportNotes,
   deleteFolder,
   deletePaper,
   importPdf,
@@ -74,8 +78,14 @@ export function Library({ onOpenPaper }: Props) {
   const [view, setView] = useState<LibraryView>({ type: "all" });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [sortBy, setSortBy] = useState<SortBy>("created");
+  const [viewMode, setViewMode] = useState<ViewMode>(() => localStorage.getItem("zoompaper.libraryView") === "grid" ? "grid" : "list");
+  const [query, setQuery] = useState("");
+  const [readingFilter, setReadingFilter] = useState("all");
+  const [notice, setNotice] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { localStorage.setItem("zoompaper.libraryView", viewMode); }, [viewMode]);
+  const [sortBy, setSortBy] = useState<SortBy>(() => { const v = localStorage.getItem("zoompaper.librarySort"); return v === "title" || v === "read" ? v : "created"; });
+  useEffect(() => { localStorage.setItem("zoompaper.librarySort", sortBy); }, [sortBy]);
 
   const [renaming, setRenaming] = useState<Renaming | null>(null);
   const [folderDialog, setFolderDialog] = useState<FolderDialogState | null>(null);
@@ -114,6 +124,12 @@ export function Library({ onOpenPaper }: Props) {
     } else if (view.type === "uncategorized") {
       list = papers.filter((p) => p.folder_ids.length === 0);
     }
+    if (readingFilter !== "all") list = list.filter((p) => p.reading_status === readingFilter);
+    const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    list = list.filter((p) => {
+      const haystack = `${p.title} ${p.authors ?? ""} ${p.abstract ?? ""}`.toLocaleLowerCase();
+      return words.every((word) => haystack.includes(word));
+    });
     const sorted = [...list];
     if (sortBy === "title") {
       sorted.sort((a, b) => a.title.localeCompare(b.title, "zh-Hans-CN"));
@@ -123,7 +139,7 @@ export function Library({ onOpenPaper }: Props) {
       sorted.sort((a, b) => b.created_at - a.created_at);
     }
     return sorted;
-  }, [papers, view, sortBy]);
+  }, [papers, view, sortBy, query, readingFilter]);
 
   const selectedPapers = useMemo(
     () => papers.filter((p) => selected.has(p.id)),
@@ -136,23 +152,29 @@ export function Library({ onOpenPaper }: Props) {
   // ---------- 导入 / 解析 / 删除（沿用原有流程） ----------
 
   async function handleImport() {
-    const file = await open({
-      multiple: false,
-      filters: [{ name: "PDF", extensions: ["pdf"] }],
-    });
-    if (typeof file !== "string") return;
-
     setImporting(true);
     setError(null);
     try {
-      const paper = await importPdf(file);
-      setParsingId(paper.id);
-      try {
-        await parsePdf(paper.id);
-      } catch (e) {
-        setError(`导入成功，但解析失败：${e}`);
+      const files = await open({ multiple: true, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+      if (!files) return;
+      const paths = typeof files === "string" ? [files] : files;
+      const targetFolder = currentFolderId;
+      const failures: string[] = [];
+      for (const [index, file] of paths.entries()) {
+        setNotice(`正在导入 ${index + 1} / ${paths.length}`);
+        try {
+          const paper = await importPdf(file);
+          if (targetFolder) await addPapersToFolder([paper.id], targetFolder);
+          setParsingId(paper.id);
+          await refresh();
+          setNotice(`正在解析并建立索引 ${index + 1} / ${paths.length} · 可继续阅读和整理`);
+          try { await parsePdf(paper.id); }
+          catch (e) { failures.push(`${paper.title}：已导入，解析失败（${e}）`); }
+        } catch (e) { failures.push(`${file.split(/[\\/]/).pop()}：${e}`); }
       }
       await refresh();
+      setNotice(`已处理 ${paths.length} 个文件${failures.length ? `，${failures.length} 项需要处理` : ""}`);
+      if (failures.length) setError(failures.join("\n"));
     } catch (e) {
       setError(`导入失败：${e}`);
     } finally {
@@ -324,7 +346,9 @@ export function Library({ onOpenPaper }: Props) {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const t = e.target as HTMLElement | null;
-      if (t?.closest("input, textarea, select, [role='menu'], [role='dialog']")) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") { e.preventDefault(); searchRef.current?.focus(); return; }
+      if (t?.closest("input, textarea, select, [contenteditable], [role='menu'], [role='dialog']")) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") { e.preventDefault(); setSelected(new Set(visiblePapers.map((p) => p.id))); return; }
       if (renaming || folderDialog || deleteTargets || pickerOpen) return;
       if (e.key === "Delete" && selected.size > 0) {
         e.preventDefault();
@@ -335,7 +359,7 @@ export function Library({ onOpenPaper }: Props) {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [renaming, folderDialog, deleteTargets, pickerOpen, selected.size, selectedPapers]);
+  }, [renaming, folderDialog, deleteTargets, pickerOpen, selected.size, selectedPapers, visiblePapers]);
 
   // ---------- 渲染 ----------
 
@@ -371,9 +395,9 @@ export function Library({ onOpenPaper }: Props) {
         onDropPapers={(ids, fid) => void handleDropPapers(ids, fid)}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto">
+      <div className="library-content flex min-w-0 flex-1 flex-col gap-5 overflow-y-auto">
         {/* 页头：标题 / 面包屑 + 工具栏 */}
-        <div className="flex items-start justify-between gap-4">
+        <div className="library-header flex items-start justify-between gap-4">
           <div className="min-w-0">
             {isFolderView && breadcrumb.length > 1 ? (
               <div className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -404,8 +428,8 @@ export function Library({ onOpenPaper }: Props) {
                 ))}
               </div>
             ) : (
-              <h1 className="text-2xl font-bold tracking-tight">
-                {view.type === "uncategorized" ? "未分类" : "论文库"}
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {activeFolder?.name ?? (view.type === "uncategorized" ? "未分类" : "论文库")}
               </h1>
             )}
             {activeFolder && (
@@ -433,18 +457,19 @@ export function Library({ onOpenPaper }: Props) {
             )}
             {!isFolderView && (
               <p className="text-sm text-muted-foreground">
-                本地优先的论文阅读与知识管理
+                {papers.length} 篇文献 · 让每一次阅读有所积累
               </p>
             )}
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex max-w-full flex-wrap items-center gap-2">
             {/* 视图切换 */}
             <div className="flex items-center rounded-md border bg-background p-0.5">
               <button
                 type="button"
                 title="列表视图"
                 aria-label="列表视图"
+                aria-pressed={viewMode === "list"}
                 onClick={() => setViewMode("list")}
                 className={`pressable rounded-[5px] p-1.5 transition-colors ${
                   viewMode === "list" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"
@@ -456,6 +481,7 @@ export function Library({ onOpenPaper }: Props) {
                 type="button"
                 title="网格视图"
                 aria-label="网格视图"
+                aria-pressed={viewMode === "grid"}
                 onClick={() => setViewMode("grid")}
                 className={`pressable rounded-[5px] p-1.5 transition-colors ${
                   viewMode === "grid" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"
@@ -467,7 +493,7 @@ export function Library({ onOpenPaper }: Props) {
 
             <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
               <SelectTrigger className="h-9 w-32" aria-label="排序方式">
-                <SelectValue />
+                <SelectValue>{SORT_LABELS[sortBy]}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {(Object.keys(SORT_LABELS) as SortBy[]).map((k) => (
@@ -489,6 +515,30 @@ export function Library({ onOpenPaper }: Props) {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex min-w-48 flex-1 items-center gap-2 rounded-lg border bg-background px-3 focus-within:ring-2 focus-within:ring-primary/20">
+            <Search className="size-4 shrink-0 text-muted-foreground" />
+            <input ref={searchRef} aria-label="筛选论文" placeholder="搜索标题、作者或摘要…" value={query}
+              onChange={(e) => { setQuery(e.target.value); setSelected(new Set()); }}
+              className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none" />
+            {query && <button aria-label="清除筛选" onClick={() => setQuery("")}><X className="size-4 text-muted-foreground" /></button>}
+          </label>
+          <span className="text-xs text-muted-foreground">{visiblePapers.length} 篇论文</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1" role="group" aria-label="阅读状态筛选">
+          {Object.entries({ all: "全部", unread: "未读", reading: "在读", finished: "已读" }).map(([value, label]) => <button key={value} aria-pressed={readingFilter === value} onClick={() => { setReadingFilter(value); setSelected(new Set()); }} className={`rounded-full px-3 py-1.5 text-xs ${readingFilter === value ? "bg-accent font-medium text-primary" : "text-muted-foreground hover:bg-muted"}`}>{label}</button>)}
+          <span className="ml-auto text-[11px] text-muted-foreground">⌘/Ctrl F 搜索 · ⌘/Ctrl A 全选</span>
+        </div>
+        {notice && <p role="status" className="rounded-lg bg-accent/50 px-3 py-2 text-xs text-primary">{notice}</p>}
+        {!query && view.type === "all" && papers.some((p) => p.last_read_at != null) && (() => {
+          const recent = [...papers].filter((p) => p.last_read_at != null).sort((a, b) => b.last_read_at! - a.last_read_at!)[0];
+          return <button onClick={() => onOpenPaper(recent.id)} className="group flex items-center gap-4 rounded-xl border border-primary/15 bg-accent/50 px-5 py-4 text-left transition-colors hover:bg-accent">
+            <FileText className="size-7 shrink-0 text-primary" strokeWidth={1.4} />
+            <span className="min-w-0 flex-1"><span className="mb-1 block text-xs text-primary">继续上次阅读</span><span className="block truncate text-sm font-medium">{recent.title}</span></span>
+            <ArrowUpRight className="size-4 shrink-0 text-primary" />
+          </button>;
+        })()}
+
         {error && (
           <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {error}
@@ -497,8 +547,12 @@ export function Library({ onOpenPaper }: Props) {
 
         {/* 多选操作条 */}
         {selected.size > 0 && (
-          <div className="flex items-center gap-2 rounded-lg border bg-accent/60 px-3 py-2 text-sm">
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-accent/60 px-3 py-2 text-sm">
             <span className="font-medium">已选 {selected.size} 篇</span>
+            <select aria-label="标记阅读状态" value="" className="rounded-md border bg-background px-2 py-1 text-xs" onChange={async (e) => { try { await setReadingStatus([...selected], e.target.value); await refresh(); setNotice("阅读状态已更新"); } catch (e) { setError(String(e)); } }}>
+              <option value="" disabled>标记为…</option><option value="unread">未读</option><option value="reading">在读</option><option value="finished">已读</option>
+            </select>
+            {selectedPapers.length === 1 && <Button size="sm" variant="outline" onClick={async () => { try { const path = await save({ defaultPath: `${selectedPapers[0].title.replace(/[\\/:*?"<>|]/g, "_").slice(0, 80)}-笔记.md`, filters: [{ name: "Markdown", extensions: ["md"] }] }); if (path) { await exportNotes(selectedPapers[0].id, path); setNotice("阅读笔记已导出"); } } catch (e) { setError(String(e)); } }}>导出笔记</Button>}
             <Button
               size="sm"
               variant="outline"
@@ -538,7 +592,9 @@ export function Library({ onOpenPaper }: Props) {
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
               <FileText className="h-10 w-10" />
-              {view.type === "uncategorized" ? (
+              {query.trim() || readingFilter !== "all" ? (
+                <><p>没有找到匹配的论文</p><Button variant="ghost" onClick={() => { setQuery(""); setReadingFilter("all"); }}>清除筛选</Button></>
+              ) : view.type === "uncategorized" ? (
                 <p>没有未分类的论文，拖拽论文到侧栏文件夹完成归类</p>
               ) : isFolderView ? (
                 <p>这个文件夹还是空的，把论文拖进来或右键添加</p>
@@ -576,7 +632,7 @@ export function Library({ onOpenPaper }: Props) {
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
             {visiblePapers.map((paper) => (
               <PaperGridItem
                 key={paper.id}

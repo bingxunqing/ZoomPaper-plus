@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Channel } from "@tauri-apps/api/core";
 import { Reorder } from "motion/react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { ChatComposer } from "@/components/ChatComposer";
 import { Input } from "@/components/ui/input";
 import { MarkdownView } from "@/components/MarkdownView";
 import { LiveClock } from "@/components/LiveClock";
@@ -42,9 +42,7 @@ import {
   Play,
   Plus,
   RotateCcw,
-  SendHorizonal,
   Sparkles,
-  Square,
   Trash2,
   TriangleAlert,
   X,
@@ -1001,38 +999,11 @@ export function FeynmanChat({ paperId }: Props) {
         </div>
       )}
 
-      {/* 输入区：测验/交卷按钮 + 发送（legacy 只读禁用） */}
-      <div className="mb-1.5">
-        <WebToggle
-          on={webOn}
-          onChange={setWebOn}
-          configured={webConfigured}
-          disabled={legacy || !activeSessionId}
-        />
-      </div>
-      <div className="flex items-end gap-2">
-        <Textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              void handleSend();
-            }
-          }}
-          disabled={legacy || !activeSessionId}
-          placeholder={
-            legacy
-              ? "旧版会话仅可查看"
-              : !activeSessionId
-                ? "先制定教学计划并确认，开始闯关"
-                : isQuiz
-                  ? "作答测验题…（答完点「交卷」）"
-                  : "讲解你理解的论文概念…（Enter 发送，Shift+Enter 换行）"
-          }
-          className="min-h-11 flex-1 resize-none"
-          rows={1}
-        />
+      <ChatComposer value={input} onChange={setInput} onSend={() => void handleSend()}
+        sending={busy} disabled={legacy || !activeSessionId}
+        onStop={() => { if (cancelTokenRef.current) void cancelGeneration(cancelTokenRef.current).catch((e) => setError(String(e))); }}
+        placeholder={legacy ? "旧版会话仅可查看" : !activeSessionId ? "确认教学计划后开始讲解" : isQuiz ? "在这里回答测验题…" : "讲讲你对这个概念的理解…"}
+        controls={<div className="flex flex-wrap items-center gap-2"><WebToggle on={webOn} onChange={setWebOn} configured={webConfigured} disabled={legacy || !activeSessionId || busy} />
         {canQuiz && (
           <Button
             size="icon"
@@ -1065,28 +1036,7 @@ export function FeynmanChat({ paperId }: Props) {
             )}
           </Button>
         )}
-        {busy ? (
-          <Button
-            size="icon"
-            onClick={() => {
-              if (cancelTokenRef.current) void cancelGeneration(cancelTokenRef.current);
-            }}
-            title="暂停生成"
-            className="pressable h-11 w-11"
-          >
-            <Square className="h-4 w-4" />
-          </Button>
-        ) : (
-          <Button
-            size="icon"
-            onClick={() => void handleSend()}
-            disabled={!input.trim() || legacy || !activeSessionId}
-            className="pressable h-11 w-11"
-          >
-            <SendHorizonal className="h-4 w-4" />
-          </Button>
-        )}
-      </div>
+        </div>} />
     </div>
   );
 }

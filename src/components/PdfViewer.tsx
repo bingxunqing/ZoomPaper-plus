@@ -264,6 +264,8 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const [scale, setScale] = useState(1);
   const [fitScale, setFitScale] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageInput, setPageInput] = useState("1");
+  const restoredPage = useRef(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [jumpFlash, setJumpFlash] = useState<number | null>(null);
@@ -283,7 +285,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const [outlineTick, setOutlineTick] = useState(0);
   const outlinePageRef = useRef<Map<OutlineNode, number>>(new Map());
   const annotationsLoadedRef = useRef(false);
-  const saveTimerRef = useRef<number | null>(null);
+  const [annotationError, setAnnotationError] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -443,42 +445,26 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
               return;
             }
           } catch {
-            /* 解析失败视为无标注 */
+            throw new Error("标注文件损坏，已停止自动保存以保护原文件");
           }
+          throw new Error("标注文件格式无效，已停止自动保存");
         }
         setAnnotations([]);
       })
-      .catch(() => {
-        if (!cancelled) setAnnotations([]);
-      })
-      .finally(() => {
-        if (!cancelled) annotationsLoadedRef.current = true;
-      });
+      .then(() => { if (!cancelled) annotationsLoadedRef.current = true; })
+      .catch((e) => { if (!cancelled) setAnnotationError(String(e)); });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc, paperId]);
 
-  // 标注变更后防抖落盘（笔记输入防抖，增删改色即时进入该队列）
+  // Queue immediately so leaving the reader cannot discard the last edit.
   useEffect(() => {
     if (!annotationsLoadedRef.current) return;
-    if (saveTimerRef.current !== null) {
-      window.clearTimeout(saveTimerRef.current);
-    }
-    saveTimerRef.current = window.setTimeout(() => {
-      saveTimerRef.current = null;
-      void saveAnnotations(
-        paperId,
-        JSON.stringify({ version: 1, highlights: annotations }),
-      ).catch(() => {});
-    }, 400);
-    return () => {
-      if (saveTimerRef.current !== null) {
-        window.clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
-    };
+    void saveAnnotations(paperId, JSON.stringify({ version: 1, highlights: annotations }))
+      .then(() => setAnnotationError(null))
+      .catch((e) => setAnnotationError(`标注保存失败：${e}`));
   }, [annotations, paperId]);
 
   // 读取原生目录（无 outline 则保持 null，不显示目录按钮）
@@ -1117,11 +1103,21 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
 
   useImperativeHandle(ref, () => ({ jumpToPage, jumpToSelection }));
 
+  useEffect(() => {
+    setPageInput(String(currentPage));
+    if (doc && restoredPage.current) {
+      try { localStorage.setItem(`zoompaper:page:${paperId}`, String(currentPage - 1)); } catch { /* storage unavailable */ }
+    }
+  }, [currentPage, doc, paperId]);
+
   // 文档就绪后跳到外部指定页（搜索/引用定位）
   useEffect(() => {
-    if (doc && initialPageIdx != null) {
-      jumpToPage(initialPageIdx);
-    }
+    if (!doc) return;
+    let saved = 0;
+    try { saved = Number(localStorage.getItem(`zoompaper:page:${paperId}`) ?? 0); } catch { /* storage unavailable */ }
+    const target = Math.max(0, Math.min(doc.numPages - 1, initialPageIdx ?? (Number.isFinite(saved) ? saved : 0)));
+    jumpToPage(target);
+    restoredPage.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc]);
 
@@ -1153,6 +1149,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
+      {annotationError && <div role="alert" className="m-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">{annotationError}</div>}
       {/* 工具栏 */}
       <div className="flex items-center gap-2 pt-2 pr-4">
         <div className="mr-auto flex items-center gap-1 pl-4">
@@ -1181,9 +1178,10 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
             </span>
           </Button>
         </div>
-        <span className="text-xs text-muted-foreground tabular-nums">
-          {currentPage} / {slots.length}
-        </span>
+        <form className="flex items-center gap-1 text-xs text-muted-foreground tabular-nums" onSubmit={(e) => { e.preventDefault(); const page = Number(pageInput); if (Number.isInteger(page) && page >= 1 && page <= slots.length) jumpToPage(page - 1); else setPageInput(String(currentPage)); }}>
+          <input aria-label="跳转页码" inputMode="numeric" value={pageInput} onChange={(e) => setPageInput(e.target.value)} onBlur={() => setPageInput(String(currentPage))} className="h-7 w-10 rounded-md border bg-background text-center outline-none focus:border-primary" />
+          <span>/ {slots.length}</span>
+        </form>
         <Button
           variant="ghost"
           size="icon"
@@ -1194,9 +1192,9 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         >
           <Minus className="h-3.5 w-3.5" />
         </Button>
-        <span className="w-12 text-center text-xs text-muted-foreground tabular-nums">
+        <button title="适合页面宽度" aria-label="适合页面宽度" onClick={() => setScale(1)} className="w-12 rounded-md py-1 text-center text-xs text-muted-foreground tabular-nums hover:bg-accent">
           {Math.round(effectiveScale * 100)}%
-        </span>
+        </button>
         <Button
           variant="ghost"
           size="icon"
@@ -1217,6 +1215,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onMouseUp={handleMouseUp}
+        onDoubleClick={handleMouseUp}
         onScroll={() => setSelToolbar(null)}
         className={`min-h-0 flex-1 overflow-auto pt-2 pr-4 pb-4 ${
           scale > 1 ? (dragging ? "cursor-grabbing" : "cursor-grab") : ""
@@ -1275,6 +1274,7 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       {/* 划选浮动工具条（共享组件） */}
       {selToolbar && (
         <SelectionToolbar
+          text={selToolbar.text}
           x={selToolbar.x}
           y={selToolbar.y}
           onHighlight={(color) => createHighlights(color)}

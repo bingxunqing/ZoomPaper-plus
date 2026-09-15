@@ -279,7 +279,7 @@ export function LibrarySidebar(props: SidebarProps) {
   const allDrop = useDropHighlight((ids) => onDropPapers(ids, null));
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r bg-sidebar">
+    <aside className="library-folders flex w-44 shrink-0 flex-col rounded-xl bg-sidebar/50">
       <div className="flex-1 overflow-y-auto px-2 py-3">
         {/* 全部论文 */}
         <button

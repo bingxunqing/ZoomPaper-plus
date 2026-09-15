@@ -201,6 +201,14 @@ pub fn prepare(
     selections: &[SelectionInput],
 ) -> Result<Prepared> {
     let hits = crate::rag::search(conn, question, top_k, paper_id)?;
+    prepare_with_hits(conn, question, paper_id, history, selections, &hits)
+}
+
+/// Assemble context after embedding work completes outside the database lock.
+pub fn prepare_with_hits(
+    conn: &Connection, question: &str, paper_id: Option<&str>,
+    history: &[QaMessage], selections: &[SelectionInput], hits: &[SearchHit],
+) -> Result<Prepared> {
     // 阅读页会话绑定论文的标题：用于 system 提示「当前阅读论文」段与选中段落引用标注；
     // 查询失败回退「当前论文」。
     let paper_title: Option<String> = paper_id.map(|pid| {

@@ -109,7 +109,7 @@ export function PaperGridItem(props: PaperGridItemProps) {
                 "flex cursor-default select-none flex-col items-center gap-2 rounded-xl border bg-card p-4 pt-5 text-center outline-none transition-colors",
                 selected
                   ? "border-primary/60 ring-2 ring-primary/40"
-                  : "border-transparent hover:border-primary/30 focus-visible:ring-2 focus-visible:ring-ring"
+                  : "border-border hover:border-primary/30 focus-visible:ring-2 focus-visible:ring-ring"
               )}
             >
               <FileText
@@ -128,6 +128,7 @@ export function PaperGridItem(props: PaperGridItemProps) {
                   {paper.title}
                 </span>
               )}
+              <span className="text-xs text-muted-foreground">{{ unread: "未读", reading: "在读", finished: "已读" }[paper.reading_status]}</span>
               {badges.length > 0 && (
                 <span className="flex max-w-full flex-wrap items-center justify-center gap-1">
                   {badges.slice(0, 4).map((f) => {

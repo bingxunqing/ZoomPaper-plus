@@ -166,6 +166,13 @@ pub fn index_paper(conn: &Connection, paper_id: &str) -> Result<usize> {
             |r| r.get(0),
         )
         .context("查询论文 md_path 失败")?;
+    let (drafts, embeddings) = prepare_index(&md_path)?;
+    insert_chunks(conn, paper_id, &drafts, &embeddings)?;
+    Ok(drafts.len())
+}
+
+/// File IO and model inference must run without the shared database mutex.
+pub fn prepare_index(md_path: &str) -> Result<(Vec<ChunkDraft>, Vec<Vec<f32>>)> {
     let paper_dir = Path::new(&md_path).parent().context("md_path 无父目录")?;
 
     let cl_path = find_content_list(paper_dir)?;
@@ -175,7 +182,7 @@ pub fn index_paper(conn: &Connection, paper_id: &str) -> Result<usize> {
 
     let drafts = chunk_content_list(&blocks);
     if drafts.is_empty() {
-        return Ok(0);
+        return Ok((vec![], vec![]));
     }
 
     // 分批 embedding
@@ -185,8 +192,7 @@ pub fn index_paper(conn: &Connection, paper_id: &str) -> Result<usize> {
         embeddings.extend(embed::embed_texts(&texts).context("生成 embedding 失败")?);
     }
 
-    insert_chunks(conn, paper_id, &drafts, &embeddings)?;
-    Ok(drafts.len())
+    Ok((drafts, embeddings))
 }
 
 /// 事务内写入 chunks 与向量（重索引幂等：先删旧数据）。

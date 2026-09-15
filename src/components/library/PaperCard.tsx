@@ -138,6 +138,7 @@ export function PaperCard(props: PaperCardProps) {
                       <h3 className="truncate font-semibold">{paper.title}</h3>
                     )}
                     <Badge variant={st.variant}>{st.label}</Badge>
+                    <span className="text-xs text-muted-foreground">{{ unread: "未读", reading: "在读", finished: "已读" }[paper.reading_status]}</span>
                   </div>
                   {paper.abstract && (
                     <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">

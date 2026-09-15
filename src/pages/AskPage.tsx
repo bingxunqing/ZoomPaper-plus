@@ -17,6 +17,8 @@ export function AskPage({ onOpenPaper }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /** null = 新会话 */
+  const [chatRevision, setChatRevision] = useState(0);
+  const [sending, setSending] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   /** 待删除确认的会话 */
   const [confirmDelete, setConfirmDelete] = useState<Conversation | null>(null);
@@ -44,7 +46,7 @@ export function AskPage({ onOpenPaper }: Props) {
     setDeleting(true);
     try {
       await deleteConversation(confirmDelete.id);
-      if (activeId === confirmDelete.id) setActiveId(null);
+      if (activeId === confirmDelete.id) { setActiveId(null); setChatRevision((v) => v + 1); }
       setConfirmDelete(null);
       void refresh();
     } catch (e) {
@@ -58,7 +60,7 @@ export function AskPage({ onOpenPaper }: Props) {
     <div className="flex h-full min-h-0 gap-4">
       {/* 会话列表 */}
       <aside className="flex w-56 shrink-0 flex-col gap-2">
-        <Button variant="outline" size="sm" onClick={() => setActiveId(null)}>
+        <Button variant="outline" size="sm" disabled={sending} onClick={() => { setActiveId(null); setChatRevision((v) => v + 1); }}>
           <Plus className="mr-1 h-4 w-4" />
           新会话
         </Button>
@@ -74,7 +76,7 @@ export function AskPage({ onOpenPaper }: Props) {
             conversations.map((c) => (
               <div key={c.id} className="group relative">
                 <button
-                  onClick={() => setActiveId(c.id)}
+                  disabled={sending} onClick={() => { setActiveId(c.id); setChatRevision((v) => v + 1); }}
                   className={`block w-full rounded-md px-3 py-2 pr-8 text-left transition-colors ${
                     activeId === c.id
                       ? "bg-accent text-accent-foreground"
@@ -89,6 +91,7 @@ export function AskPage({ onOpenPaper }: Props) {
                     e.stopPropagation();
                     setConfirmDelete(c);
                   }}
+                  disabled={sending}
                   title="删除会话"
                   className="pressable absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent/80 hover:text-destructive group-hover:opacity-100"
                 >
@@ -112,7 +115,8 @@ export function AskPage({ onOpenPaper }: Props) {
           </div>
         )}
         <QaChat
-          key={activeId ?? "new"}
+          key={chatRevision}
+          onSendingChange={setSending}
           conversationId={activeId}
           onOpenPaper={onOpenPaper}
           onConversationCreated={(id) => {

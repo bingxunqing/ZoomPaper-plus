@@ -96,20 +96,21 @@ export function BlogPanel({ paper, onBlogGenerated, onAskSelection }: Props) {
   // 加载 / 保存博客标注（blog_annotations.json）
   useEffect(() => {
     let cancelled = false;
+    setHighlightsLoaded(false);
     loadTextHighlights(paper.id, "blog")
       .then((hs) => {
         if (cancelled) return;
         setHighlights(hs);
         setHighlightsLoaded(true);
       })
-      .catch(() => {});
+      .catch((e) => { if (!cancelled) setError(`无法读取标注：${e}`); });
     return () => {
       cancelled = true;
     };
   }, [paper.id]);
   useEffect(() => {
     if (!highlightsLoaded) return;
-    void saveTextHighlights(paper.id, "blog", highlights);
+    void saveTextHighlights(paper.id, "blog", highlights).catch((e) => setError(`标注保存失败：${e}`));
   }, [highlights, highlightsLoaded, paper.id]);
 
   // 划选监听：定位到所属容器并映射偏移
@@ -145,7 +146,10 @@ export function BlogPanel({ paper, onBlogGenerated, onAskSelection }: Props) {
       const s = window.getSelection();
       if (!s || s.isCollapsed) setSel(null);
     };
-    const onScroll = () => setSel(null);
+    const onScroll = (e: Event) => {
+      if (e.target instanceof Element && e.target.closest("[data-selection-toolbar]")) return;
+      setSel(null);
+    };
     document.addEventListener("selectionchange", hide);
     window.addEventListener("scroll", onScroll, true);
     return () => {
@@ -431,6 +435,7 @@ export function BlogPanel({ paper, onBlogGenerated, onAskSelection }: Props) {
       {/* 划选浮动工具条 */}
       {sel && (
         <SelectionToolbar
+          text={sel.text}
           x={sel.x}
           y={sel.y}
           onHighlight={(color) => addHighlight(color, false)}

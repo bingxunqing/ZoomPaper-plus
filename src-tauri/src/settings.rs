@@ -10,6 +10,12 @@ use std::path::PathBuf;
 
 /// 应用数据目录：`~/Library/Application Support/com.paper-reader/`
 pub fn app_data_dir() -> Result<PathBuf> {
+    #[cfg(debug_assertions)]
+    if let Some(path) = option_env!("ZOOMPAPER_TEST_DATA_DIR") {
+        let path = PathBuf::from(path);
+        anyhow::ensure!(path.is_absolute(), "测试数据目录必须为绝对路径");
+        return Ok(path);
+    }
     dirs::data_dir()
         .map(|d| d.join("com.paper-reader"))
         .context("无法定位系统数据目录")
@@ -89,7 +95,7 @@ impl Settings {
             fs::create_dir_all(parent)?;
         }
         let raw = serde_json::to_string_pretty(self).context("序列化 settings 失败")?;
-        fs::write(&path, raw).context("写入 settings.json 失败")?;
+        crate::fs::write_md(&path, &raw).context("写入 settings.json 失败")?;
         Ok(())
     }
 

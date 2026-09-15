@@ -174,6 +174,68 @@ fn get_paper_inner(db: &Db, paper_id: &str) -> Result<Paper, String> {
         .map_err(|e| e.to_string())
 }
 
+/// 阅读入口记录最近访问时间，普通元数据查询保持只读。
+#[tauri::command]
+pub fn open_paper(db: State<'_, Db>, paper_id: String) -> Result<Paper, String> {
+    open_paper_inner(&db, &paper_id)
+}
+
+fn open_paper_inner(db: &Db, paper_id: &str) -> Result<Paper, String> {
+    {
+        let conn = db.conn();
+        let changed = conn.execute(
+            "UPDATE papers SET last_read_at = ?2 WHERE id = ?1",
+            params![paper_id, chrono::Utc::now().timestamp()],
+        ).map_err(|e| e.to_string())?;
+        if changed == 0 { return Err("论文不存在".into()); }
+    }
+    get_paper_inner(db, paper_id)
+}
+
+#[tauri::command]
+pub fn set_reading_status(db: State<'_, Db>, paper_ids: Vec<String>, status: String) -> Result<(), String> {
+    set_reading_status_inner(&db, &paper_ids, &status)
+}
+fn set_reading_status_inner(db: &Db, paper_ids: &[String], status: &str) -> Result<(), String> {
+    if !["unread", "reading", "finished"].contains(&status) { return Err("无效的阅读状态".into()); }
+    let mut conn = db.conn();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    for id in paper_ids {
+        let changed = tx.execute("UPDATE papers SET reading_status = ?2 WHERE id = ?1", params![id, status]).map_err(|e| e.to_string())?;
+        if changed == 0 { return Err("论文不存在，未更改任何阅读状态".into()); }
+    }
+    tx.commit().map_err(|e| e.to_string())
+}
+
+/// Export the three annotation sources into a user-selected Markdown file.
+#[tauri::command]
+pub fn export_notes(db: State<'_, Db>, paper_id: String, destination: String) -> Result<(), String> {
+    export_notes_inner(&db, &paper_id, &destination)
+}
+
+fn export_notes_inner(db: &Db, paper_id: &str, destination: &str) -> Result<(), String> {
+    let paper = get_paper_inner(db, paper_id)?;
+    let mut output = format!("# {} — 阅读笔记\n\n", paper.title);
+    for (kind, file) in ANNOTATION_KINDS {
+        if let Some(raw) = get_annotations_file(&db, &paper_id, file)? {
+            let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+            {
+                let highlights = value["highlights"].as_array().ok_or("标注文件格式无效，导出已停止")?;
+                for h in highlights {
+                    let source = h["label"].as_str().map(String::from).unwrap_or_else(|| format!("{} · 第 {} 页", if kind == "annotations" { "原文" } else { kind }, h["page_idx"].as_u64().unwrap_or(0) + 1));
+                    output.push_str(&format!("## {}\n\n", source));
+                    if let Some(text) = h["text"].as_str() { for line in text.lines() { output.push_str(&format!("> {}\n", line)); } }
+                    if let Some(note) = h["note"]["text"].as_str() { output.push_str(&format!("\n{}\n", note)); }
+                    output.push('\n');
+                }
+            }
+        }
+    }
+    let destination = Path::new(&destination);
+    if destination.extension().and_then(|s| s.to_str()) != Some("md") { return Err("请选择 .md 文件".into()); }
+    crate::fs::write_md(destination, &output).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn get_paper_md(db: State<'_, Db>, paper_id: String) -> Result<String, String> {
     let md_path = {
@@ -310,12 +372,9 @@ pub async fn parse_pdf(db: State<'_, Db>, paper_id: String) -> Result<Paper, Str
         .map_err(|e| e.to_string())?;
     }
 
-    // 自动建立向量索引（失败不影响解析结果，仅记日志）
-    {
-        let conn = db.conn();
-        if let Err(e) = crate::rag::index_paper(&conn, &paper_id) {
-            eprintln!("索引论文 {paper_id} 失败: {e}");
-        }
+    // Heavy inference runs on a blocking worker, never while holding the database lock.
+    if let Err(e) = index_paper(db.clone(), paper_id.clone()).await {
+        eprintln!("索引论文 {paper_id} 失败: {e}");
     }
 
     get_paper(db, paper_id)
@@ -630,21 +689,49 @@ fn rename_paper_inner(db: &Db, paper_id: &str, new_title: &str) -> Result<Paper,
 
 /// 手动重建某篇论文的向量索引。返回 chunk 数量。
 #[tauri::command]
-pub fn index_paper(db: State<'_, Db>, paper_id: String) -> Result<usize, String> {
+pub async fn index_paper(db: State<'_, Db>, paper_id: String) -> Result<usize, String> {
+    let md_path = get_paper_inner(&db, &paper_id)?.md_path;
+    let (drafts, embeddings) = tokio::task::spawn_blocking(move || crate::rag::prepare_index(&md_path))
+        .await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
     let conn = db.conn();
-    crate::rag::index_paper(&conn, &paper_id).map_err(|e| e.to_string())
+    crate::rag::insert_chunks(&conn, &paper_id, &drafts, &embeddings).map_err(|e| e.to_string())?;
+    Ok(drafts.len())
 }
 
 /// 向量检索。`paper_id` 为 `Some` 时只在该论文内检索。
 #[tauri::command]
-pub fn search(
+pub async fn search(
     db: State<'_, Db>,
     query: String,
     top_k: usize,
     paper_id: Option<String>,
 ) -> Result<Vec<SearchHit>, String> {
+    let embedding = tokio::task::spawn_blocking(move || crate::ai::embed::embed_query(&query))
+        .await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
     let conn = db.conn();
-    crate::rag::search(&conn, &query, top_k, paper_id.as_deref()).map_err(|e| e.to_string())
+    crate::rag::search_with_embedding(&conn, &embedding, top_k.clamp(1, 100), paper_id.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn keyword_search(db: State<'_, Db>, query: String, paper_id: Option<String>) -> Result<Vec<SearchHit>, String> {
+    let papers = list_papers_inner(&db)?;
+    let terms: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+    if terms.is_empty() { return Ok(vec![]); }
+    let mut hits = Vec::new();
+    for paper in papers {
+        if paper_id.as_ref().is_some_and(|id| id != &paper.id) { continue; }
+        let Ok(markdown) = std::fs::read_to_string(&paper.md_path) else { continue; };
+        let mut section = String::new();
+        for (index, block) in markdown.split("\n\n").enumerate() {
+            if block.starts_with('#') { section = block.trim_start_matches('#').trim().to_string(); }
+            let lower = block.to_lowercase();
+            if terms.iter().all(|term| lower.contains(term)) {
+                hits.push(SearchHit { chunk_id: index as i64, paper_id: paper.id.clone(), paper_title: paper.title.clone(), section: section.clone(), content: block.chars().take(2000).collect(), page_idx: None, distance: 0.0 });
+                if hits.len() >= 50 { return Ok(hits); }
+            }
+        }
+    }
+    Ok(hits)
 }
 
 // ---------- 博客生成 ----------
@@ -708,6 +795,25 @@ pub async fn translate_chunk(text: String) -> Result<String, String> {
         .await
         .map_err(|e| e.to_string())?;
     Ok(zh.trim().to_string())
+}
+
+/// 划选速译独立于全文翻译，不添加英文括注或解释。
+#[tauri::command]
+pub async fn translate_selection(text: String, context: Option<String>) -> Result<String, String> {
+    let text = text.trim();
+    if text.is_empty() || text.chars().count() > 2000 {
+        return Err("请选择 1–2000 个字符进行速译".into());
+    }
+    let settings = Settings::load().map_err(|e| e.to_string())?;
+    let llm = crate::ai::llm::Llm::from_settings(&settings).map_err(|e| e.to_string())?;
+    let context: String = context.unwrap_or_default().chars().take(1000).collect();
+    let messages = crate::translate::build_selection_messages(text, &context);
+    let result = tokio::time::timeout(std::time::Duration::from_secs(45), llm.chat(&messages))
+        .await.map_err(|_| "翻译超时，请重试".to_string())?
+        .map_err(|e| e.to_string())?;
+    let result = result.trim();
+    if result.is_empty() { return Err("未收到译文，请重试".into()); }
+    Ok(result.to_string())
 }
 
 /// 把翻译结果（en/zh 分块对）落盘为论文目录下的 translation.json。
@@ -910,10 +1016,15 @@ async fn quick_answer(
     cancel: Option<&AtomicBool>,
     sink: &mut (dyn FnMut(crate::agent::AgentEvent) + Send),
 ) -> Result<(String, Vec<Citation>, crate::agent::Timing), String> {
-    // 检索 + 组装（同步，用完即释放数据库锁）
+    let query = question.to_owned();
+    let embedding = tauri::async_runtime::spawn_blocking(move || crate::ai::embed::embed_query(&query))
+        .await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+    // Only SQL and context assembly hold the database lock.
     let prepared = {
         let conn = db.conn();
-        crate::qa::prepare(&conn, question, paper_id, history, top_k, selections)
+        let hits = crate::rag::search_with_embedding(&conn, &embedding, top_k.clamp(1, 50), paper_id)
+            .map_err(|e| e.to_string())?;
+        crate::qa::prepare_with_hits(&conn, question, paper_id, history, selections, &hits)
             .map_err(|e| e.to_string())?
     };
     if prepared.empty {
@@ -2840,6 +2951,31 @@ mod tests {
     }
 
     #[test]
+    fn export_notes_preserves_quotes_notes_and_rejects_invalid_files() {
+        db::register_sqlite_vec();
+        let conn = Connection::open_in_memory().unwrap();
+        db::migrations::migrate(&conn).unwrap();
+        let db = db::Db::from_connection(conn);
+        let tmp = std::env::temp_dir().join(format!("zoompaper-export-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&tmp).unwrap();
+        let src = tmp.join("sample.pdf");
+        fs::write(&src, b"%PDF-1.4 test").unwrap();
+        let paper = import_pdf_inner(&db, &tmp.join("papers"), src.to_str().unwrap()).unwrap();
+        save_annotations_file(&db, &paper.id, "annotations.json", r#"{"highlights":[{"page_idx":2,"text":"Evidence","note":{"text":"My note"}}]}"#).unwrap();
+        let dest = tmp.join("notes.md");
+        export_notes_inner(&db, &paper.id, dest.to_str().unwrap()).unwrap();
+        let text = fs::read_to_string(&dest).unwrap();
+        assert!(text.contains("第 3 页"));
+        assert!(text.contains("> Evidence"));
+        assert!(text.contains("My note"));
+        save_annotations_file(&db, &paper.id, "annotations.json", r#"{"highlights":null}"#).unwrap();
+        assert!(export_notes_inner(&db, &paper.id, dest.to_str().unwrap()).is_err());
+        assert_eq!(fs::read_to_string(&dest).unwrap(), text);
+        assert!(export_notes_inner(&db, &paper.id, tmp.join("notes.pdf").to_str().unwrap()).is_err());
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
     fn annotations_roundtrip() {
         db::register_sqlite_vec();
         let conn = Connection::open_in_memory().unwrap();
@@ -3036,6 +3172,31 @@ mod tests {
         assert_eq!(papers.len(), 2, "删除文件夹不删论文");
         assert!(papers.iter().all(|p| p.folder_ids.is_empty()));
 
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn reading_status_batch_is_atomic_and_validated() {
+        let (db, tmp, ids) = folder_test_setup();
+        assert!(set_reading_status_inner(&db, &ids, "invalid").is_err());
+        set_reading_status_inner(&db, &ids, "reading").unwrap();
+        let broken = vec![ids[0].clone(), "missing".into()];
+        assert!(set_reading_status_inner(&db, &broken, "finished").is_err());
+        assert_eq!(get_paper_inner(&db, &ids[0]).unwrap().reading_status, "reading");
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn opening_paper_records_recency_without_changing_other_papers() {
+        let (db, tmp, ids) = folder_test_setup();
+        let before = get_paper_inner(&db, &ids[0]).unwrap();
+        let opened = open_paper_inner(&db, &ids[0]).unwrap();
+        assert!(opened.last_read_at.is_some());
+        assert_eq!(opened.title, before.title);
+        assert_eq!(opened.reading_status, before.reading_status);
+        assert_eq!(get_paper_inner(&db, &ids[0]).unwrap().last_read_at, opened.last_read_at);
+        assert!(get_paper_inner(&db, &ids[1]).unwrap().last_read_at.is_none());
+        assert!(open_paper_inner(&db, "missing").is_err());
         fs::remove_dir_all(&tmp).ok();
     }
 
