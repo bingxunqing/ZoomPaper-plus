@@ -12,6 +12,35 @@
   <a href="docs/WORKFLOW-ACCEPTANCE.md">验收清单</a>
 </p>
 
+## 界面预览
+
+<p align="center">
+  <img src="docs/images/reader-ai.png" alt="阅读论文并通过带引用的 AI 助手深入问答" width="100%" />
+  <br />
+  <sub>原文阅读与 AI 问答并排进行，回答包含可回溯引用、工具轨迹和思考耗时。</sub>
+</p>
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/images/selection-translate.png" alt="选中论文术语后快速查看中文释义" />
+      <br />
+      <sub><strong>划词速译：</strong>选中术语即可得到简洁中文释义，也可继续高亮、提问或记笔记。</sub>
+    </td>
+    <td width="50%">
+      <img src="docs/images/feynman-learning.png" alt="通过费曼学习计划深入理解论文" />
+      <br />
+      <sub><strong>费曼学习：</strong>按概念制定学习路线，由 AI 学生追问并通过测验检查理解。</sub>
+    </td>
+  </tr>
+</table>
+
+<details>
+  <summary>查看论文库</summary>
+  <br />
+  <img src="docs/images/library.png" alt="ZoomPaper Plus 论文库" width="100%" />
+</details>
+
 ## 与上游的关系
 
 本仓库基于 [Flutter-Misdreavus/ZoomPaper](https://github.com/Flutter-Misdreavus/ZoomPaper)，当前已同步上游 `v0.2.0`。ZoomPaper 的完整功能、配置方式、技术架构和使用指南请直接查看[上游 README](https://github.com/Flutter-Misdreavus/ZoomPaper#readme)。本页只记录这个 fork 的差异。
