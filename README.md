@@ -48,6 +48,8 @@
 
 [前往本 fork 的 Releases](https://github.com/bingxunqing/ZoomPaper-plus/releases/latest)
 
+维护者发布新版本时，请参照[发布指南](docs/RELEASING.md)。
+
 应用尚未进行 Apple 签名和公证。首次启动时，请在访达中右键点击 ZoomPaper，选择“打开”；也可执行：
 
 ```sh

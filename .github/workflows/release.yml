@@ -23,7 +23,7 @@ on:
     inputs:
       version:
         description: "发布版本号（如 0.2.1；tag 触发时自动取标签版本）"
-        required: false
+        required: true
 
 permissions:
   contents: write
@@ -34,6 +34,47 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [ -z "${VERSION}" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          if [ -z "${VERSION}" ]; then
+            echo "::error::无法解析版本号：请推送 v* 标签，或在手动触发时填写 version"
+            exit 1
+          fi
+          if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::版本号格式无效：${VERSION}（应类似 0.2.1）"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "tag=v${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate version and load release notes
+        id: release_notes
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          TAURI_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          CARGO_VERSION="$(sed -n '/^\[package\]/,/^\[/s/^version = "\([^"]*\)"/\1/p' src-tauri/Cargo.toml | head -1)"
+          if [ "${PACKAGE_VERSION}" != "${VERSION}" ] || [ "${TAURI_VERSION}" != "${VERSION}" ] || [ "${CARGO_VERSION}" != "${VERSION}" ]; then
+            echo "::error::版本不一致：发布=${VERSION}, package=${PACKAGE_VERSION}, tauri=${TAURI_VERSION}, cargo=${CARGO_VERSION}"
+            exit 1
+          fi
+
+          RELEASE_FILE="docs/RELEASE-v${VERSION}.md"
+          if [ ! -f "${RELEASE_FILE}" ]; then
+            echo "::error::缺少发布说明：${RELEASE_FILE}"
+            exit 1
+          fi
+          {
+            echo "body<<ZOOMPAPER_RELEASE_BODY"
+            cat "${RELEASE_FILE}"
+            echo "ZOOMPAPER_RELEASE_BODY"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -54,36 +95,17 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
 
-      - name: Resolve version
-        id: version
-        run: |
-          VERSION="${{ inputs.version }}"
-          if [ -z "${VERSION}" ]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          fi
-          if [ -z "${VERSION}" ]; then
-            echo "::error::无法解析版本号：请推送 v* 标签，或在手动触发时填写 version"
-            exit 1
-          fi
-          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
-          echo "tag=v${VERSION}" >> "${GITHUB_OUTPUT}"
-
-      - name: Sync app version
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          echo "Syncing version to ${VERSION}"
-          npm pkg set version="${VERSION}"
-          sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" src-tauri/tauri.conf.json
-          grep -n '"version"' src-tauri/tauri.conf.json
-
-      - name: Build & publish .dmg (Apple Silicon)
-        uses: tauri-apps/tauri-action@v0
+      - name: Build .dmg and create draft release
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ steps.version.outputs.tag }}
           releaseName: "ZoomPaper Plus v${{ steps.version.outputs.version }}"
+          releaseBody: ${{ steps.release_notes.outputs.body }}
+          releaseCommitish: ${{ github.sha }}
           releaseDraft: true
-          # 如需推送 tag 后自动发布（无需手动确认），把 releaseDraft 改为 false
           prerelease: false
+          retryAttempts: 2
+          uploadUpdaterJson: false
           args: --bundles dmg --target aarch64-apple-darwin
