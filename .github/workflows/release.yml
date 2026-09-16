@@ -1,8 +1,8 @@
 # ZoomPaper 发布工作流
 #
 # 触发方式（二选一）：
-#   1. 推送 v* 标签（推荐）：git tag v0.2.0 && git push origin v0.2.0
-#   2. 手动触发：Actions 页面 → Release → Run workflow → 填写版本号（如 0.2.0）
+#   1. 推送 v* 标签（推荐）：git tag v0.2.1 && git push origin v0.2.1
+#   2. 手动触发：Actions 页面 → Release → Run workflow → 填写版本号（如 0.2.1）
 #
 # 产物：macOS Apple Silicon 安装包 ZoomPaper_<ver>_aarch64.dmg
 #       （上传为草稿 Release，审核后手动发布）
@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "发布版本号（如 0.2.0；tag 触发时自动取标签版本）"
+        description: "发布版本号（如 0.2.1；tag 触发时自动取标签版本）"
         required: false
 
 permissions:
@@ -82,7 +82,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ steps.version.outputs.tag }}
-          releaseName: "ZoomPaper v${{ steps.version.outputs.version }}"
+          releaseName: "ZoomPaper Plus v${{ steps.version.outputs.version }}"
           releaseDraft: true
           # 如需推送 tag 后自动发布（无需手动确认），把 releaseDraft 改为 false
           prerelease: false
