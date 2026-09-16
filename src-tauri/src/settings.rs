@@ -6,7 +6,21 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// API Key 保存在本地明文 JSON 中；Unix 平台限制为仅当前用户可读写。
+#[cfg(unix)]
+fn harden_settings_permissions(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+        .context("限制 settings.json 文件权限失败")
+}
+
+#[cfg(not(unix))]
+fn harden_settings_permissions(_path: &Path) -> Result<()> {
+    Ok(())
+}
 
 /// 应用数据目录：`~/Library/Application Support/com.paper-reader/`
 pub fn app_data_dir() -> Result<PathBuf> {
@@ -83,6 +97,7 @@ impl Settings {
             default.save()?;
             return Ok(default);
         }
+        harden_settings_permissions(&path)?;
         let raw = fs::read_to_string(&path).context("读取 settings.json 失败")?;
         let s = serde_json::from_str(&raw).context("解析 settings.json 失败")?;
         Ok(s)
@@ -96,6 +111,7 @@ impl Settings {
         }
         let raw = serde_json::to_string_pretty(self).context("序列化 settings 失败")?;
         crate::fs::write_md(&path, &raw).context("写入 settings.json 失败")?;
+        harden_settings_permissions(&path)?;
         Ok(())
     }
 
