@@ -47,8 +47,8 @@ PDF 解析需要 MinerU。翻译、问答和费曼学习需要配置 OpenAI、An
 
 ## 验证结果
 
-- 前端测试：以 Release 工作流结果为准
-- Rust 测试：以 Release 工作流结果为准
+- 前端交互与网站识别测试：22 项通过
+- Rust 测试：138 项通过，1 项真实模型集成测试默认忽略
 - `npm audit`：0 个已知漏洞
 
 完整功能说明请查看[上游 README](https://github.com/Flutter-Misdreavus/ZoomPaper#readme)，本 fork 的差异见[本仓库 README](https://github.com/bingxunqing/ZoomPaper-plus#readme)。

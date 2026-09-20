@@ -1,15 +1,18 @@
 <p align="center">
-  <img src="app-icon.png" alt="ZoomPaper" width="128" />
+  <img src="app-icon.png" alt="ZoomPaper" width="112" />
 </p>
 
 <h1 align="center">ZoomPaper Plus</h1>
 
-<p align="center">面向真实论文阅读流程的 ZoomPaper 社区增强版。</p>
+<p align="center"><strong>AI 英文论文阅读助手</strong></p>
+
+<p align="center">
+  ZoomPaper Plus 面向需要阅读英文论文的中文用户，把 PDF 阅读、划词翻译、全文翻译、带引用的 AI 问答和论文整理放在一个桌面应用里，减少在翻译工具、浏览器和笔记软件之间来回切换。
+</p>
 
 <p align="center">
   <a href="https://github.com/bingxunqing/ZoomPaper-plus/releases/latest">下载最新版本</a> ·
-  <a href="https://github.com/Flutter-Misdreavus/ZoomPaper#readme">查看上游完整说明</a> ·
-  <a href="docs/WORKFLOW-ACCEPTANCE.md">验收清单</a>
+  <a href="https://github.com/Flutter-Misdreavus/ZoomPaper#readme">上游项目说明</a>
 </p>
 
 ## 界面预览
@@ -17,7 +20,7 @@
 <p align="center">
   <img src="docs/images/reader-ai.png" alt="阅读论文并通过带引用的 AI 助手深入问答" width="100%" />
   <br />
-  <sub>原文阅读与 AI 问答并排进行，回答包含可回溯引用、工具轨迹和思考耗时。</sub>
+  <sub>边读英文论文，边翻译、提问和核对原文引用。</sub>
 </p>
 
 <table>
@@ -25,106 +28,57 @@
     <td width="50%">
       <img src="docs/images/selection-translate.png" alt="选中论文术语后快速查看中文释义" />
       <br />
-      <sub><strong>划词速译：</strong>选中术语即可得到简洁中文释义，也可继续高亮、提问或记笔记。</sub>
+      <sub><strong>划词速译：</strong>选中术语，直接查看简洁中文释义。</sub>
     </td>
     <td width="50%">
       <img src="docs/images/feynman-learning.png" alt="通过费曼学习计划深入理解论文" />
       <br />
-      <sub><strong>费曼学习：</strong>按概念制定学习路线，由 AI 学生追问并通过测验检查理解。</sub>
+      <sub><strong>费曼学习：</strong>按概念学习，用追问和测验检查理解。</sub>
     </td>
   </tr>
 </table>
 
-<details>
-  <summary>查看论文库</summary>
-  <br />
-  <img src="docs/images/library.png" alt="ZoomPaper Plus 论文库" width="100%" />
-</details>
+## 相比上游多了什么
 
-## 与上游的关系
+- **划词速译**：在 PDF、AI 博客和中文译文中选中文字，立即获得结合上下文的中文释义。
+- **更好用的 AI 对话**：重新设计消息、引用和输入区，支持停止生成、复制回答、历史会话以及快速/深度模式。
+- **浏览器一键收藏**：从 Chrome / Edge 论文页面右键加入 ZoomPaper，自动下载并解析 PDF；覆盖常见计算机论文网站。
+- **更完整的论文库**：支持文件夹、筛选、排序、继续阅读、阅读计划和笔记导出。
+- **可靠性修复**：修复中文输入、DeepSeek 工具调用、标注覆盖、数据库阻塞和本地密钥权限问题。
 
-本仓库基于 [Flutter-Misdreavus/ZoomPaper](https://github.com/Flutter-Misdreavus/ZoomPaper)，当前已同步上游 `v0.2.0`。ZoomPaper 的完整功能、配置方式、技术架构和使用指南请直接查看[上游 README](https://github.com/Flutter-Misdreavus/ZoomPaper#readme)。本页只记录这个 fork 的差异。
-
-## 本 fork 新增与修复
-
-### 更像成熟产品的 AI 对话
-
-- 重做阅读器侧栏和独立问答页的消息布局、状态提示、引用区与输入区。
-- 输入框随内容增高；`Enter` 发送、`Shift + Enter` 换行，并正确处理中文输入法组合态。
-- 支持生成中停止、回答复制、历史会话恢复，以及快速/深度模式和联网开关记忆。
-- 修复 DeepSeek 深度模式中 `reasoning_content` 回放和工具调用兼容问题。
-
-### 划词速译与阅读效率
-
-- 在 PDF、AI 博客和中文译文中划选文字，可直接获得简洁中文释义。
-- 速译会参考少量上下文区分学术词义，带加载、超时、失败重试和收起状态。
-- 论文库可按标题、作者和摘要筛选，并记住排序方式；支持“继续阅读”和阅读笔记导出。
-
-### 浏览器一键收藏
-
-- 在 Chrome / Edge 的论文页面或 PDF 链接上右键，选择“加入 ZoomPaper”。
-- 支持常见学术元数据，并内置 ACL Anthology、arXiv、OpenReview、CVF Open Access、NeurIPS 识别；[查看计算机领域兼容性](docs/BROWSER-SUPPORT.md)。
-- ZoomPaper 会自动下载、保存和解析 PDF，全程显示导入状态。
-- 安装方法与隐私说明见 [ZoomPaper Connector](browser-extension/README.md)。
-
-### 数据可靠性与安全
-
-- 标注按顺序写入并采用原子落盘，避免快速连续操作覆盖数据或留下半写文件。
-- 损坏的标注数据会明确报错，避免静默覆盖原文件。
-- Embedding 准备移出数据库锁，减少首次索引时的界面阻塞。
-- macOS / Unix 下将含 API Key 的 `settings.json` 权限收紧为仅当前用户可读写。
+浏览器扩展安装方法见 [ZoomPaper Connector](browser-extension/README.md)，网站覆盖范围见[兼容性说明](docs/BROWSER-SUPPORT.md)。原项目的完整功能和配置方式请查看[上游 README](https://github.com/Flutter-Misdreavus/ZoomPaper#readme)。
 
 ## 下载
 
-当前只提供 **macOS 13+、Apple Silicon（M1/M2/M3/M4）** 安装包。
+当前支持 **macOS 13+、Apple Silicon（M1/M2/M3/M4）**。
 
 | 发布附件 | 用途 |
 | --- | --- |
-| `ZoomPaper_<版本>_aarch64.dmg` | 最终用户安装包；GitHub Release 应上传这个文件 |
-| `ZoomPaper-Connector_<版本>.zip` | 可选的 Chrome / Edge 浏览器扩展；解压后以开发者模式加载 |
+| `ZoomPaper_<版本>_aarch64.dmg` | ZoomPaper 桌面应用 |
+| `ZoomPaper-Connector_<版本>.zip` | Chrome / Edge 浏览器扩展 |
 
-[前往本 fork 的 Releases](https://github.com/bingxunqing/ZoomPaper-plus/releases/latest)
+[前往 Releases 下载](https://github.com/bingxunqing/ZoomPaper-plus/releases/latest)
 
-维护者发布新版本时，请参照[发布指南](docs/RELEASING.md)。
-
-应用尚未进行 Apple 签名和公证。首次启动时，请在访达中右键点击 ZoomPaper，选择“打开”；也可执行：
+应用暂未进行 Apple 签名和公证。首次启动时，请在访达中右键点击 ZoomPaper 并选择“打开”；若仍被拦截，可执行：
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/ZoomPaper.app
 ```
 
-## 开发与构建
+PDF 解析需要配置 MinerU；翻译和 AI 功能需要配置 OpenAI、Anthropic、Gemini 或 DeepSeek 中至少一个服务。
 
-需要 Node.js 20.19+、Rust stable、Xcode Command Line Tools。
+<details>
+  <summary>开发与构建</summary>
 
-```sh
-npm install
-npm run tauri dev
+  ```sh
+  npm install
+  npm run tauri dev
+  npm run tauri build -- --bundles dmg --target aarch64-apple-darwin
+  ```
 
-# 构建 Apple Silicon 的发布安装包
-npm run tauri build -- --bundles dmg --target aarch64-apple-darwin
-```
-
-构建产物位于：
-
-```text
-src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/
-```
-
-使用前仍需配置 MinerU，以及 OpenAI、Anthropic、Gemini 或 DeepSeek 中至少一个 AI 服务。应用数据默认位于：
-
-```text
-~/Library/Application Support/com.paper-reader/
-```
-
-## 验证
-
-- 前端交互与浏览器识别测试：以当前工作流结果为准
-- Rust 单元与集成测试：以当前工作流结果为准
-- `npm audit`：0 个已知漏洞
-
-详细人工回归步骤见 [docs/WORKFLOW-ACCEPTANCE.md](docs/WORKFLOW-ACCEPTANCE.md)。
+  发布流程见 [docs/RELEASING.md](docs/RELEASING.md)，人工验收见 [docs/WORKFLOW-ACCEPTANCE.md](docs/WORKFLOW-ACCEPTANCE.md)。
+</details>
 
 ## 协议与致谢
 
-本项目遵循 [MIT License](LICENSE)。感谢 [ZoomPaper 原作者及贡献者](https://github.com/Flutter-Misdreavus/ZoomPaper/graphs/contributors)；上游版权声明保留在许可证中。
+本项目遵循 [MIT License](LICENSE)。感谢 [ZoomPaper 原作者及贡献者](https://github.com/Flutter-Misdreavus/ZoomPaper/graphs/contributors)。本 fork 当前同步至上游 `v0.2.0`。
