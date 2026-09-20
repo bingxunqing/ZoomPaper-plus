@@ -115,6 +115,10 @@ jobs:
           workspaces: "./src-tauri -> target"
       - run: npm ci
       - name: Build Linux packages
+        env:
+          # ONNX Runtime is a static C++ archive on Linux. Keep libstdc++ at the
+          # end of the linker command so GNU ld can resolve its C++ symbols.
+          RUSTFLAGS: -C link-arg=-lstdc++
         run: npm run tauri build -- --bundles deb,appimage
       - uses: actions/upload-artifact@v4
         with:
