@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 #
-# ZoomPaper 一键安装脚本
+# ZoomPaper Plus 一键安装脚本
 #
 # 从 GitHub Releases 自动下载最新版 .dmg（优先 universal 通用版，
 # 其次按机器架构匹配 aarch64 / x64），安装到 /Applications。
 # 适用平台：macOS（Apple Silicon / Intel）。
 #
 # 用法：
-#   curl -fsSL https://raw.githubusercontent.com/Flutter-Misdreavus/ZoomPaper/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/bingxunqing/ZoomPaper-plus/main/install.sh | sh
 #
 set -euo pipefail
 
-REPO="Flutter-Misdreavus/ZoomPaper"
-APP_NAME="ZoomPaper"
+REPO="bingxunqing/ZoomPaper-plus"
+APP_NAME="ZoomPaper Plus"
 API_URL="https://api.github.com/repos/${REPO}/releases/latest"
 
 # ---------- 获取最新版本 ----------
@@ -34,7 +34,7 @@ case "$(uname -m)" in
   arm64)  ARCH="aarch64" ;;
   x86_64) ARCH="x64" ;;
   *)
-    echo "错误：不支持的架构 $(uname -m)，ZoomPaper 目前仅支持 macOS。" >&2
+    echo "错误：不支持的架构 $(uname -m)，ZoomPaper Plus 目前仅支持 macOS。" >&2
     exit 1
     ;;
 esac
@@ -86,12 +86,12 @@ hdiutil detach "${MOUNT_POINT}" >/dev/null
 
 cat <<EOF
 
-==> 安装完成！ZoomPaper ${TAG} 已安装到 /Applications。
+==> 安装完成！ZoomPaper Plus ${TAG} 已安装到 /Applications。
 
 由于应用未经过 Apple 签名公证，首次打开方式：
-  1. 在「访达」中找到 ZoomPaper.app，右键点击 → 选择「打开」；
+  1. 在「访达」中找到 ZoomPaper Plus.app，右键点击 → 选择「打开」；
   2. 如提示「无法验证开发者」，点击「仍要打开」即可。
 
 或使用终端命令移除隔离标记后直接打开：
-  xattr -dr com.apple.quarantine "/Applications/ZoomPaper.app"
+  xattr -dr com.apple.quarantine "/Applications/ZoomPaper Plus.app"
 EOF

@@ -1,14 +1,14 @@
-# ZoomPaper Connector
+# ZoomPaper Plus Connector
 
-在学术论文页面或 PDF 链接上右键，选择 **“加入 ZoomPaper”**；也可以直接点击浏览器工具栏中的扩展图标。扩展会唤起桌面应用，下载 PDF 并自动开始解析。
+在学术论文页面或 PDF 链接上右键，选择 **“加入 ZoomPaper Plus”**；也可以直接点击浏览器工具栏中的扩展图标。扩展会唤起桌面应用，下载 PDF 并自动开始解析。
 
 ## 本地安装（Chrome / Edge）
 
-1. 安装并至少启动一次 ZoomPaper `v0.2.1` 或更高版本。
+1. 安装并至少启动一次 ZoomPaper Plus `v0.2.3` 或更高版本。
 2. 打开 Chrome 的 `chrome://extensions`，或 Edge 的 `edge://extensions`。
 3. 开启“开发者模式”，选择“加载已解压的扩展程序”。
 4. 选择本仓库的 `browser-extension` 文件夹。
-5. 首次使用时，浏览器会询问是否打开 ZoomPaper，请允许。
+5. 首次使用时，浏览器会询问是否打开 ZoomPaper Plus，请允许。
 
 ## 支持范围
 
@@ -19,4 +19,4 @@
 
 完整覆盖说明见[计算机领域网站兼容性](../docs/BROWSER-SUPPORT.md)。
 
-扩展不保存 API Key，也不会向额外服务器发送内容。它只把论文标题、来源页和 PDF 地址交给本机的 ZoomPaper。
+扩展不保存 API Key，也不会向额外服务器发送内容。它只把论文标题、来源页和 PDF 地址交给本机的 ZoomPaper Plus。

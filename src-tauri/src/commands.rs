@@ -377,7 +377,7 @@ pub async fn import_pdf_url(
     let settings = Settings::load().map_err(|e| e.to_string())?;
     let library = settings.papers_dir().map_err(|e| e.to_string())?;
     let client = reqwest::Client::builder()
-        .user_agent("ZoomPaper/0.2.1 browser-import")
+        .user_agent("ZoomPaper-Plus/0.2.3 browser-import")
         .connect_timeout(std::time::Duration::from_secs(15))
         .timeout(std::time::Duration::from_secs(120))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {

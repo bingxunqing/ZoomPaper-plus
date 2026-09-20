@@ -463,7 +463,7 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
             ) : (
               <div key={i} className="flex justify-start">
                 <div className="chat-assistant min-w-0 w-full px-1 py-1">
-                  <div className="mb-3 text-xs font-medium text-primary">ZoomPaper <span className="ml-1 text-muted-foreground">· AI 助手</span></div>
+                  <div className="mb-3 text-xs font-medium text-primary">ZoomPaper Plus <span className="ml-1 text-muted-foreground">· AI 助手</span></div>
                   {/* 回答上方 meta 区：思考胶囊（本轮）+ 工具调用胶囊（均默认收纳，网页版风格） */}
                   {(m.role === "assistant" &&
                     i === messages.length - 1 &&

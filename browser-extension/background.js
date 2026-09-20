@@ -6,7 +6,7 @@ function setupMenu() {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: MENU_ID,
-      title: "加入 ZoomPaper",
+      title: "加入 ZoomPaper Plus",
       contexts: ["page", "link"],
     });
   });
@@ -16,7 +16,7 @@ function notify(message) {
   chrome.notifications.create({
     type: "basic",
     iconUrl: "icons/icon-128.png",
-    title: "ZoomPaper",
+    title: "ZoomPaper Plus",
     message,
   });
 }
@@ -76,7 +76,7 @@ function scrapePaperPage() {
 }
 
 async function openInZoomPaper(paper, tabId) {
-  const deepLink = new URL("zoompaper://import");
+  const deepLink = new URL("zoompaper-plus://import");
   deepLink.searchParams.set("pdf", paper.pdfUrl);
   deepLink.searchParams.set("title", paper.title);
   if (paper.sourceUrl) deepLink.searchParams.set("source", paper.sourceUrl);
@@ -115,7 +115,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
     await openInZoomPaper(paper, tab.id);
   } catch (error) {
-    notify(`无法加入 ZoomPaper：${error instanceof Error ? error.message : String(error)}`);
+    notify(`无法加入 ZoomPaper Plus：${error instanceof Error ? error.message : String(error)}`);
   }
 });
 
@@ -129,6 +129,6 @@ chrome.action.onClicked.addListener(async (tab) => {
     }
     await openInZoomPaper(paper, tab.id);
   } catch (error) {
-    notify(`无法加入 ZoomPaper：${error instanceof Error ? error.message : String(error)}`);
+    notify(`无法加入 ZoomPaper Plus：${error instanceof Error ? error.message : String(error)}`);
   }
 });

@@ -22,7 +22,7 @@ fn harden_settings_permissions(_path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// 应用数据目录：`~/Library/Application Support/com.paper-reader/`
+/// 应用数据目录。保留旧目录名以便升级后继续读取已有论文和设置。
 pub fn app_data_dir() -> Result<PathBuf> {
     #[cfg(debug_assertions)]
     if let Some(path) = option_env!("ZOOMPAPER_TEST_DATA_DIR") {

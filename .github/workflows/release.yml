@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "发布版本号（如 0.2.2；必须已有对应 v* 标签）"
+        description: "发布版本号（如 0.2.3；必须已有对应 v* 标签）"
         required: true
 
 permissions:
@@ -68,6 +68,11 @@ jobs:
       - run: npm ci
       - name: Build macOS DMG
         run: npm run tauri build -- --bundles dmg --target aarch64-apple-darwin
+      - name: Normalize macOS package name
+        shell: bash
+        run: |
+          ARTIFACT="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -name '*.dmg' -print -quit)"
+          mv "${ARTIFACT}" "$(dirname "${ARTIFACT}")/ZoomPaper.Plus_${{ needs.validate.outputs.version }}_aarch64.dmg"
       - uses: actions/upload-artifact@v4
         with:
           name: release-macos
@@ -90,6 +95,11 @@ jobs:
       - run: npm ci
       - name: Build Windows installer
         run: npm run tauri build -- --bundles nsis
+      - name: Normalize Windows package name
+        shell: pwsh
+        run: |
+          $artifact = Get-ChildItem "src-tauri/target/release/bundle/nsis/*-setup.exe" | Select-Object -First 1
+          Move-Item $artifact.FullName (Join-Path $artifact.DirectoryName "ZoomPaper.Plus_${{ needs.validate.outputs.version }}_x64-setup.exe")
       - uses: actions/upload-artifact@v4
         with:
           name: release-windows
@@ -117,6 +127,13 @@ jobs:
       - run: npm ci
       - name: Build Linux packages
         run: npm run tauri build -- --bundles deb,appimage
+      - name: Normalize Linux package names
+        shell: bash
+        run: |
+          DEB="$(find src-tauri/target/release/bundle/deb -name '*.deb' -print -quit)"
+          APPIMAGE="$(find src-tauri/target/release/bundle/appimage -name '*.AppImage' -print -quit)"
+          mv "${DEB}" "$(dirname "${DEB}")/ZoomPaper.Plus_${{ needs.validate.outputs.version }}_amd64.deb"
+          mv "${APPIMAGE}" "$(dirname "${APPIMAGE}")/ZoomPaper.Plus_${{ needs.validate.outputs.version }}_amd64.AppImage"
       - uses: actions/upload-artifact@v4
         with:
           name: release-linux
@@ -132,11 +149,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Package Chrome and Edge extension
         working-directory: browser-extension
-        run: zip -r "../ZoomPaper-Connector_${{ needs.validate.outputs.version }}.zip" . -x "*.DS_Store"
+        run: zip -r "../ZoomPaper-Plus-Connector_${{ needs.validate.outputs.version }}.zip" . -x "*.DS_Store"
       - uses: actions/upload-artifact@v4
         with:
           name: release-browser-extension
-          path: ZoomPaper-Connector_${{ needs.validate.outputs.version }}.zip
+          path: ZoomPaper-Plus-Connector_${{ needs.validate.outputs.version }}.zip
           if-no-files-found: error
 
   release:

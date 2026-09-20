@@ -31,7 +31,7 @@
 - 开发：`npm run tauri dev`
 - 前端测试运行时：Node.js ≥ 24.15（Vitest / jsdom 要求）。
 - 测试：`npm test`；在 `src-tauri` 下运行 `cargo test --lib`
-- 验收包：`src-tauri/target/debug/bundle/macos/ZoomPaper.app`（调试包，未替换系统已安装应用）
+- 验收包：`src-tauri/target/debug/bundle/macos/ZoomPaper Plus.app`（调试包，未替换系统已安装应用）
 
 ## 对话面板专项修订
 

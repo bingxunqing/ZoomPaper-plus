@@ -16,7 +16,7 @@ Draft Release 只有仓库维护者能看到，不会立即通知用户，也不
 
 ## 发布新版本
 
-以 `0.2.2` 为例，先确认以下文件中的版本都是 `0.2.2`：
+以 `0.2.3` 为例，先确认以下文件中的版本都是 `0.2.3`：
 
 - `package.json`
 - `package-lock.json`
@@ -24,18 +24,18 @@ Draft Release 只有仓库维护者能看到，不会立即通知用户，也不
 - `src-tauri/Cargo.lock`
 - `src-tauri/tauri.conf.json`
 
-准备 `docs/RELEASE-v0.2.2.md`，提交并推送 `main`，然后执行：
+准备 `docs/RELEASE-v0.2.3.md`，提交并推送 `main`，然后执行：
 
 ```sh
-git tag -a v0.2.2 -m "ZoomPaper Plus v0.2.2"
-git push origin v0.2.2
+git tag -a v0.2.3 -m "ZoomPaper Plus v0.2.3"
+git push origin v0.2.3
 ```
 
 随后打开仓库的 **Actions → Release** 查看构建进度。成功后进入 **Releases → Drafts**，检查以下内容：
 
 - 标题和标签对应当前版本
 - 附件包含 macOS DMG、Windows EXE、Linux DEB / AppImage
-- 附件包含同版本的 `ZoomPaper-Connector_<版本>.zip`
+- 附件包含同版本的 `ZoomPaper-Plus-Connector_<版本>.zip`
 - 系统要求和已知限制准确
 
 确认无误后点击 **Publish release**。如果构建失败，不要创建同名新标签；修复后在 Actions 页面重新运行失败任务即可。
