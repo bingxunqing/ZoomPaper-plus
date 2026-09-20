@@ -98,7 +98,8 @@ jobs:
 
   build-linux:
     needs: validate
-    runs-on: ubuntu-22.04
+    # ONNX Runtime 1.28 binaries require glibc 2.38+ and a recent libstdc++.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install Linux system dependencies
