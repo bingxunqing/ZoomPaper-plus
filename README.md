@@ -60,6 +60,13 @@
 - 速译会参考少量上下文区分学术词义，带加载、超时、失败重试和收起状态。
 - 论文库可按标题、作者和摘要筛选，并记住排序方式；支持“继续阅读”和阅读笔记导出。
 
+### 浏览器一键收藏
+
+- 在 Chrome / Edge 的论文页面或 PDF 链接上右键，选择“加入 ZoomPaper”。
+- 支持标准学术元数据，并内置 ACL Anthology、arXiv、OpenReview 识别。
+- ZoomPaper 会自动下载、保存和解析 PDF，全程显示导入状态。
+- 安装方法与隐私说明见 [ZoomPaper Connector](browser-extension/README.md)。
+
 ### 数据可靠性与安全
 
 - 标注按顺序写入并采用原子落盘，避免快速连续操作覆盖数据或留下半写文件。
@@ -74,6 +81,7 @@
 | 发布附件 | 用途 |
 | --- | --- |
 | `ZoomPaper_<版本>_aarch64.dmg` | 最终用户安装包；GitHub Release 应上传这个文件 |
+| `ZoomPaper-Connector_<版本>.zip` | 可选的 Chrome / Edge 浏览器扩展；解压后以开发者模式加载 |
 
 [前往本 fork 的 Releases](https://github.com/bingxunqing/ZoomPaper-plus/releases/latest)
 
@@ -111,8 +119,8 @@ src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/
 
 ## 验证
 
-- 前端交互测试：14 项
-- Rust 单元与集成测试：137 项通过，1 项真实模型测试默认忽略
+- 前端交互与浏览器识别测试：以当前工作流结果为准
+- Rust 单元与集成测试：以当前工作流结果为准
 - `npm audit`：0 个已知漏洞
 
 详细人工回归步骤见 [docs/WORKFLOW-ACCEPTANCE.md](docs/WORKFLOW-ACCEPTANCE.md)。

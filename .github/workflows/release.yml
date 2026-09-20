@@ -5,6 +5,7 @@
 #   2. 手动触发：Actions 页面 → Release → Run workflow → 填写版本号（如 0.2.1）
 #
 # 产物：macOS Apple Silicon 安装包 ZoomPaper_<ver>_aarch64.dmg
+#       Chrome / Edge 扩展 ZoomPaper-Connector_<ver>.zip
 #       （上传为草稿 Release，审核后手动发布）
 #
 # 说明：只构建 aarch64-apple-darwin（Apple Silicon）。fastembed 依赖的 ort-sys
@@ -95,6 +96,10 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
 
+      - name: Package browser extension
+        working-directory: browser-extension
+        run: zip -r "../ZoomPaper-Connector_${{ steps.version.outputs.version }}.zip" . -x "*.DS_Store"
+
       - name: Build .dmg and create draft release
         uses: tauri-apps/tauri-action@v1
         env:
@@ -109,3 +114,8 @@ jobs:
           retryAttempts: 2
           uploadUpdaterJson: false
           args: --bundles dmg --target aarch64-apple-darwin
+
+      - name: Attach browser extension to draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ steps.version.outputs.tag }}" "ZoomPaper-Connector_${{ steps.version.outputs.version }}.zip" --clobber

@@ -8,8 +8,8 @@ ZoomPaper Plus 使用 **GitHub Releases** 分发 macOS 安装包。GitHub Packag
 
 1. 检查标签、`package.json`、`Cargo.toml` 和 `tauri.conf.json` 的版本是否一致。
 2. 读取对应的 `docs/RELEASE-v<版本>.md` 作为 Release 说明。
-3. 在 GitHub 的 Apple Silicon runner 上构建正式版 DMG。
-4. 创建一个 Draft Release，填写标题和说明，并附加 DMG。
+3. 打包 Chrome / Edge 浏览器扩展，并在 GitHub 的 Apple Silicon runner 上构建正式版 DMG。
+4. 创建一个 Draft Release，填写标题和说明，并附加 DMG 与扩展 ZIP。
 5. 保持草稿状态，等待维护者检查后手动发布。
 
 Draft Release 只有仓库维护者能看到，不会立即通知用户，也不会出现在公开的最新版本下载链接中。
@@ -36,6 +36,7 @@ git push origin v0.2.1
 - 标题为 `ZoomPaper Plus v0.2.1`
 - 标签为 `v0.2.1`
 - 附件包含 `ZoomPaper_0.2.1_aarch64.dmg`
+- 附件包含 `ZoomPaper-Connector_0.2.1.zip`
 - 系统要求和已知限制准确
 
 确认无误后点击 **Publish release**。如果构建失败，不要创建同名新标签；修复后在 Actions 页面重新运行失败任务即可。
