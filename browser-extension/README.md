@@ -12,9 +12,11 @@
 
 ## 支持范围
 
-- 支持带标准 `citation_pdf_url` 元数据的论文网站。
-- 内置 ACL Anthology、arXiv、OpenReview 识别。
+- 支持 `citation_*`、Dublin Core、Highwire、JSON-LD 和 `application/pdf` 等通用学术元数据。
+- 内置 ACL Anthology、arXiv、OpenReview、CVF Open Access、NeurIPS 的稳定 URL 识别。
 - 支持直接打开的 PDF，以及在 PDF 下载链接上右键导入。
-- 其他论文网站会尝试识别页面里的 PDF 链接，并排除 checklist、supplement 等附件。
+- ACM DL、IEEE Xplore、SpringerLink、ScienceDirect、USENIX、PMLR/JMLR 等网站会通过页面元数据和下载入口识别，并排除 checklist、supplement、slides 等附件。
+
+完整覆盖说明见[计算机领域网站兼容性](../docs/BROWSER-SUPPORT.md)。
 
 扩展不保存 API Key，也不会向额外服务器发送内容。它只把论文标题、来源页和 PDF 地址交给本机的 ZoomPaper。

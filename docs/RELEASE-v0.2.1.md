@@ -9,7 +9,7 @@
 - 支持停止生成、复制回答、恢复历史会话，以及记忆快速/深度模式和联网开关。
 - PDF、AI 博客和中文译文支持划词速译，直接返回简洁中文释义。
 - 论文库支持按标题、作者和摘要筛选、记忆排序、继续阅读和导出阅读笔记。
-- 新增 ZoomPaper Connector 浏览器扩展：可从论文页面或 PDF 链接右键加入论文库，支持 ACL Anthology、arXiv、OpenReview 和标准学术元数据。
+- 新增 ZoomPaper Connector 浏览器扩展：可从论文页面或 PDF 链接右键加入论文库，覆盖常见学术元数据，并内置 ACL Anthology、arXiv、OpenReview、CVF Open Access、NeurIPS 规则。
 
 ## 修复
 

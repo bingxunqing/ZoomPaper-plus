@@ -23,14 +23,54 @@ function notify(message) {
 
 function scrapePaperPage() {
   const meta = (name) => document.querySelector(`meta[name="${name}"]`)?.content || null;
+  const metaValues = (selectors) => selectors.flatMap((selector) =>
+    [...document.querySelectorAll(selector)].map((element) => element.content || element.href || element.src).filter(Boolean)
+  );
+  const jsonLdPdfUrls = [...document.querySelectorAll('script[type="application/ld+json"]')].flatMap((script) => {
+    try {
+      const root = JSON.parse(script.textContent || "null");
+      const pending = Array.isArray(root) ? [...root] : [root];
+      const urls = [];
+      while (pending.length) {
+        const value = pending.pop();
+        if (!value || typeof value !== "object") continue;
+        if (Array.isArray(value)) {
+          pending.push(...value);
+          continue;
+        }
+        if (typeof value.contentUrl === "string" && (/pdf/i.test(value.fileFormat || "") || /\.pdf(?:$|\?)/i.test(value.contentUrl))) {
+          urls.push(value.contentUrl);
+        }
+        pending.push(...Object.values(value).filter((item) => item && typeof item === "object"));
+      }
+      return urls;
+    } catch {
+      return [];
+    }
+  });
   return {
     pageUrl: location.href,
-    title: meta("citation_title") || document.querySelector("h1")?.textContent || document.title,
+    title: meta("citation_title") || meta("dc.title") || document.querySelector("h1")?.textContent || document.title,
     citationPdfUrl: meta("citation_pdf_url"),
+    metaPdfUrls: [
+      ...metaValues([
+        'meta[name="eprints.document_url"]',
+        'meta[name="pdf_url"]',
+        'meta[name="fulltext_pdf"]',
+        'meta[property="og:pdf"]',
+        'link[type="application/pdf"]',
+        'link[rel="alternate"][href$=".pdf"]',
+        'embed[type="application/pdf"]',
+        'iframe[src$=".pdf"]',
+      ]),
+      ...jsonLdPdfUrls,
+    ],
     links: [...document.querySelectorAll("a[href]")].slice(0, 500).map((anchor) => ({
       href: anchor.href,
       text: anchor.textContent || "",
       title: anchor.title || "",
+      rel: anchor.rel || "",
+      type: anchor.type || "",
     })),
   };
 }

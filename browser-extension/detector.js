@@ -16,20 +16,75 @@ function isPdfUrl(value) {
   }
 }
 
-export function detectPaper({ pageUrl, linkUrl, title, citationPdfUrl, links = [] }) {
+function looksLikePdfEndpoint(value) {
+  return isPdfUrl(value) || /\/pdf(?:\/|\?|$)|download.?pdf|pdfdirect|[?&](?:format|type)=pdf(?:&|$)/i.test(value || "");
+}
+
+const SITE_ADAPTERS = [
+  {
+    id: "acl-anthology",
+    match: (url) => url.hostname === "aclanthology.org" && !isPdfUrl(url.href),
+    pdf: (url) => `${url.origin}${url.pathname.replace(/\/$/, "")}.pdf`,
+  },
+  {
+    id: "arxiv",
+    match: (url) => ["arxiv.org", "export.arxiv.org"].includes(url.hostname) && url.pathname.startsWith("/abs/"),
+    pdf: (url) => `${url.origin}/pdf/${url.pathname.slice(5)}`,
+  },
+  {
+    id: "openreview",
+    match: (url) => url.hostname === "openreview.net" && url.pathname === "/forum" && url.searchParams.has("id"),
+    pdf: (url) => `${url.origin}/pdf?id=${encodeURIComponent(url.searchParams.get("id"))}`,
+  },
+  {
+    id: "cvf-open-access",
+    match: (url) => url.hostname === "openaccess.thecvf.com" && url.pathname.includes("/html/") && url.pathname.endsWith(".html"),
+    pdf: (url) => `${url.origin}${url.pathname.replace("/html/", "/papers/").replace(/\.html$/, ".pdf")}`,
+  },
+  {
+    id: "neurips",
+    match: (url) => /^(papers|proceedings)\.n(eur)?ips\.cc$/.test(url.hostname) && /-Abstract(?:-Conference)?\.html$/.test(url.pathname),
+    pdf: (url) => `${url.origin}${url.pathname.replace("/hash/", "/file/").replace("-Abstract", "-Paper").replace(/\.html$/, ".pdf")}`,
+  },
+];
+
+function candidateScore(link) {
+  const description = `${link.text || ""} ${link.title || ""} ${link.rel || ""} ${link.type || ""}`;
+  const href = link.href || "";
+  if (/checklist|supplement|appendix|attachment|slides|poster|code/i.test(`${description} ${href}`)) return -100;
+  let score = 0;
+  if (/application\/pdf/i.test(link.type || "")) score += 8;
+  if (/^(pdf|download pdf|paper|full text|full text pdf)$/i.test((link.text || "").trim())) score += 7;
+  if (/pdf|full.?text|download/i.test(description)) score += 4;
+  if (isPdfUrl(href)) score += 5;
+  if (looksLikePdfEndpoint(href)) score += 3;
+  return score;
+}
+
+export function detectPaper({
+  pageUrl,
+  linkUrl,
+  title,
+  citationPdfUrl,
+  metaPdfUrls = [],
+  links = [],
+}) {
   const page = absoluteUrl(pageUrl, pageUrl);
   const selectedLink = absoluteUrl(linkUrl, pageUrl);
   const citation = absoluteUrl(citationPdfUrl, pageUrl);
   let pdfUrl = isPdfUrl(selectedLink) ? selectedLink : citation;
 
+  if (!pdfUrl) {
+    pdfUrl = metaPdfUrls
+      .map((value) => absoluteUrl(value, pageUrl))
+      .find((value) => value && looksLikePdfEndpoint(value)) || null;
+  }
+
   if (!pdfUrl && page) {
     const url = new URL(page);
-    if (url.hostname === "aclanthology.org" && !isPdfUrl(page)) {
-      pdfUrl = `${url.origin}${url.pathname.replace(/\/$/, "")}.pdf`;
-    } else if (url.hostname === "arxiv.org" && url.pathname.startsWith("/abs/")) {
-      pdfUrl = `${url.origin}/pdf/${url.pathname.slice(5)}`;
-    } else if (url.hostname === "openreview.net" && url.pathname === "/forum" && url.searchParams.has("id")) {
-      pdfUrl = `${url.origin}/pdf?id=${encodeURIComponent(url.searchParams.get("id"))}`;
+    const adapter = SITE_ADAPTERS.find((candidate) => candidate.match(url));
+    if (adapter) {
+      pdfUrl = adapter.pdf(url);
     } else if (isPdfUrl(page)) {
       pdfUrl = page;
     }
@@ -38,13 +93,11 @@ export function detectPaper({ pageUrl, linkUrl, title, citationPdfUrl, links = [
   if (!pdfUrl) {
     const candidates = links
       .map((link) => ({ ...link, href: absoluteUrl(link.href, pageUrl) }))
-      .filter((link) => link.href && isPdfUrl(link.href))
-      .filter((link) => !/checklist|supplement|appendix|attachment/i.test(`${link.text} ${link.title} ${link.href}`))
-      .sort((a, b) => {
-        const score = (link) => (/^(pdf|download pdf|paper)$/i.test(link.text.trim()) ? 2 : /pdf/i.test(`${link.text} ${link.title}`) ? 1 : 0);
-        return score(b) - score(a);
-      });
-    pdfUrl = candidates[0]?.href ?? null;
+      .filter((link) => link.href)
+      .map((link) => ({ ...link, score: candidateScore(link) }))
+      .filter((link) => link.score >= 5)
+      .sort((a, b) => b.score - a.score);
+    pdfUrl = candidates[0]?.href || null;
   }
 
   return pdfUrl ? { pdfUrl, title: title?.trim() || "未命名论文", sourceUrl: page } : null;

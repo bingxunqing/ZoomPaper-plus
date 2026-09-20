@@ -63,7 +63,7 @@
 ### 浏览器一键收藏
 
 - 在 Chrome / Edge 的论文页面或 PDF 链接上右键，选择“加入 ZoomPaper”。
-- 支持标准学术元数据，并内置 ACL Anthology、arXiv、OpenReview 识别。
+- 支持常见学术元数据，并内置 ACL Anthology、arXiv、OpenReview、CVF Open Access、NeurIPS 识别；[查看计算机领域兼容性](docs/BROWSER-SUPPORT.md)。
 - ZoomPaper 会自动下载、保存和解析 PDF，全程显示导入状态。
 - 安装方法与隐私说明见 [ZoomPaper Connector](browser-extension/README.md)。
 
