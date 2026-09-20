@@ -150,15 +150,29 @@ jobs:
           path: release-assets
           merge-multiple: true
       - name: Check release assets
-        run: ls -lh release-assets
+        run: find release-assets -maxdepth 3 -type f -print
       - name: Create draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.validate.outputs.tag }}
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          gh release create "${TAG}" release-assets/* \
-            --draft \
-            --verify-tag \
-            --title "ZoomPaper Plus v${VERSION}" \
-            --notes-file "docs/RELEASE-v${VERSION}.md"
+          mapfile -d '' ASSETS < <(find release-assets -type f -print0)
+          if [ "${#ASSETS[@]}" -eq 0 ]; then
+            echo "::error::没有找到可发布的安装包"
+            exit 1
+          fi
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "${ASSETS[@]}" --clobber
+            gh release edit "${TAG}" \
+              --draft \
+              --title "ZoomPaper Plus v${VERSION}" \
+              --notes-file "docs/RELEASE-v${VERSION}.md"
+          else
+            gh release create "${TAG}" "${ASSETS[@]}" \
+              --draft \
+              --verify-tag \
+              --title "ZoomPaper Plus v${VERSION}" \
+              --notes-file "docs/RELEASE-v${VERSION}.md"
+          fi
