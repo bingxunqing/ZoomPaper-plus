@@ -1,19 +1,3 @@
-# ZoomPaper 发布工作流
-#
-# 触发方式（二选一）：
-#   1. 推送 v* 标签（推荐）：git tag v0.2.1 && git push origin v0.2.1
-#   2. 手动触发：Actions 页面 → Release → Run workflow → 填写版本号（如 0.2.1）
-#
-# 产物：macOS Apple Silicon 安装包 ZoomPaper_<ver>_aarch64.dmg
-#       Chrome / Edge 扩展 ZoomPaper-Connector_<ver>.zip
-#       （上传为草稿 Release，审核后手动发布）
-#
-# 说明：只构建 aarch64-apple-darwin（Apple Silicon）。fastembed 依赖的 ort-sys
-#       没有 x86_64-apple-darwin 预编译二进制（ONNX Runtime 已不再提供 macOS
-#       Intel 产物），universal 构建会在 x86_64 阶段报
-#       "no prebuilt binaries available for target x86_64-apple-darwin" 而失败；
-#       macos-13（Intel）runner 也已被 GitHub 弃用。v0.1.0/v0.1.1 的 dmg 同样是 arm64。
-
 name: Release
 
 on:
@@ -23,41 +7,38 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "发布版本号（如 0.2.1；tag 触发时自动取标签版本）"
+        description: "发布版本号（如 0.2.2；必须已有对应 v* 标签）"
         required: true
 
 permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: macos-latest # Apple Silicon（arm64）
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
 
-      - name: Resolve version
+      - name: Resolve and validate version
         id: version
+        shell: bash
         run: |
           VERSION="${{ inputs.version }}"
-          if [ -z "${VERSION}" ]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          fi
-          if [ -z "${VERSION}" ]; then
-            echo "::error::无法解析版本号：请推送 v* 标签，或在手动触发时填写 version"
-            exit 1
-          fi
+          if [ -z "${VERSION}" ]; then VERSION="${GITHUB_REF_NAME#v}"; fi
           if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::版本号格式无效：${VERSION}（应类似 0.2.1）"
+            echo "::error::版本号格式无效：${VERSION}"
             exit 1
           fi
-          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
-          echo "tag=v${VERSION}" >> "${GITHUB_OUTPUT}"
 
-      - name: Validate version and load release notes
-        id: release_notes
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
           PACKAGE_VERSION="$(node -p "require('./package.json').version")"
           TAURI_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
           CARGO_VERSION="$(sed -n '/^\[package\]/,/^\[/s/^version = "\([^"]*\)"/\1/p' src-tauri/Cargo.toml | head -1)"
@@ -65,57 +46,118 @@ jobs:
             echo "::error::版本不一致：发布=${VERSION}, package=${PACKAGE_VERSION}, tauri=${TAURI_VERSION}, cargo=${CARGO_VERSION}"
             exit 1
           fi
+          test -f "docs/RELEASE-v${VERSION}.md" || { echo "::error::缺少发布说明"; exit 1; }
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "tag=v${VERSION}" >> "${GITHUB_OUTPUT}"
 
-          RELEASE_FILE="docs/RELEASE-v${VERSION}.md"
-          if [ ! -f "${RELEASE_FILE}" ]; then
-            echo "::error::缺少发布说明：${RELEASE_FILE}"
-            exit 1
-          fi
-          {
-            echo "body<<ZOOMPAPER_RELEASE_BODY"
-            cat "${RELEASE_FILE}"
-            echo "ZOOMPAPER_RELEASE_BODY"
-          } >> "${GITHUB_OUTPUT}"
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+  build-macos:
+    needs: validate
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@v2
         with:
           workspaces: "./src-tauri -> target"
-
-      - name: Package browser extension
-        working-directory: browser-extension
-        run: zip -r "../ZoomPaper-Connector_${{ steps.version.outputs.version }}.zip" . -x "*.DS_Store"
-
-      - name: Build .dmg and create draft release
-        uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: npm ci
+      - name: Build macOS DMG
+        run: npm run tauri build -- --bundles dmg --target aarch64-apple-darwin
+      - uses: actions/upload-artifact@v4
         with:
-          tagName: ${{ steps.version.outputs.tag }}
-          releaseName: "ZoomPaper Plus v${{ steps.version.outputs.version }}"
-          releaseBody: ${{ steps.release_notes.outputs.body }}
-          releaseCommitish: ${{ github.sha }}
-          releaseDraft: true
-          prerelease: false
-          retryAttempts: 2
-          uploadUpdaterJson: false
-          args: --bundles dmg --target aarch64-apple-darwin
+          name: release-macos
+          path: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
 
-      - name: Attach browser extension to draft release
+  build-windows:
+    needs: validate
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+      - run: npm ci
+      - name: Build Windows installer
+        run: npm run tauri build -- --bundles nsis
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+  build-linux:
+    needs: validate
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+      - run: npm ci
+      - name: Build Linux packages
+        run: npm run tauri build -- --bundles deb,appimage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+
+  package-extension:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package Chrome and Edge extension
+        working-directory: browser-extension
+        run: zip -r "../ZoomPaper-Connector_${{ needs.validate.outputs.version }}.zip" . -x "*.DS_Store"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-browser-extension
+          path: ZoomPaper-Connector_${{ needs.validate.outputs.version }}.zip
+          if-no-files-found: error
+
+  release:
+    needs: [validate, build-macos, build-windows, build-linux, package-extension]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Check release assets
+        run: ls -lh release-assets
+      - name: Create draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ steps.version.outputs.tag }}" "ZoomPaper-Connector_${{ steps.version.outputs.version }}.zip" --clobber
+          TAG: ${{ needs.validate.outputs.tag }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          gh release create "${TAG}" release-assets/* \
+            --draft \
+            --verify-tag \
+            --title "ZoomPaper Plus v${VERSION}" \
+            --notes-file "docs/RELEASE-v${VERSION}.md"

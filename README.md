@@ -50,20 +50,25 @@
 
 ## 下载
 
-当前支持 **macOS 13+、Apple Silicon（M1/M2/M3/M4）**。
+支持 macOS、Windows 和 Linux 桌面系统。
 
 | 发布附件 | 用途 |
 | --- | --- |
-| `ZoomPaper_<版本>_aarch64.dmg` | ZoomPaper 桌面应用 |
+| `ZoomPaper_<版本>_aarch64.dmg` | macOS 13+，Apple Silicon |
+| `ZoomPaper_<版本>_x64-setup.exe` | Windows 10/11，x64 |
+| `ZoomPaper_<版本>_amd64.deb` | Debian / Ubuntu，x64 |
+| `ZoomPaper_<版本>_amd64.AppImage` | 其他常见 x64 Linux 发行版 |
 | `ZoomPaper-Connector_<版本>.zip` | Chrome / Edge 浏览器扩展 |
 
 [前往 Releases 下载](https://github.com/bingxunqing/ZoomPaper-plus/releases/latest)
 
-应用暂未进行 Apple 签名和公证。首次启动时，请在访达中右键点击 ZoomPaper 并选择“打开”；若仍被拦截，可执行：
+安装包暂未进行代码签名。macOS 首次启动时，请在访达中右键点击 ZoomPaper 并选择“打开”；若仍被拦截，可执行：
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/ZoomPaper.app
 ```
+
+Windows 如显示 SmartScreen 提示，请确认下载来源为本仓库后选择“更多信息 → 仍要运行”。Linux 使用 AppImage 时，可能需要先执行 `chmod +x ZoomPaper_*.AppImage`。
 
 PDF 解析需要配置 MinerU；翻译和 AI 功能需要配置 OpenAI、Anthropic、Gemini 或 DeepSeek 中至少一个服务。
 
@@ -73,7 +78,7 @@ PDF 解析需要配置 MinerU；翻译和 AI 功能需要配置 OpenAI、Anthrop
   ```sh
   npm install
   npm run tauri dev
-  npm run tauri build -- --bundles dmg --target aarch64-apple-darwin
+  npm run tauri build
   ```
 
   发布流程见 [docs/RELEASING.md](docs/RELEASING.md)，人工验收见 [docs/WORKFLOW-ACCEPTANCE.md](docs/WORKFLOW-ACCEPTANCE.md)。

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ZoomPaper Connector",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "从论文网页或 PDF 链接一键加入 ZoomPaper。",
   "permissions": ["activeTab", "contextMenus", "notifications", "scripting"],
   "background": {
