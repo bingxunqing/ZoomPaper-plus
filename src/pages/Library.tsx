@@ -11,7 +11,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileText, Loader2 } from "lucide-react";
@@ -41,13 +40,15 @@ import {
 import type { LibraryView } from "@/lib/folders";
 import { usePaperSelection } from "@/hooks/usePaperSelection";
 import { FolderSidebar } from "@/components/library/FolderSidebar";
-import { TopBar, type SortBy } from "@/components/library/TopBar";
-import { FilterBar, type PaperFilter } from "@/components/library/FilterBar";
+import { TopBar, type LibraryLayout, type SortBy } from "@/components/library/TopBar";
+import type { PaperFilter } from "@/components/library/FilterBar";
 import { BulkBar } from "@/components/library/BulkBar";
 import { PaperCard } from "@/components/library/PaperCard";
 import { PaperGrid } from "@/components/library/PaperGrid";
 import { FolderDialog, type FolderDialogState } from "@/components/library/FolderDialog";
 import { PaperFolderPicker } from "@/components/library/PaperFolderPicker";
+import { PaperTable } from "@/components/library/PaperTable";
+import { PaperInspector } from "@/components/library/PaperInspector";
 
 type Renaming = { kind: "folder"; id: string } | { kind: "paper"; id: string };
 
@@ -76,6 +77,10 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
     const saved = localStorage.getItem("zoompaper.librarySort");
     return saved === "title" || saved === "read" ? saved : "created";
   });
+  const [layout, setLayout] = useState<LibraryLayout>(() =>
+    localStorage.getItem("zoompaper.libraryLayout") === "grid" ? "grid" : "list",
+  );
+  const [focusedPaperId, setFocusedPaperId] = useState<string | null>(null);
   const { selected, toggle, clear, selectAll, isSelected, size: selectedSize } = usePaperSelection();
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -111,6 +116,10 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
   useEffect(() => {
     localStorage.setItem("zoompaper.librarySort", sortBy);
   }, [sortBy]);
+
+  useEffect(() => {
+    localStorage.setItem("zoompaper.libraryLayout", layout);
+  }, [layout]);
 
   // ---------- 视图内论文（文件夹 × 状态过滤 × 关键词 交集 + 排序，星标置顶） ----------
 
@@ -153,6 +162,13 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
     () => papers.filter((p) => selected.has(p.id)),
     [papers, selected]
   );
+  const focusedPaper = papers.find((paper) => paper.id === focusedPaperId) ?? null;
+
+  useEffect(() => {
+    if (focusedPaperId && !visiblePapers.some((paper) => paper.id === focusedPaperId)) {
+      setFocusedPaperId(null);
+    }
+  }, [focusedPaperId, visiblePapers]);
   // 归属弹窗只保存稳定的 id，并始终从最新 papers 派生对象。否则刷新后弹窗仍会
   // 持有旧 folder_ids，造成后端已加入文件夹、勾选状态却不更新。
   const pickerPapers = useMemo(() => {
@@ -542,11 +558,15 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
           onQueryChange={setQuery}
           onImport={() => void handleImport()}
           importing={importing}
+          filter={filter}
+          onFilterChange={handleFilterChange}
+          layout={layout}
+          onLayoutChange={setLayout}
         />
 
-        <FilterBar value={filter} onChange={handleFilterChange} />
-
-        {continuePaper && selectedSize === 0 && (
+        <div className="flex min-h-0 flex-1">
+          <div className="flex min-w-0 flex-1 flex-col">
+        {continuePaper && selectedSize === 0 && layout === "grid" && (
           <button
             type="button"
             onClick={() => onOpenPaper(continuePaper.id)}
@@ -575,28 +595,27 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
           )}
         </AnimatePresence>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <div className={`min-h-0 flex-1 overflow-auto ${layout === "grid" ? "px-4 py-4" : "bg-white dark:bg-zp-surface"}`}>
           {error && (
-            <div className="mb-3 whitespace-pre-wrap rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            <div className="m-3 whitespace-pre-wrap rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           )}
           {notice && !error && (
-            <div className="mb-3 rounded-md border border-zp-border bg-white px-4 py-3 text-sm text-zp-secondary dark:bg-zp-surface">
+            <div className="m-3 rounded-md border border-zp-border bg-white px-4 py-3 text-sm text-zp-secondary dark:bg-zp-surface">
               {notice}
             </div>
           )}
 
           {loading ? (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
+            <div className={layout === "grid" ? "grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4" : "space-y-px p-2"}>
               {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-32 w-full rounded-[10px]" />
+                <Skeleton key={i} className={layout === "grid" ? "h-32 w-full rounded-[10px]" : "h-10 w-full rounded"} />
               ))}
             </div>
           ) : visiblePapers.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
-                <FileText className="h-10 w-10" />
+            <div className="flex flex-col items-center gap-2 py-24 text-zp-quaternary">
+                <FileText className="h-8 w-8" strokeWidth={1.5} />
                 {query.trim() ? (
                   <p>没有匹配「{query.trim()}」的论文</p>
                 ) : filter !== "all" ? (
@@ -608,8 +627,30 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
                 ) : (
                   <p>还没有论文，点击「导入论文」开始</p>
                 )}
-              </CardContent>
-            </Card>
+            </div>
+          ) : layout === "list" ? (
+            <PaperTable
+              papers={visiblePapers}
+              folders={folders}
+              plans={plans}
+              selectedIds={selected}
+              focusedId={focusedPaperId}
+              currentFolderId={currentFolderId}
+              parsingId={parsingId}
+              onFocus={(paper) => setFocusedPaperId(paper.id)}
+              onToggle={toggle}
+              onOpen={onOpenPaper}
+              onRename={(paper) => setRenaming({ kind: "paper", id: paper.id })}
+              onPickFolder={handlePickFolder}
+              onSetStatus={(paper, status) => void handleSetStatus(paper, status)}
+              onPlanQuickAdd={(paper, planId, due) => void handlePlanQuickAdd(paper, planId, due)}
+              onPlanRemove={(paper, planId) => void handlePlanRemove(paper, planId)}
+              onPlanCustomDate={handlePlanCustomDate}
+              onToggleStar={(paper) => void handleToggleStar(paper)}
+              onParse={handleParse}
+              onDelete={(paper) => setDeleteTargets([paper])}
+              onRemoveFromCurrentFolder={handleRemoveFromCurrentFolder}
+            />
           ) : (
             <PaperGrid>
               {visiblePapers.map((paper) => (
@@ -645,6 +686,19 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
                 />
               ))}
             </PaperGrid>
+          )}
+        </div>
+          </div>
+          {layout === "list" && focusedPaper && (
+            <PaperInspector
+              paper={focusedPaper}
+              folders={folders}
+              onClose={() => setFocusedPaperId(null)}
+              onOpen={() => onOpenPaper(focusedPaper.id)}
+              onToggleStar={() => void handleToggleStar(focusedPaper)}
+              onPickFolder={() => handlePickFolder(focusedPaper)}
+              onParse={() => handleParse(focusedPaper.id)}
+            />
           )}
         </div>
       </div>

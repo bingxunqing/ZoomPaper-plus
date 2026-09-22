@@ -417,15 +417,14 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--primary); outli
 .chat-assistant .prose > :first-child { margin-top: 0; }
 .chat-assistant .prose > :last-child { margin-bottom: 0; }
 .chat-assistant .prose p { margin-block: 0.75em; }
-.chat-composer { flex-shrink: 0; border: 1px solid var(--border); border-radius: 18px; padding: 12px; background: var(--background); transition: border-color 150ms, box-shadow 150ms; }
-.chat-composer:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 8%, transparent); }
-.chat-composer textarea { display: block; box-sizing: border-box; width: 100%; min-height: 72px; max-height: 180px; resize: none; border: 0; outline: none; background: transparent; padding: 2px 2px 10px; font: inherit; font-size: 14px; line-height: 24px; field-sizing: fixed; overflow-wrap: anywhere; }
+.chat-composer { flex-shrink: 0; border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent); border-radius: 22px; padding: 12px; background: var(--card); box-shadow: 0 4px 18px rgb(0 0 0 / 6%); transition: border-color 150ms, box-shadow 150ms; }
+.chat-composer:focus-within { border-color: color-mix(in srgb, var(--foreground) 25%, transparent); box-shadow: 0 6px 24px rgb(0 0 0 / 8%); }
+.chat-composer textarea { display: block; box-sizing: border-box; width: 100%; min-height: 48px; max-height: 180px; resize: none; border: 0; outline: none; background: transparent; padding: 2px 3px 8px; font: inherit; font-size: 14px; line-height: 23px; field-sizing: fixed; overflow-wrap: anywhere; }
 .chat-composer textarea::placeholder { color: var(--muted-foreground); }
 .chat-composer-actions { display: flex; align-items: flex-end; gap: 8px; }
 .chat-composer-options { flex: 1; min-width: 0; }
 .chat-send { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 50%; background: var(--primary); color: white; }
 .chat-send:disabled { background: var(--border); color: var(--muted-foreground); }
-.chat-input-help { margin: 9px 0 0; font-size: 10px; line-height: 16px; color: var(--muted-foreground); }
 
 /* Comfortable headings in narrow reader columns. */
 .reading-prose { font-size: 15px; line-height: 1.85; }

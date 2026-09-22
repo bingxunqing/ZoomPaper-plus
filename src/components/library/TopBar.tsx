@@ -4,8 +4,7 @@
  * 搜索为标题/作者/摘要即时过滤（纯客户端）；按 `/` 或 ⌘/Ctrl F 可聚焦搜索框。
  */
 import { useEffect, useRef } from "react";
-import { Loader2, Plus, Search as SearchIcon, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { LayoutGrid, List, Loader2, Search as SearchIcon, Upload, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -13,8 +12,10 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@/components/ui/select";
+import type { PaperFilter } from "./FilterBar";
 
 export type SortBy = "created" | "title" | "read";
+export type LibraryLayout = "list" | "grid";
 
 const SORT_LABELS: Record<SortBy, string> = {
   read: "最近阅读",
@@ -32,7 +33,19 @@ interface Props {
   onQueryChange: (v: string) => void;
   onImport: () => void;
   importing: boolean;
+  filter: PaperFilter;
+  onFilterChange: (filter: PaperFilter) => void;
+  layout: LibraryLayout;
+  onLayoutChange: (layout: LibraryLayout) => void;
 }
+
+const FILTER_LABELS: Record<PaperFilter, string> = {
+  all: "全部",
+  unread: "未读",
+  reading: "在读",
+  read: "已读",
+  starred: "星标",
+};
 
 export function TopBar({
   title,
@@ -43,6 +56,10 @@ export function TopBar({
   onQueryChange,
   onImport,
   importing,
+  filter,
+  onFilterChange,
+  layout,
+  onLayoutChange,
 }: Props) {
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -61,9 +78,9 @@ export function TopBar({
   }, []);
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-zp-border px-4">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-zp-border bg-white px-3 dark:bg-zp-surface">
       <div className="flex min-w-0 items-baseline gap-2.5">
-        <h1 className="truncate text-[20px] leading-[1.3] font-medium text-zp-primary">
+        <h1 className="truncate text-[17px] leading-[1.3] font-medium text-zp-primary">
           {title}
         </h1>
         <span className="shrink-0 text-[13px] tabular-nums text-zp-quaternary">
@@ -81,7 +98,7 @@ export function TopBar({
             onChange={(e) => onQueryChange(e.target.value)}
             placeholder="搜索标题、作者或摘要…"
             aria-label="搜索论文"
-            className="h-9 w-52 pl-8 pr-8"
+            className="h-8 w-64 rounded-md border-zp-border bg-zp-surface pl-8 pr-8 shadow-none"
           />
           {query && (
             <button
@@ -95,8 +112,16 @@ export function TopBar({
           )}
         </div>
 
+        <Select value={filter} onValueChange={(v) => onFilterChange(v as PaperFilter)}>
+          <SelectTrigger className="h-8 w-24 border-zp-border shadow-none" aria-label="筛选论文">
+            <span className="flex-1 text-left">{FILTER_LABELS[filter]}</span>
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(FILTER_LABELS) as PaperFilter[]).map((key) => <SelectItem key={key} value={key}>{FILTER_LABELS[key]}</SelectItem>)}
+          </SelectContent>
+        </Select>
         <Select value={sortBy} onValueChange={(v) => onSortChange(v as SortBy)}>
-          <SelectTrigger className="h-9 w-32" aria-label="排序方式">
+          <SelectTrigger className="h-8 w-28 border-zp-border shadow-none" aria-label="排序方式">
             <span className="flex-1 text-left">{SORT_LABELS[sortBy]}</span>
           </SelectTrigger>
           <SelectContent>
@@ -107,18 +132,13 @@ export function TopBar({
             ))}
           </SelectContent>
         </Select>
-        <Button
-          onClick={onImport}
-          disabled={importing}
-          className="bg-zp-primary text-white hover:bg-zp-primary/90"
-        >
-          {importing ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Plus className="mr-2 h-4 w-4" />
-          )}
-          导入论文
-        </Button>
+        <div className="flex items-center rounded-md border border-zp-border bg-zp-surface p-0.5">
+          <button type="button" aria-label="列表视图" title="列表视图" onClick={() => onLayoutChange("list")} className={`flex h-6 w-7 items-center justify-center rounded ${layout === "list" ? "bg-white text-zp-primary shadow-sm dark:bg-zp-surface-active" : "text-zp-quaternary"}`}><List className="h-3.5 w-3.5" /></button>
+          <button type="button" aria-label="卡片视图" title="卡片视图" onClick={() => onLayoutChange("grid")} className={`flex h-6 w-7 items-center justify-center rounded ${layout === "grid" ? "bg-white text-zp-primary shadow-sm dark:bg-zp-surface-active" : "text-zp-quaternary"}`}><LayoutGrid className="h-3.5 w-3.5" /></button>
+        </div>
+        <button type="button" onClick={onImport} disabled={importing} aria-label="导入论文" title="导入论文" className="flex h-8 w-8 items-center justify-center rounded-md bg-zp-primary text-white transition-opacity hover:opacity-90 disabled:opacity-50">
+          {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+        </button>
       </div>
     </header>
   );

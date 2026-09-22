@@ -9,7 +9,6 @@ import { ChatComposer } from "@/components/ChatComposer";
 import { CitationBadge } from "@/components/CitationBadge";
 import { LiveClock } from "@/components/LiveClock";
 import { ThinkingPanel } from "@/components/ThinkingPanel";
-import { TimingLine } from "@/components/TimingLine";
 import { ToolTrace, type LiveToolStep } from "@/components/ToolTrace";
 import {
   katexOptions,
@@ -443,11 +442,6 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
           <div className="flex flex-1 flex-col items-start justify-center gap-3 px-3 py-10 text-muted-foreground">
             <div className="rounded-2xl bg-accent p-3 text-primary"><MessageSquare className="h-6 w-6" strokeWidth={1.5} /></div>
             <h2 className="text-lg font-semibold text-foreground">{paperId ? "一起读懂这篇论文" : "连接你的研究线索"}</h2>
-            <p className="text-sm">
-              {paperId
-                ? "就这篇论文提问，回答会优先依据本篇内容并附原文引用"
-                : "跨论文提问，回答会附原文引用"}
-            </p>
             <div className="mt-3 flex w-full flex-col gap-2">
               {(paperId ? ["概括这篇论文的核心贡献", "这篇论文有哪些局限？", "用通俗的语言解释核心方法"] : ["总结论文库中的主要研究方向", "比较相关论文的研究方法"]).map((prompt) => <button key={prompt} onClick={() => setInput(prompt)} className="rounded-xl border px-3 py-2.5 text-left text-xs transition-colors hover:bg-accent hover:text-foreground">{prompt}</button>)}
             </div>
@@ -461,9 +455,8 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
                 </div>
               </div>
             ) : (
-              <div key={i} className="flex justify-start">
+              <div key={i} className="group flex justify-start">
                 <div className="chat-assistant min-w-0 w-full px-1 py-1">
-                  <div className="mb-3 text-xs font-medium text-primary">ZoomPaper Plus <span className="ml-1 text-muted-foreground">· AI 助手</span></div>
                   {/* 回答上方 meta 区：思考胶囊（本轮）+ 工具调用胶囊（均默认收纳，网页版风格） */}
                   {(m.role === "assistant" &&
                     i === messages.length - 1 &&
@@ -484,9 +477,8 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
                     onJumpPage={onJumpPage}
                     currentPaperId={paperId ?? null}
                   />
-                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/60 pt-2">
-                    <TimingLine timing={m.timing} />
-                    <button aria-label="复制回答" title="复制回答" className="ml-auto rounded-md p-1.5 text-muted-foreground hover:bg-accent" onClick={async () => { try { await navigator.clipboard.writeText(m.content); setCopiedIndex(i); } catch { setError("复制失败，请重试"); } }}>{copiedIndex === i ? <Check size={14} /> : <Copy size={14} />}</button>
+                  <div className="mt-2 flex justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                    <button aria-label="复制回答" title="复制回答" className="rounded-md p-1.5 text-muted-foreground hover:bg-accent" onClick={async () => { try { await navigator.clipboard.writeText(m.content); setCopiedIndex(i); } catch { setError("复制失败，请重试"); } }}>{copiedIndex === i ? <Check size={14} /> : <Copy size={14} />}</button>
                   </div>
                 </div>
               </div>
@@ -511,11 +503,6 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
                     </button>
                   ))}
                 </div>
-              )}
-              {pending.free_text && (
-                <p className="mt-1.5 text-[11px] text-muted-foreground">
-                  也可以直接在下方输入框作答后发送
-                </p>
               )}
               <div className="mt-2">
                 <ToolTrace trace={liveTrace} />
@@ -688,9 +675,6 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
           </button>
         </div>
         <WebToggle on={webOn} onChange={setWebOn} configured={webConfigured} disabled={!!pending || sending} />
-        {pending && (
-          <span className="text-[11px] text-muted-foreground">等待你回答 AI 的澄清问题</span>
-        )}
       </div>
 
         }

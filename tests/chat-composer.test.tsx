@@ -51,7 +51,7 @@ it("grows for multiline text and caps its height with scrolling", () => {
     value: 24,
   });
   rerender(<ChatComposer {...props} value="" />);
-  expect(input.style.height).toBe("72px");
+  expect(input.style.height).toBe("48px");
   expect(input.style.overflowY).toBe("hidden");
 });
 it("allows composing the next message while generating but only exposes stop", () => {
@@ -63,12 +63,12 @@ it("allows composing the next message while generating but only exposes stop", (
   fireEvent.click(screen.getByLabelText("停止生成"));
   expect(stop).toHaveBeenCalledOnce();
 });
-it("disables sending whitespace and keeps keyboard help outside the placeholder", () => {
+it("disables sending whitespace and keeps the composer free of persistent help text", () => {
   render(<ChatComposer {...props} value="  " />);
   expect(
     (screen.getByLabelText("发送消息") as HTMLButtonElement).disabled,
   ).toBe(true);
-  expect(screen.getByText("Enter 发送 · Shift + Enter 换行")).toBeTruthy();
+  expect(screen.queryByText("Enter 发送 · Shift + Enter 换行")).toBeNull();
   expect(screen.getByRole("textbox").getAttribute("placeholder")).toBe(
     "聊聊这篇论文…",
   );

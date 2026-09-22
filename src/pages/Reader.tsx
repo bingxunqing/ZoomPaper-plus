@@ -14,8 +14,8 @@ import {
   setPaperStatus,
   type Paper,
 } from "@/lib/api";
-import { formatDuration } from "@/lib/utils";
-import { ArrowLeft, BookCheck, Clock } from "lucide-react";
+import { displayPaperTitle, formatDuration } from "@/lib/utils";
+import { ArrowLeft, BookCheck, Clock, MessageSquare } from "lucide-react";
 
 interface Props {
   paperId: string;
@@ -106,7 +106,7 @@ export function Reader({ paperId, initialPageIdx, onBack }: Props) {
         </Button>
         <div className="min-w-0">
           <h1 className="truncate text-xl font-bold tracking-tight">
-            {paper?.title ?? "加载中…"}
+            {paper ? displayPaperTitle(paper.title) : "加载中…"}
           </h1>
           {paper?.authors && (
             <p className="text-sm text-muted-foreground">{paper.authors}</p>
@@ -221,13 +221,8 @@ export function Reader({ paperId, initialPageIdx, onBack }: Props) {
               }
             />
           ) : (
-            <div className="ml-2 flex w-10 shrink-0 items-start justify-center rounded-lg border border-dashed py-3 text-muted-foreground">
-              <span
-                className="text-xs [writing-mode:vertical-rl]"
-                title="解析完成后可用问答"
-              >
-                问答（需先解析）
-              </span>
+            <div className="ml-2 flex w-10 shrink-0 items-start justify-center py-3 text-muted-foreground" title="解析完成后可用论文助手">
+              <MessageSquare className="h-4 w-4" />
             </div>
           )}
         </div>

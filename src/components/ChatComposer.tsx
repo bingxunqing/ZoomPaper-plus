@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { ArrowUp, Square } from "lucide-react";
 
 interface Props {
@@ -23,7 +23,6 @@ export function ChatComposer({
   placeholder,
   controls,
 }: Props) {
-  const helpId = useId();
   const ref = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
   useLayoutEffect(() => {
@@ -31,7 +30,7 @@ export function ChatComposer({
     if (!element) return;
     const resize = () => {
       element.style.height = "0px";
-      element.style.height = `${Math.min(180, Math.max(72, element.scrollHeight))}px`;
+      element.style.height = `${Math.min(180, Math.max(48, element.scrollHeight))}px`;
       element.style.overflowY = element.scrollHeight > 180 ? "auto" : "hidden";
     };
     resize();
@@ -51,7 +50,6 @@ export function ChatComposer({
       <textarea
         ref={ref}
         aria-label="消息输入框"
-        aria-describedby={helpId}
         placeholder={placeholder}
         value={value}
         rows={2}
@@ -93,9 +91,6 @@ export function ChatComposer({
           )}
         </button>
       </div>
-      <p id={helpId} className="chat-input-help">
-        Enter 发送 · Shift + Enter 换行
-      </p>
     </div>
   );
 }

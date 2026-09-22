@@ -9,7 +9,7 @@ import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { useMemo, useState } from "react";
 import { CalendarClock, Check, MoreHorizontal, Star } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
-import { cn } from "@/lib/utils";
+import { cn, displayPaperTitle } from "@/lib/utils";
 import { folderColor } from "@/lib/folderColors";
 import { PAPER_DRAG_MIME } from "@/lib/folders";
 import type { Folder, Paper, ReadingPlan, ReadingStatus } from "@/lib/api";
@@ -232,7 +232,7 @@ export function PaperCard(props: PaperCardProps) {
                     />
                   ) : (
                     <h3 className="line-clamp-2 text-[15px] leading-[1.4] font-medium text-zp-primary">
-                      {paper.title}
+                      {displayPaperTitle(paper.title)}
                     </h3>
                   )}
                 </div>

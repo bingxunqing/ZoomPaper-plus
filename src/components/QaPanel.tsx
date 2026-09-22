@@ -6,7 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { deleteConversation, listConversations, type Conversation } from "@/lib/api";
 import { formatTime } from "@/lib/utils";
 import type { AnnotationRect } from "@/lib/api";
-import { History, PanelRightClose, PanelRightOpen, Plus, Trash2 } from "lucide-react";
+import { CircleHelp, History, PanelRightClose, PanelRightOpen, Plus, Trash2 } from "lucide-react";
 
 const WIDTH_KEY = "zoompaper.qaWidth";
 const COLLAPSED_KEY = "zoompaper.qaCollapsed";
@@ -249,28 +249,24 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
 
   return (
     <div ref={rootRef} className="flex min-h-0 shrink-0">
-      {/* 分隔条：8px hit 区，hover/拖拽显示指示线；收纳时隐藏 */}
+      {/* 保留不可见拖拽热区，视觉上让正文与助手自然衔接。 */}
       {!collapsed && (
         <div
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
-          className="group relative w-2 shrink-0 cursor-col-resize touch-none"
+          className="relative w-2 shrink-0 cursor-col-resize touch-none"
           role="separator"
           aria-orientation="vertical"
           aria-label="调整问答栏宽度"
         >
-          <div
-            className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors ${
-              dragging ? "bg-primary/60" : "bg-border group-hover:bg-primary/40"
-            }`}
-          />
+          <div className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 ${dragging ? "bg-primary/30" : "bg-transparent"}`} />
         </div>
       )}
 
       <aside
-        className="flex min-h-0 shrink-0 flex-col overflow-hidden rounded-lg border bg-card"
+        className="flex min-h-0 shrink-0 flex-col overflow-hidden bg-[#fbfbfa] dark:bg-[#191919]"
         style={{
           width: collapsed ? COLLAPSED_WIDTH : width,
           marginLeft: collapsed ? 8 : 0,
@@ -283,18 +279,17 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
         <button
           onClick={() => toggleCollapsed(false)}
           title="展开对话"
-          className={`flex-col items-center gap-2 py-3 text-muted-foreground transition-colors hover:text-foreground ${
+          className={`items-start px-2 py-3 text-muted-foreground transition-colors hover:text-foreground ${
             collapsed ? "flex flex-1" : "hidden"
           }`}
         >
           <PanelRightOpen className="h-4 w-4" />
-          <span className="text-xs [writing-mode:vertical-rl]">对话</span>
         </button>
 
         {/* 展开态：display:none 保持挂载，不丢会话状态 */}
         <div className={`min-h-0 flex-1 flex-col ${collapsed ? "hidden" : "flex"}`}>
-          <div className="flex items-center justify-between border-b px-4 py-3">
-            <div><p className="text-sm font-semibold">论文助手</p><p className="mt-0.5 text-[11px] text-muted-foreground">围绕原文，深入讨论</p></div>
+          <div className="flex h-12 items-center justify-between px-4">
+            <p className="text-sm font-medium">论文助手</p>
             <div className="flex items-center gap-0.5">
               <button onClick={startNew} disabled={sending} title="新对话" aria-label="新对话" className="rounded-md p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-50"><Plus className="h-4 w-4" /></button>
               {/* 历史会话下拉：新对话 / 当前论文历史会话选择 / 删除 */}
@@ -360,6 +355,16 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
                   )}
                 </PopoverContent>
               </Popover>
+              <Popover>
+                <PopoverTrigger title="帮助" aria-label="帮助" className="pressable rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+                  <CircleHelp className="h-4 w-4" />
+                </PopoverTrigger>
+                <PopoverContent align="end" sideOffset={6} className="w-72 space-y-2 p-3 text-xs leading-relaxed text-muted-foreground">
+                  <p><strong className="text-foreground">快捷键</strong>　Enter 发送，Shift + Enter 换行。</p>
+                  <p><strong className="text-foreground">模式</strong>　快速适合直接问答；深度会进行多步检索与分析。</p>
+                  <p><strong className="text-foreground">引用</strong>　在论文中划词后选择“提问”，原文会自动附到下一条消息。</p>
+                </PopoverContent>
+              </Popover>
               <button
                 onClick={() => toggleCollapsed(true)}
                 title="收起对话"
@@ -369,7 +374,7 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
               </button>
             </div>
           </div>
-          <div className="flex min-h-0 flex-1 flex-col p-3">
+          <div className="flex min-h-0 flex-1 flex-col px-3 pb-3">
             {historyLoading ? <div role="status" className="flex flex-1 items-center justify-center text-sm text-muted-foreground">正在恢复对话…</div> : <QaChat
               key={`${paperId}:${chatRevision}`}
               paperId={paperId}
