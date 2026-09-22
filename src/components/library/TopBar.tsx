@@ -96,7 +96,7 @@ export function TopBar({
             ref={searchRef}
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
-            placeholder="搜索标题、作者或摘要…"
+            placeholder=""
             aria-label="搜索论文"
             className="h-8 w-64 rounded-md border-zp-border bg-zp-surface pl-8 pr-8 shadow-none"
           />
@@ -121,7 +121,7 @@ export function TopBar({
           </SelectContent>
         </Select>
         <Select value={sortBy} onValueChange={(v) => onSortChange(v as SortBy)}>
-          <SelectTrigger className="h-8 w-28 border-zp-border shadow-none" aria-label="排序方式">
+          <SelectTrigger className="h-8 w-32 border-zp-border shadow-none" aria-label="排序方式">
             <span className="flex-1 text-left">{SORT_LABELS[sortBy]}</span>
           </SelectTrigger>
           <SelectContent>

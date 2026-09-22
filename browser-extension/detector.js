@@ -100,5 +100,22 @@ export function detectPaper({
     pdfUrl = candidates[0]?.href || null;
   }
 
-  return pdfUrl ? { pdfUrl, title: title?.trim() || "未命名论文", sourceUrl: page } : null;
+  const githubUrl = links
+    .map((link) => absoluteUrl(link.href, pageUrl))
+    .find((value) => {
+      if (!value) return false;
+      try {
+        const url = new URL(value);
+        return url.hostname === "github.com" && url.pathname.split("/").filter(Boolean).length >= 2;
+      } catch {
+        return false;
+      }
+    }) || null;
+
+  return pdfUrl ? {
+    pdfUrl,
+    title: title?.trim() || "未命名论文",
+    sourceUrl: page,
+    ...(githubUrl ? { githubUrl } : {}),
+  } : null;
 }

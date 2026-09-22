@@ -2,7 +2,6 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { QaChat } from "@/components/QaChat";
 import { ConversationDeleteDialog } from "@/components/ConversationDeleteDialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Separator } from "@/components/ui/separator";
 import { deleteConversation, listConversations, type Conversation } from "@/lib/api";
 import { formatTime } from "@/lib/utils";
 import type { AnnotationRect } from "@/lib/api";
@@ -292,7 +291,7 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
             <p className="text-sm font-medium">论文助手</p>
             <div className="flex items-center gap-0.5">
               <button onClick={startNew} disabled={sending} title="新对话" aria-label="新对话" className="rounded-md p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-50"><Plus className="h-4 w-4" /></button>
-              {/* 历史会话下拉：新对话 / 当前论文历史会话选择 / 删除 */}
+              {/* 历史会话下拉：当前论文历史会话选择 / 删除 */}
               <Popover open={historyOpen} onOpenChange={setHistoryOpen}>
                 <PopoverTrigger
                   disabled={sending}
@@ -302,15 +301,6 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
                   <History className="h-4 w-4" />
                 </PopoverTrigger>
                 <PopoverContent align="end" sideOffset={4} className="w-64 p-1">
-                  <button
-                    onClick={startNew}
-                    disabled={sending}
-                    className="pressable flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] font-medium text-primary transition-colors hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    新对话
-                  </button>
-                  <Separator className="my-1" />
                   {historyError && (
                     <p className="px-2 py-1 text-[11px] text-destructive">{historyError}</p>
                   )}

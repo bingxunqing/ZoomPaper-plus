@@ -31,7 +31,7 @@ import {
   type PendingAsk,
   type QaMessage,
 } from "@/lib/api";
-import { FileSearch, Loader2, MessageSquare, Copy, Check, ArrowDown, X } from "lucide-react";
+import { FileSearch, Loader2, Copy, Check, ArrowDown, X } from "lucide-react";
 
 interface Props {
   /** null/缺省 = 跨论文问答 */
@@ -439,13 +439,7 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
             加载会话…
           </div>
         ) : messages.length === 0 && !sending ? (
-          <div className="flex flex-1 flex-col items-start justify-center gap-3 px-3 py-10 text-muted-foreground">
-            <div className="rounded-2xl bg-accent p-3 text-primary"><MessageSquare className="h-6 w-6" strokeWidth={1.5} /></div>
-            <h2 className="text-lg font-semibold text-foreground">{paperId ? "一起读懂这篇论文" : "连接你的研究线索"}</h2>
-            <div className="mt-3 flex w-full flex-col gap-2">
-              {(paperId ? ["概括这篇论文的核心贡献", "这篇论文有哪些局限？", "用通俗的语言解释核心方法"] : ["总结论文库中的主要研究方向", "比较相关论文的研究方法"]).map((prompt) => <button key={prompt} onClick={() => setInput(prompt)} className="rounded-xl border px-3 py-2.5 text-left text-xs transition-colors hover:bg-accent hover:text-foreground">{prompt}</button>)}
-            </div>
-          </div>
+          <div className="flex-1" />
         ) : (
           messages.map((m, i) =>
             m.role === "user" ? (

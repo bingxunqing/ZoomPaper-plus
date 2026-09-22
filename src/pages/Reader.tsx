@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,7 +16,7 @@ import {
   type Paper,
 } from "@/lib/api";
 import { displayPaperTitle, formatDuration } from "@/lib/utils";
-import { ArrowLeft, BookCheck, Clock, MessageSquare } from "lucide-react";
+import { ArrowLeft, BookCheck, Clock, GitFork, MessageSquare } from "lucide-react";
 
 interface Props {
   paperId: string;
@@ -114,6 +115,18 @@ export function Reader({ paperId, initialPageIdx, onBack }: Props) {
         </div>
         {paper && (
           <div className="ml-auto flex shrink-0 items-center gap-3">
+            {paper.github_url && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => void openUrl(paper.github_url!)}
+                title="打开 GitHub 项目"
+                aria-label="打开 GitHub 项目"
+                className="pressable"
+              >
+                <GitFork className="h-4 w-4" />
+              </Button>
+            )}
             <span
               className="flex items-center gap-1.5 text-sm text-muted-foreground"
               title="本篇累计阅读时长"

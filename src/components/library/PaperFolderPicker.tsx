@@ -126,10 +126,6 @@ export function PaperFolderPicker({ open, onOpenChange, papers, folders, onChang
           <DialogPrimitive.Title className="font-heading text-base font-medium">
             添加到文件夹
           </DialogPrimitive.Title>
-          <DialogPrimitive.Description className="text-sm text-muted-foreground">
-            已选 {papers.length} 篇论文 · 勾选即加入，取消勾选即移出（多归属）
-          </DialogPrimitive.Description>
-
           <div className="mt-3 max-h-72 overflow-y-auto pr-1">
             {tree.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">

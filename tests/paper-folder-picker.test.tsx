@@ -30,6 +30,8 @@ function paper(folderIds: string[]): Paper {
     parse_status: "ready",
     starred: false,
     finished_at: null,
+    source_url: null,
+    github_url: null,
     total_read_seconds: 0,
     folder_ids: folderIds,
   };

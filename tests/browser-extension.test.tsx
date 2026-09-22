@@ -15,6 +15,17 @@ describe("browser extension paper detection", () => {
     });
   });
 
+  it("keeps a GitHub repository link from the paper page", () => {
+    expect(detectPaper({
+      pageUrl: "https://aclanthology.org/2026.acl-long.8/",
+      title: "A Paper",
+      citationPdfUrl: "/2026.acl-long.8.pdf",
+      links: [{ href: "https://github.com/example/paper-code/tree/main", text: "Code" }],
+    })).toMatchObject({
+      githubUrl: "https://github.com/example/paper-code/tree/main",
+    });
+  });
+
   it("recognizes arXiv and ignores supplementary PDFs", () => {
     expect(detectPaper({
       pageUrl: "https://arxiv.org/abs/2601.12345",

@@ -55,7 +55,6 @@ export function SearchPage({ onOpenPaper }: Props) {
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">搜索论文</h1>
-        <p className="text-sm text-muted-foreground">关键词搜索无需模型；语义搜索按含义查找，英文论文建议使用英文查询</p>
       </div>
 
       <div className="flex gap-2" role="group" aria-label="检索方式">{[["keyword", "关键词"], ["semantic", "语义"]].map(([value, label]) => <button key={value} disabled={searching} aria-pressed={method === value} onClick={() => { setMethod(value); setHits(null); }} className={`rounded-lg px-3 py-1.5 text-sm ${method === value ? "bg-accent text-primary" : "text-muted-foreground"}`}>{label}</button>)}</div>
@@ -114,7 +113,6 @@ export function SearchPage({ onOpenPaper }: Props) {
         </div>
       )}
 
-      {hits === null && !searching && !error && <div className="rounded-xl border bg-card p-8"><SearchIcon className="mb-3 size-7 text-primary" /><h2 className="font-medium">从一个研究问题开始</h2><p className="mt-2 text-sm text-muted-foreground">选择论文范围，输入概念或问题。点击结果可回到原文。</p></div>}
       {hits && hits.length > 0 && <p className="text-xs text-muted-foreground">「{submittedQuery}」· 找到 {hits.length} 个相关段落</p>}
       {hits && hits.length > 0 && (
         <div className="flex flex-col gap-3">

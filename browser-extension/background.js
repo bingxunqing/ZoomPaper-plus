@@ -80,6 +80,7 @@ async function openInZoomPaper(paper, tabId) {
   deepLink.searchParams.set("pdf", paper.pdfUrl);
   deepLink.searchParams.set("title", paper.title);
   if (paper.sourceUrl) deepLink.searchParams.set("source", paper.sourceUrl);
+  if (paper.githubUrl) deepLink.searchParams.set("github", paper.githubUrl);
   deepLink.searchParams.set("request", crypto.randomUUID());
   await chrome.tabs.update(tabId, { url: deepLink.href });
 }

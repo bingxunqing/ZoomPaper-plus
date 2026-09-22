@@ -37,6 +37,10 @@ export interface Paper {
   starred: boolean;
   /** 最近一次标记已读时间（epoch 秒）；null = 未读完/已取消 */
   finished_at: number | null;
+  /** 浏览器导入时的论文来源页 */
+  source_url: string | null;
+  /** 论文关联的 GitHub 仓库 */
+  github_url: string | null;
   /** 累计阅读时长（秒），由阅读会话聚合 */
   total_read_seconds: number;
   /** 所属文件夹 id 列表（多归属；空数组 = 未分类） */
@@ -237,8 +241,17 @@ export const getPaper = (paperId: string) => invoke<Paper>("get_paper", { paperI
 export const getPaperMd = (paperId: string) => invoke<string>("get_paper_md", { paperId });
 export const importPdf = (sourcePath: string) =>
   invoke<Paper>("import_pdf", { sourcePath });
-export const importPdfUrl = (url: string, suggestedTitle?: string | null) =>
-  invoke<Paper>("import_pdf_url", { url, suggestedTitle: suggestedTitle ?? null });
+export const importPdfUrl = (
+  url: string,
+  suggestedTitle?: string | null,
+  sourceUrl?: string | null,
+  githubUrl?: string | null,
+) => invoke<Paper>("import_pdf_url", {
+  url,
+  suggestedTitle: suggestedTitle ?? null,
+  sourceUrl: sourceUrl ?? null,
+  githubUrl: githubUrl ?? null,
+});
 export const parsePdf = (paperId: string) => invoke<Paper>("parse_pdf", { paperId });
 export const deletePaper = (paperId: string) => invoke<void>("delete_paper", { paperId });
 

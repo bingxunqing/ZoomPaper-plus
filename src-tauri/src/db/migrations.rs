@@ -150,6 +150,11 @@ const MIGRATIONS: &[&str] = &[
     FROM reading_plans rp, json_each(rp.paper_ids) je
     WHERE rp.type = 'papers' AND rp.paper_ids IS NOT NULL;
     "#,
+    // v12：保留浏览器导入的来源页，并记录论文关联的 GitHub 仓库。
+    r#"
+    ALTER TABLE papers ADD COLUMN source_url TEXT;
+    ALTER TABLE papers ADD COLUMN github_url TEXT;
+    "#,
 ];
 
 /// 按版本顺序执行未应用的迁移。
@@ -192,7 +197,7 @@ mod tests {
 
         // 升级
         migrate(&conn).unwrap();
-        assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 11);
+        assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 12);
 
         // 论文数据无损
         let title: String = conn
@@ -223,6 +228,8 @@ mod tests {
             .collect::<Result<_, _>>()
             .unwrap();
         assert!(cols.contains(&"finished_at".to_string()));
+        assert!(cols.contains(&"source_url".to_string()));
+        assert!(cols.contains(&"github_url".to_string()));
         conn.execute(
             "INSERT INTO reading_sessions (paper_id, started_at, seconds) VALUES ('paper-1', 1700000003, 120)",
             [],
@@ -326,7 +333,7 @@ mod tests {
         .unwrap();
 
         migrate(&conn).unwrap();
-        assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 11);
+        assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 12);
 
         let items: Vec<(String, Option<i64>)> = conn
             .prepare(

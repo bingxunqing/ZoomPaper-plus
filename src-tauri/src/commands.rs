@@ -123,13 +123,14 @@ const PAPER_SELECT: &str = "
            p.created_at, p.last_read_at, p.reading_status, p.parse_status, p.starred,
            p.finished_at,
            (SELECT COALESCE(SUM(rs.seconds), 0) FROM reading_sessions rs WHERE rs.paper_id = p.id),
+           p.source_url, p.github_url,
            GROUP_CONCAT(pf.folder_id)
     FROM papers p
     LEFT JOIN paper_folders pf ON pf.paper_id = p.id
 ";
 
 fn row_to_paper(row: &rusqlite::Row) -> rusqlite::Result<Paper> {
-    let folder_ids: Option<String> = row.get(14)?;
+    let folder_ids: Option<String> = row.get(16)?;
     let folder_ids = folder_ids
         .map(|s| {
             s.split(',')
@@ -153,6 +154,8 @@ fn row_to_paper(row: &rusqlite::Row) -> rusqlite::Result<Paper> {
         starred: row.get::<_, i64>(11)? != 0,
         finished_at: row.get(12)?,
         total_read_seconds: row.get(13)?,
+        source_url: row.get(14)?,
+        github_url: row.get(15)?,
         folder_ids,
     })
 }
@@ -180,8 +183,23 @@ pub fn get_paper(db: State<'_, Db>, paper_id: String) -> Result<Paper, String> {
 fn get_paper_inner(db: &Db, paper_id: &str) -> Result<Paper, String> {
     let conn = db.conn();
     let sql = format!("{PAPER_SELECT} WHERE p.id = ?1 GROUP BY p.id");
-    conn.query_row(&sql, [paper_id], row_to_paper)
-        .map_err(|e| e.to_string())
+    let mut paper = conn
+        .query_row(&sql, [paper_id], row_to_paper)
+        .map_err(|e| e.to_string())?;
+    // 旧库论文没有 github_url；首次打开时从已有 Markdown 轻量回填，无需重新解析。
+    if paper.github_url.is_none() && paper.parse_status == "ready" {
+        if let Ok(markdown) = std::fs::read_to_string(&paper.md_path) {
+            if let Some(url) = extract_github_repo_url(&markdown) {
+                conn.execute(
+                    "UPDATE papers SET github_url = ?2 WHERE id = ?1",
+                    params![paper_id, &url],
+                )
+                .map_err(|e| e.to_string())?;
+                paper.github_url = Some(url);
+            }
+        }
+    }
+    Ok(paper)
 }
 
 /// 阅读入口记录最近访问时间，普通元数据查询保持只读。
@@ -287,6 +305,17 @@ fn import_pdf_inner_with_title(
     source_path: &str,
     suggested_title: Option<&str>,
 ) -> Result<Paper, String> {
+    import_pdf_inner_with_metadata(db, library, source_path, suggested_title, None, None)
+}
+
+fn import_pdf_inner_with_metadata(
+    db: &Db,
+    library: &Path,
+    source_path: &str,
+    suggested_title: Option<&str>,
+    source_url: Option<&str>,
+    github_url: Option<&str>,
+) -> Result<Paper, String> {
     let id = Uuid::new_v4().to_string();
     let src = Path::new(source_path);
     let pdf_path = crate::fs::copy_pdf(src, library, &id).map_err(|e| e.to_string())?;
@@ -313,6 +342,15 @@ fn import_pdf_inner_with_title(
         parse_status: "unparsed".to_string(),
         starred: false,
         finished_at: None,
+        source_url: source_url.and_then(|raw| {
+            reqwest::Url::parse(raw.trim())
+                .ok()
+                .filter(|url| url.scheme() == "https")
+                .map(|url| url.to_string())
+        }),
+        github_url: github_url
+            .and_then(normalize_github_repo_url)
+            .or_else(|| source_url.and_then(normalize_github_repo_url)),
         total_read_seconds: 0,
         folder_ids: vec![],
     };
@@ -320,8 +358,8 @@ fn import_pdf_inner_with_title(
     let conn = db.conn();
     conn.execute(
         "INSERT INTO papers (id, title, authors, abstract, pdf_path, md_path, \
-         blog_md_path, created_at, last_read_at, reading_status, parse_status, starred) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+         blog_md_path, created_at, last_read_at, reading_status, parse_status, starred, source_url, github_url) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             &paper.id,
             &paper.title,
@@ -335,6 +373,8 @@ fn import_pdf_inner_with_title(
             &paper.reading_status,
             &paper.parse_status,
             paper.starred as i64,
+            paper.source_url,
+            paper.github_url,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -343,6 +383,37 @@ fn import_pdf_inner_with_title(
 }
 
 const MAX_REMOTE_PDF_BYTES: u64 = 100 * 1024 * 1024;
+
+fn normalize_github_repo_url(raw: &str) -> Option<String> {
+    let parsed = reqwest::Url::parse(raw.trim()).ok()?;
+    if parsed.scheme() != "https" || parsed.host_str()?.to_ascii_lowercase() != "github.com" {
+        return None;
+    }
+    let mut segments = parsed.path_segments()?.filter(|segment| !segment.is_empty());
+    let owner = segments.next()?;
+    let repo = segments.next()?.trim_end_matches(".git");
+    if owner.is_empty() || repo.is_empty() {
+        return None;
+    }
+    Some(format!("https://github.com/{owner}/{repo}"))
+}
+
+fn extract_github_repo_url(text: &str) -> Option<String> {
+    let marker = "https://github.com/";
+    let mut rest = text;
+    while let Some(start) = rest.find(marker) {
+        let candidate = &rest[start..];
+        let end = candidate
+            .find(|ch: char| ch.is_whitespace() || matches!(ch, ')' | ']' | '}' | '>' | '"' | '\'' | ',' | ';'))
+            .unwrap_or(candidate.len());
+        let candidate = candidate[..end].trim_end_matches(['.', ':']);
+        if let Some(url) = normalize_github_repo_url(candidate) {
+            return Some(url);
+        }
+        rest = &candidate[marker.len().min(candidate.len())..];
+    }
+    None
+}
 
 fn validate_remote_pdf_url(raw: &str) -> Result<reqwest::Url, String> {
     let url = reqwest::Url::parse(raw).map_err(|_| "论文链接格式无效".to_string())?;
@@ -372,6 +443,8 @@ pub async fn import_pdf_url(
     db: State<'_, Db>,
     url: String,
     suggested_title: Option<String>,
+    source_url: Option<String>,
+    github_url: Option<String>,
 ) -> Result<Paper, String> {
     let url = validate_remote_pdf_url(&url)?;
     let settings = Settings::load().map_err(|e| e.to_string())?;
@@ -439,11 +512,13 @@ pub async fn import_pdf_url(
         return Err(error);
     }
 
-    let result = import_pdf_inner_with_title(
+    let result = import_pdf_inner_with_metadata(
         &db,
         &library,
         &temp_path.to_string_lossy(),
         suggested_title.as_deref(),
+        source_url.as_deref(),
+        github_url.as_deref(),
     );
     let _ = tokio::fs::remove_file(&temp_path).await;
     result
@@ -494,12 +569,14 @@ pub async fn parse_pdf(db: State<'_, Db>, paper_id: String) -> Result<Paper, Str
 
     // 提取元数据并更新状态
     let (title, authors, abstract_text) = extract_metadata(&output.markdown);
+    let github_url = extract_github_repo_url(&output.markdown);
     {
         let conn = db.conn();
         conn.execute(
-            "UPDATE papers SET parse_status = 'ready', title = ?2, authors = ?3, abstract = ?4 \
+            "UPDATE papers SET parse_status = 'ready', title = ?2, authors = ?3, abstract = ?4, \
+             github_url = COALESCE(github_url, ?5) \
              WHERE id = ?1",
-            params![&paper_id, title, authors, abstract_text],
+            params![&paper_id, title, authors, abstract_text, github_url],
         )
         .map_err(|e| e.to_string())?;
     }
@@ -3697,6 +3774,20 @@ mod tests {
         assert_eq!(title, "Attention Is All You Need");
         assert_eq!(authors, None);
         assert!(abstract_text.unwrap().contains("dominant sequence transduction"));
+    }
+
+    #[test]
+    fn github_repo_url_is_normalized_and_extracted() {
+        assert_eq!(
+            normalize_github_repo_url("https://github.com/openai/codex/tree/main"),
+            Some("https://github.com/openai/codex".to_string())
+        );
+        assert_eq!(
+            extract_github_repo_url("Code: [repo](https://github.com/org/project)."),
+            Some("https://github.com/org/project".to_string())
+        );
+        assert!(normalize_github_repo_url("https://gitlab.com/org/project").is_none());
+        assert!(normalize_github_repo_url("http://github.com/org/project").is_none());
     }
 
     #[test]

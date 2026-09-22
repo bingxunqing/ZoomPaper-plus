@@ -361,11 +361,7 @@ function PlansSection({ plans, papers, todayFinished, onChanged, onOpenPaper }: 
         />
       )}
 
-      {plans.length === 0 && !showForm ? (
-        <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
-          还没有阅读计划，定一个目标监督自己吧
-        </div>
-      ) : (
+      {plans.length > 0 && (
         <div className="flex flex-col gap-3">
           {plans.map((plan) => (
             <PlanCard
