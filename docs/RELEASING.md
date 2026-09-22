@@ -1,45 +1,94 @@
 # ZoomPaper Plus 发布指南
 
-ZoomPaper Plus 使用 **GitHub Releases** 分发 macOS、Windows 和 Linux 安装包。GitHub Packages 主要用于 npm、Docker、Maven 等依赖包，不适合分发桌面安装包，因此本项目不需要配置 Packages。
+ZoomPaper Plus 使用 **GitHub Releases** 分发桌面安装包和浏览器扩展。仓库不再通过 GitHub Actions 编译或自动创建 Release，所有产物均在对应系统本地构建，由维护者手动上传。
 
-## 自动发布流程
+GitHub Packages 主要用于 npm、Docker、Maven 等依赖包，不适合分发桌面安装包，本项目无需使用。
 
-`.github/workflows/release.yml` 会在推送 `v*` 标签后执行以下步骤：
+## 发布前准备
 
-1. 检查标签、`package.json`、`Cargo.toml` 和 `tauri.conf.json` 的版本是否一致。
-2. 读取对应的 `docs/RELEASE-v<版本>.md` 作为 Release 说明。
-3. 并行构建 macOS DMG、Windows NSIS EXE、Linux DEB / AppImage，并打包浏览器扩展。
-4. 创建一个 Draft Release，填写标题和说明，并附加所有平台产物。
-5. 保持草稿状态，等待维护者检查后手动发布。
-
-Draft Release 只有仓库维护者能看到，不会立即通知用户，也不会出现在公开的最新版本下载链接中。
-
-## 发布新版本
-
-以 `0.2.3` 为例，先确认以下文件中的版本都是 `0.2.3`：
+发布 `X.Y.Z` 时，确认以下文件中的版本均为 `X.Y.Z`：
 
 - `package.json`
 - `package-lock.json`
 - `src-tauri/Cargo.toml`
 - `src-tauri/Cargo.lock`
 - `src-tauri/tauri.conf.json`
+- `browser-extension/manifest.json`
 
-准备 `docs/RELEASE-v0.2.3.md`，提交并推送 `main`，然后执行：
+同时准备发布说明 `docs/RELEASE-vX.Y.Z.md`，并完成：
 
 ```sh
-git tag -a v0.2.3 -m "ZoomPaper Plus v0.2.3"
-git push origin v0.2.3
+npm ci
+npm test
+npm run build
+cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-随后打开仓库的 **Actions → Release** 查看构建进度。成功后进入 **Releases → Drafts**，检查以下内容：
+## 本地构建
 
-- 标题和标签对应当前版本
-- 附件包含 macOS DMG、Windows EXE、Linux DEB / AppImage
-- 附件包含同版本的 `ZoomPaper-Plus-Connector_<版本>.zip`
-- 系统要求和已知限制准确
+Tauri 桌面安装包应在目标操作系统原生构建。macOS 本机生成 DMG，Windows 本机生成 EXE，Linux 本机生成 DEB 和 AppImage；不要假设 macOS 构建能替代 Windows 或 Linux 构建。
 
-确认无误后点击 **Publish release**。如果构建失败，不要创建同名新标签；修复后在 Actions 页面重新运行失败任务即可。
+### macOS Apple Silicon
 
-## 手动触发
+```sh
+npm ci
+npm run tauri build -- --bundles dmg --target aarch64-apple-darwin
+```
 
-也可以打开 **Actions → Release → Run workflow**，填写已经写入源码和发布说明文件的版本号。工作流仍然只创建草稿，不会直接公开发布。
+产物位于 `src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/`。
+
+### Windows x64
+
+```powershell
+npm ci
+npm run tauri build -- --bundles nsis
+```
+
+产物位于 `src-tauri/target/release/bundle/nsis/`。
+
+### Linux x64
+
+先安装 Tauri 所需系统依赖，再执行：
+
+```sh
+npm ci
+npm run tauri build -- --bundles deb,appimage
+```
+
+产物分别位于 `src-tauri/target/release/bundle/deb/` 和 `src-tauri/target/release/bundle/appimage/`。
+
+### 浏览器扩展
+
+在项目根目录执行：
+
+```sh
+VERSION=$(node -p "require('./package.json').version")
+(cd browser-extension && zip -r "../ZoomPaper-Plus-Connector_${VERSION}.zip" . -x "*.DS_Store")
+```
+
+## 文件命名
+
+上传前统一为：
+
+- `ZoomPaper.Plus_<版本>_aarch64.dmg`
+- `ZoomPaper.Plus_<版本>_x64-setup.exe`
+- `ZoomPaper.Plus_<版本>_amd64.deb`
+- `ZoomPaper.Plus_<版本>_amd64.AppImage`
+- `ZoomPaper-Plus-Connector_<版本>.zip`
+
+## 手动发布
+
+1. 提交版本改动并推送 `main`。
+2. 创建并推送标签：
+
+   ```sh
+   git tag -a vX.Y.Z -m "ZoomPaper Plus vX.Y.Z"
+   git push origin vX.Y.Z
+   ```
+
+3. 在 GitHub 的 **Releases → Draft a new release** 中选择对应标签。
+4. 标题填写 `ZoomPaper Plus vX.Y.Z`，正文粘贴 `docs/RELEASE-vX.Y.Z.md`。
+5. 上传已在本地构建的安装包和浏览器扩展。
+6. 核对文件名、版本、平台和说明后手动发布。
+
+安装包暂未进行 Apple 或 Microsoft 代码签名。发布前应在各目标系统至少完成一次安装和启动验收。
