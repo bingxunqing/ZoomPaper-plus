@@ -41,6 +41,8 @@ export interface Paper {
   source_url: string | null;
   /** 论文关联的 GitHub 仓库 */
   github_url: string | null;
+  /** 发表期刊或会议 */
+  venue: string | null;
   /** 累计阅读时长（秒），由阅读会话聚合 */
   total_read_seconds: number;
   /** 所属文件夹 id 列表（多归属；空数组 = 未分类） */
@@ -246,11 +248,13 @@ export const importPdfUrl = (
   suggestedTitle?: string | null,
   sourceUrl?: string | null,
   githubUrl?: string | null,
+  venue?: string | null,
 ) => invoke<Paper>("import_pdf_url", {
   url,
   suggestedTitle: suggestedTitle ?? null,
   sourceUrl: sourceUrl ?? null,
   githubUrl: githubUrl ?? null,
+  venue: venue ?? null,
 });
 export const parsePdf = (paperId: string) => invoke<Paper>("parse_pdf", { paperId });
 export const deletePaper = (paperId: string) => invoke<void>("delete_paper", { paperId });

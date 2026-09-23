@@ -155,6 +155,10 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE papers ADD COLUMN source_url TEXT;
     ALTER TABLE papers ADD COLUMN github_url TEXT;
     "#,
+    // v13：论文发表期刊或会议，用于论文库列表展示。
+    r#"
+    ALTER TABLE papers ADD COLUMN venue TEXT;
+    "#,
 ];
 
 /// 按版本顺序执行未应用的迁移。
@@ -197,7 +201,7 @@ mod tests {
 
         // 升级
         migrate(&conn).unwrap();
-        assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 12);
+        assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 13);
 
         // 论文数据无损
         let title: String = conn
@@ -230,6 +234,7 @@ mod tests {
         assert!(cols.contains(&"finished_at".to_string()));
         assert!(cols.contains(&"source_url".to_string()));
         assert!(cols.contains(&"github_url".to_string()));
+        assert!(cols.contains(&"venue".to_string()));
         conn.execute(
             "INSERT INTO reading_sessions (paper_id, started_at, seconds) VALUES ('paper-1', 1700000003, 120)",
             [],
@@ -333,7 +338,7 @@ mod tests {
         .unwrap();
 
         migrate(&conn).unwrap();
-        assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 12);
+        assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 13);
 
         let items: Vec<(String, Option<i64>)> = conn
             .prepare(

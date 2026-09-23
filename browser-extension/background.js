@@ -52,6 +52,8 @@ function scrapePaperPage() {
     pageUrl: location.href,
     title: meta("citation_title") || meta("dc.title") || document.querySelector("h1")?.textContent || document.title,
     citationPdfUrl: meta("citation_pdf_url"),
+    venue: meta("citation_conference_title") || meta("citation_journal_title") || meta("citation_inbook_title"),
+    publicationDate: meta("citation_publication_date") || meta("citation_date"),
     metaPdfUrls: [
       ...metaValues([
         'meta[name="eprints.document_url"]',
@@ -81,6 +83,7 @@ async function openInZoomPaper(paper, tabId) {
   deepLink.searchParams.set("title", paper.title);
   if (paper.sourceUrl) deepLink.searchParams.set("source", paper.sourceUrl);
   if (paper.githubUrl) deepLink.searchParams.set("github", paper.githubUrl);
+  if (paper.venue) deepLink.searchParams.set("venue", paper.venue);
   deepLink.searchParams.set("request", crypto.randomUUID());
   await chrome.tabs.update(tabId, { url: deepLink.href });
 }

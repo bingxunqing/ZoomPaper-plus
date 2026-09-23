@@ -31,6 +31,12 @@ function App() {
   const importQueue = useRef(Promise.resolve());
 
   useEffect(() => {
+    const preventNativeMenu = (event: MouseEvent) => event.preventDefault();
+    document.addEventListener("contextmenu", preventNativeMenu);
+    return () => document.removeEventListener("contextmenu", preventNativeMenu);
+  }, []);
+
+  useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
 
@@ -48,6 +54,7 @@ function App() {
         const title = link.searchParams.get("title")?.trim() || "浏览器中的论文";
         const sourceUrl = link.searchParams.get("source");
         const githubUrl = link.searchParams.get("github");
+        const venue = link.searchParams.get("venue");
         const requestId = link.searchParams.get("request") || rawLink;
         if (handledLinks.current.has(requestId)) continue;
         handledLinks.current.add(requestId);
@@ -57,7 +64,7 @@ function App() {
           setView({ name: "library" });
           setBrowserImport({ phase: "downloading", title, message: "正在安全下载 PDF…" });
           try {
-            const paper = await importPdfUrl(pdfUrl, title, sourceUrl, githubUrl);
+            const paper = await importPdfUrl(pdfUrl, title, sourceUrl, githubUrl, venue);
             if (disposed) return;
             setLibraryRefreshSignal((value) => value + 1);
             setBrowserImport({ phase: "parsing", title: paper.title, message: "已保存，正在提取正文与元数据…" });

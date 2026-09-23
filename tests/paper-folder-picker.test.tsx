@@ -32,6 +32,7 @@ function paper(folderIds: string[]): Paper {
     finished_at: null,
     source_url: null,
     github_url: null,
+    venue: null,
     total_read_seconds: 0,
     folder_ids: folderIds,
   };

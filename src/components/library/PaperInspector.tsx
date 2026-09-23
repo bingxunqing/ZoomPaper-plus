@@ -22,7 +22,7 @@ export function PaperInspector({ paper, folders, onClose, onOpen, onToggleStar, 
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-5">
         <h2 className="text-[15px] leading-6 font-semibold text-zp-primary">{displayPaperTitle(paper.title)}</h2>
-        {paper.authors && <p className="mt-2 text-xs leading-5 text-zp-secondary">{paper.authors}</p>}
+        {paper.venue && <p className="mt-2 text-xs leading-5 text-zp-secondary">{paper.venue}</p>}
 
         <div className="mt-4 flex items-center gap-1">
           <button type="button" onClick={onOpen} title="打开论文" className="flex h-8 w-8 items-center justify-center rounded-md bg-zp-primary text-white"><BookOpen className="h-4 w-4" /></button>

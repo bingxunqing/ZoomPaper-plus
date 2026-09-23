@@ -27,6 +27,8 @@ pub struct Paper {
     pub source_url: Option<String>,
     /// 论文正文或来源页中识别到的 GitHub 仓库地址。
     pub github_url: Option<String>,
+    /// 发表期刊或会议（如 ACL 2026、Nature、arXiv）。
+    pub venue: Option<String>,
     /// 累计阅读时长（秒），由 reading_sessions 聚合填充。
     pub total_read_seconds: i64,
     /// 所属文件夹 id 列表（多归属；空数组 = 未分类）。由 list/get 聚合填充。

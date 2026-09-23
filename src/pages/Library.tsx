@@ -135,11 +135,11 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
     else if (filter === "read") list = list.filter((p) => p.reading_status === "read");
     else if (filter === "starred") list = list.filter((p) => p.starred);
 
-    // 多关键词过滤：标题、作者与摘要均可检索，关键词取交集。
+    // 多关键词过滤：标题、期刊/会议、作者与摘要均可检索，关键词取交集。
     const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
     if (words.length) {
       list = list.filter((p) => {
-        const haystack = `${p.title} ${p.authors ?? ""} ${p.abstract ?? ""}`.toLocaleLowerCase();
+        const haystack = `${p.title} ${p.venue ?? ""} ${p.authors ?? ""} ${p.abstract ?? ""}`.toLocaleLowerCase();
         return words.every((word) => haystack.includes(word));
       });
     }

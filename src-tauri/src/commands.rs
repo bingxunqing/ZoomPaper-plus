@@ -123,14 +123,14 @@ const PAPER_SELECT: &str = "
            p.created_at, p.last_read_at, p.reading_status, p.parse_status, p.starred,
            p.finished_at,
            (SELECT COALESCE(SUM(rs.seconds), 0) FROM reading_sessions rs WHERE rs.paper_id = p.id),
-           p.source_url, p.github_url,
+           p.source_url, p.github_url, p.venue,
            GROUP_CONCAT(pf.folder_id)
     FROM papers p
     LEFT JOIN paper_folders pf ON pf.paper_id = p.id
 ";
 
 fn row_to_paper(row: &rusqlite::Row) -> rusqlite::Result<Paper> {
-    let folder_ids: Option<String> = row.get(16)?;
+    let folder_ids: Option<String> = row.get(17)?;
     let folder_ids = folder_ids
         .map(|s| {
             s.split(',')
@@ -156,6 +156,7 @@ fn row_to_paper(row: &rusqlite::Row) -> rusqlite::Result<Paper> {
         total_read_seconds: row.get(13)?,
         source_url: row.get(14)?,
         github_url: row.get(15)?,
+        venue: row.get(16)?,
         folder_ids,
     })
 }
@@ -172,7 +173,12 @@ fn list_papers_inner(db: &Db) -> Result<Vec<Paper>, String> {
     let rows = stmt
         .query_map([], row_to_paper)
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    let mut papers = rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    drop(stmt);
+    for paper in &mut papers {
+        backfill_paper_venue(&conn, paper)?;
+    }
+    Ok(papers)
 }
 
 #[tauri::command]
@@ -199,6 +205,7 @@ fn get_paper_inner(db: &Db, paper_id: &str) -> Result<Paper, String> {
             }
         }
     }
+    backfill_paper_venue(&conn, &mut paper)?;
     Ok(paper)
 }
 
@@ -305,7 +312,7 @@ fn import_pdf_inner_with_title(
     source_path: &str,
     suggested_title: Option<&str>,
 ) -> Result<Paper, String> {
-    import_pdf_inner_with_metadata(db, library, source_path, suggested_title, None, None)
+    import_pdf_inner_with_metadata(db, library, source_path, suggested_title, None, None, None)
 }
 
 fn import_pdf_inner_with_metadata(
@@ -315,6 +322,7 @@ fn import_pdf_inner_with_metadata(
     suggested_title: Option<&str>,
     source_url: Option<&str>,
     github_url: Option<&str>,
+    venue: Option<&str>,
 ) -> Result<Paper, String> {
     let id = Uuid::new_v4().to_string();
     let src = Path::new(source_path);
@@ -351,6 +359,9 @@ fn import_pdf_inner_with_metadata(
         github_url: github_url
             .and_then(normalize_github_repo_url)
             .or_else(|| source_url.and_then(normalize_github_repo_url)),
+        venue: venue
+            .and_then(normalize_venue)
+            .or_else(|| source_url.and_then(infer_venue_from_source)),
         total_read_seconds: 0,
         folder_ids: vec![],
     };
@@ -358,8 +369,8 @@ fn import_pdf_inner_with_metadata(
     let conn = db.conn();
     conn.execute(
         "INSERT INTO papers (id, title, authors, abstract, pdf_path, md_path, \
-         blog_md_path, created_at, last_read_at, reading_status, parse_status, starred, source_url, github_url) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+         blog_md_path, created_at, last_read_at, reading_status, parse_status, starred, source_url, github_url, venue) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         params![
             &paper.id,
             &paper.title,
@@ -375,6 +386,7 @@ fn import_pdf_inner_with_metadata(
             paper.starred as i64,
             paper.source_url,
             paper.github_url,
+            paper.venue,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -415,6 +427,147 @@ fn extract_github_repo_url(text: &str) -> Option<String> {
     None
 }
 
+fn year_from_text(text: &str) -> Option<String> {
+    text.split(|ch: char| !ch.is_ascii_digit())
+        .find(|part| {
+            part.len() == 4
+                && part
+                    .parse::<u16>()
+                    .is_ok_and(|year| (1900..=2100).contains(&year))
+        })
+        .map(str::to_string)
+}
+
+fn venue_from_text(text: &str) -> Option<String> {
+    let mut compact = String::new();
+    let mut source_offsets = Vec::new();
+    for (offset, ch) in text.char_indices() {
+        if ch.is_ascii_alphanumeric() {
+            compact.push(ch.to_ascii_lowercase());
+            source_offsets.push(offset);
+        }
+    }
+    let patterns = [
+        ("empiricalmethodsnaturallanguageprocessing", "EMNLP"),
+        ("northamericanchapterassociationforcomputationallinguistics", "NAACL"),
+        ("associationforcomputationallinguistics", "ACL"),
+        ("internationalconferenceonmachinelearning", "ICML"),
+        ("internationalconferenceonlearningrepresentations", "ICLR"),
+        ("neuralinformationprocessingsystems", "NeurIPS"),
+        ("computervisionandpatternrecognition", "CVPR"),
+        ("associationfortheadvancementofartificialintelligence", "AAAI"),
+    ];
+    let (label, compact_index) = patterns
+        .iter()
+        .find_map(|(pattern, label)| compact.find(pattern).map(|index| (*label, index)))?;
+    let source_index = *source_offsets.get(compact_index)?;
+    let start = source_index;
+    let mut end = (source_index + 700).min(text.len());
+    while end > start && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    let nearby = text.get(start..end).unwrap_or(text);
+    Some(match year_from_text(nearby) {
+        Some(year) => format!("{label} {year}"),
+        None => label.to_string(),
+    })
+}
+
+fn normalize_venue(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    venue_from_text(trimmed).or_else(|| Some(trimmed.chars().take(160).collect()))
+}
+
+fn infer_venue_from_source(raw: &str) -> Option<String> {
+    let url = reqwest::Url::parse(raw).ok()?;
+    let host = url.host_str()?.to_ascii_lowercase();
+    if host == "arxiv.org" || host == "export.arxiv.org" {
+        return Some("arXiv".to_string());
+    }
+    if host == "aclanthology.org" {
+        let slug = url.path_segments()?.find(|part| !part.is_empty())?;
+        let mut parts = slug.split('.');
+        let year = parts.next().filter(|part| part.len() == 4)?;
+        let series = parts.next()?.split('-').next()?.to_ascii_uppercase();
+        return Some(format!("{series} {year}"));
+    }
+    if host == "openaccess.thecvf.com" {
+        let path = url.path().to_ascii_uppercase();
+        for series in ["CVPR", "ICCV", "ECCV", "WACV"] {
+            if let Some(index) = path.find(series) {
+                let year = year_from_text(&path[index..]).unwrap_or_default();
+                return Some(format!("{series} {year}").trim().to_string());
+            }
+        }
+    }
+    None
+}
+
+fn extract_venue_from_files(files: &[(String, Vec<u8>)]) -> Option<String> {
+    files.iter().find_map(|(name, bytes)| {
+        if !name.ends_with("content_list.json") && !name.ends_with("content_list_v2.json") {
+            return None;
+        }
+        venue_from_content_list(bytes)
+    })
+}
+
+fn venue_from_content_list(bytes: &[u8]) -> Option<String> {
+    let blocks: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    blocks.as_array()?.iter().find_map(|block| {
+        if block["page_idx"].as_u64() == Some(0) {
+            block["text"].as_str().and_then(venue_from_text)
+        } else {
+            None
+        }
+    })
+}
+
+fn venue_from_paper_dir(md_path: &str) -> Option<String> {
+    let dir = Path::new(md_path).parent()?;
+    std::fs::read_dir(dir).ok()?.filter_map(Result::ok).find_map(|entry| {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with("content_list.json") && !name.ends_with("content_list_v2.json") {
+            return None;
+        }
+        let bytes = std::fs::read(entry.path()).ok()?;
+        venue_from_content_list(&bytes)
+    })
+}
+
+fn backfill_paper_venue(conn: &rusqlite::Connection, paper: &mut Paper) -> Result<(), String> {
+    if paper.parse_status != "ready" {
+        return Ok(());
+    }
+    let detected = paper
+        .source_url
+        .as_deref()
+        .and_then(infer_venue_from_source)
+        .or_else(|| venue_from_paper_dir(&paper.md_path));
+    let auto_label = paper.venue.as_deref().is_some_and(|current| {
+        let short = current.split_whitespace().next().unwrap_or("");
+        ["ACL", "EMNLP", "NAACL", "ICML", "ICLR", "NeurIPS", "CVPR", "AAAI"].contains(&short)
+    });
+    let should_update = match (&paper.venue, &detected) {
+        (None, Some(_)) => true,
+        (Some(current), Some(next)) => current != next && auto_label,
+        (Some(_), None) => auto_label,
+        _ => false,
+    };
+    if should_update {
+        conn.execute(
+            "UPDATE papers SET venue = ?2 WHERE id = ?1",
+            params![&paper.id, &detected],
+        )
+        .map_err(|error| error.to_string())?;
+        paper.venue = detected;
+    }
+    Ok(())
+}
+
 fn validate_remote_pdf_url(raw: &str) -> Result<reqwest::Url, String> {
     let url = reqwest::Url::parse(raw).map_err(|_| "论文链接格式无效".to_string())?;
     if url.scheme() != "https" {
@@ -445,6 +598,7 @@ pub async fn import_pdf_url(
     suggested_title: Option<String>,
     source_url: Option<String>,
     github_url: Option<String>,
+    venue: Option<String>,
 ) -> Result<Paper, String> {
     let url = validate_remote_pdf_url(&url)?;
     let settings = Settings::load().map_err(|e| e.to_string())?;
@@ -519,6 +673,7 @@ pub async fn import_pdf_url(
         suggested_title.as_deref(),
         source_url.as_deref(),
         github_url.as_deref(),
+        venue.as_deref(),
     );
     let _ = tokio::fs::remove_file(&temp_path).await;
     result
@@ -570,13 +725,14 @@ pub async fn parse_pdf(db: State<'_, Db>, paper_id: String) -> Result<Paper, Str
     // 提取元数据并更新状态
     let (title, authors, abstract_text) = extract_metadata(&output.markdown);
     let github_url = extract_github_repo_url(&output.markdown);
+    let venue = extract_venue_from_files(&output.files);
     {
         let conn = db.conn();
         conn.execute(
             "UPDATE papers SET parse_status = 'ready', title = ?2, authors = ?3, abstract = ?4, \
-             github_url = COALESCE(github_url, ?5) \
+             github_url = COALESCE(github_url, ?5), venue = COALESCE(venue, ?6) \
              WHERE id = ?1",
-            params![&paper_id, title, authors, abstract_text, github_url],
+            params![&paper_id, title, authors, abstract_text, github_url, venue],
         )
         .map_err(|e| e.to_string())?;
     }
@@ -3788,6 +3944,27 @@ mod tests {
         );
         assert!(normalize_github_repo_url("https://gitlab.com/org/project").is_none());
         assert!(normalize_github_repo_url("http://github.com/org/project").is_none());
+    }
+
+    #[test]
+    fn venue_is_detected_from_mineru_text_and_source_urls() {
+        assert_eq!(
+            venue_from_text("OpenAI et al. 2024. Proceedings ofthe 64th Annual Meeting ofthe Associationfor Computational Linguistics, pages 1-10, July 2026"),
+            Some("ACL 2026".to_string())
+        );
+        assert_eq!(
+            infer_venue_from_source("https://aclanthology.org/2026.emnlp-main.12/"),
+            Some("EMNLP 2026".to_string())
+        );
+        assert_eq!(
+            infer_venue_from_source("https://arxiv.org/abs/2601.01234"),
+            Some("arXiv".to_string())
+        );
+        let blocks = serde_json::json!([
+            {"page_idx": 0, "text": "An unpublished paper, 2026"},
+            {"page_idx": 7, "text": "In Proceedings of the 2024 Annual Meeting of the Association for Computational Linguistics"}
+        ]);
+        assert_eq!(venue_from_content_list(blocks.to_string().as_bytes()), None);
     }
 
     #[test]

@@ -26,6 +26,18 @@ describe("browser extension paper detection", () => {
     });
   });
 
+  it("keeps the publication venue and year", () => {
+    expect(detectPaper({
+      pageUrl: "https://aclanthology.org/2026.acl-long.8/",
+      title: "A Paper",
+      citationPdfUrl: "/2026.acl-long.8.pdf",
+      venue: "Annual Meeting of the Association for Computational Linguistics",
+      publicationDate: "2026/07/02",
+    })).toMatchObject({
+      venue: "Annual Meeting of the Association for Computational Linguistics 2026",
+    });
+  });
+
   it("recognizes arXiv and ignores supplementary PDFs", () => {
     expect(detectPaper({
       pageUrl: "https://arxiv.org/abs/2601.12345",

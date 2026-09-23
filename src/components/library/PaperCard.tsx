@@ -297,10 +297,10 @@ export function PaperCard(props: PaperCardProps) {
                 </div>
               </div>
 
-              {/* 作者：单行截断 */}
-              {paper.authors && (
+              {/* 期刊 / 会议：单行截断 */}
+              {paper.venue && (
                 <p className="truncate pl-[42px] text-[13px] leading-[1.5] text-zp-tertiary">
-                  {paper.authors}
+                  {paper.venue}
                 </p>
               )}
 

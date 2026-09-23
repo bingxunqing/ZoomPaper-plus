@@ -1,4 +1,5 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
+import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu";
 import { useState } from "react";
 import { Check, FileCheck2, FileClock, FileQuestion, MoreHorizontal, Star } from "lucide-react";
 import { cn, displayPaperTitle, formatTime } from "@/lib/utils";
@@ -52,7 +53,7 @@ export function PaperTable(props: PaperTableProps) {
       <div className="grid h-9 grid-cols-[36px_minmax(280px,1fr)_minmax(140px,0.55fr)_120px_118px_38px] items-center border-b border-zp-border px-2 text-xs text-zp-quaternary">
         <span />
         <span>标题</span>
-        <span>作者</span>
+        <span>期刊 / 会议</span>
         <span>文件夹</span>
         <span>最后阅读</span>
         <span />
@@ -76,8 +77,8 @@ export function PaperTable(props: PaperTableProps) {
           };
 
           return (
-            <div
-              key={paper.id}
+            <ContextMenuPrimitive.Root key={paper.id}>
+              <ContextMenuPrimitive.Trigger render={<div
               role="row"
               tabIndex={0}
               aria-selected={focused}
@@ -94,7 +95,7 @@ export function PaperTable(props: PaperTableProps) {
                 "group grid min-h-11 cursor-default grid-cols-[36px_minmax(280px,1fr)_minmax(140px,0.55fr)_120px_118px_38px] items-center border-b border-zp-border/70 px-2 outline-none transition-colors",
                 focused ? "bg-[#eceeeb] dark:bg-zp-surface-active" : "hover:bg-zp-surface-hover",
               )}
-            >
+            />}>
               <div className="flex items-center justify-center">
                 <button
                   type="button"
@@ -115,7 +116,7 @@ export function PaperTable(props: PaperTableProps) {
                 <span className="truncate font-medium text-zp-primary">{displayPaperTitle(paper.title)}</span>
                 {paper.starred && <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-500" />}
               </div>
-              <span className="truncate pr-4 text-zp-secondary">{paper.authors || "—"}</span>
+              <span className="truncate pr-4 text-zp-secondary">{paper.venue || "—"}</span>
               <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
                 {paperFolders.length === 0 ? <span className="text-zp-tertiary">—</span> : paperFolders.slice(0, 2).map((folder) => (
                   <span key={folder.id} title={folder.name} className="flex min-w-0 items-center gap-1 text-xs text-zp-secondary">
@@ -149,7 +150,29 @@ export function PaperTable(props: PaperTableProps) {
                   </MenuPrimitive.Positioner>
                 </MenuPrimitive.Portal>
               </MenuPrimitive.Root>
-            </div>
+              </ContextMenuPrimitive.Trigger>
+              <ContextMenuPrimitive.Portal>
+                <ContextMenuPrimitive.Positioner alignOffset={4} className="isolate z-50">
+                  <ContextMenuPrimitive.Popup className="z-50 min-w-44 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-none">
+                    <PaperMenuItems
+                      Item={ContextMenuPrimitive.Item}
+                      actions={actions}
+                      planMenuSlot={<PlanSubmenu
+                        P={ContextMenuPrimitive as unknown as PlanMenuPrimitives}
+                        activePlans={activePlans}
+                        containingPlan={containingPlan}
+                        currentDue={containingPlan?.items.find((item) => item.paper_id === paper.id)?.due_date ?? null}
+                        targetPlanId={effectivePlan?.id ?? null}
+                        onSelectTarget={(planId) => setTargetPlans((current) => ({ ...current, [paper.id]: planId }))}
+                        onQuickDate={(due) => props.onPlanQuickAdd(paper, effectivePlan?.id ?? null, due)}
+                        onCustomDate={() => props.onPlanCustomDate(paper, effectivePlan?.id ?? null)}
+                        onRemove={containingPlan ? () => props.onPlanRemove(paper, containingPlan.id) : null}
+                      />}
+                    />
+                  </ContextMenuPrimitive.Popup>
+                </ContextMenuPrimitive.Positioner>
+              </ContextMenuPrimitive.Portal>
+            </ContextMenuPrimitive.Root>
           );
         })}
       </div>

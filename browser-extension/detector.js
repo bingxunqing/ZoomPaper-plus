@@ -66,6 +66,8 @@ export function detectPaper({
   linkUrl,
   title,
   citationPdfUrl,
+  venue,
+  publicationDate,
   metaPdfUrls = [],
   links = [],
 }) {
@@ -111,11 +113,16 @@ export function detectPaper({
         return false;
       }
     }) || null;
+  const year = publicationDate?.match(/\b(19|20)\d{2}\b/)?.[0];
+  const normalizedVenue = venue?.trim()
+    ? `${venue.trim()}${year && !venue.includes(year) ? ` ${year}` : ""}`
+    : null;
 
   return pdfUrl ? {
     pdfUrl,
     title: title?.trim() || "未命名论文",
     sourceUrl: page,
     ...(githubUrl ? { githubUrl } : {}),
+    ...(normalizedVenue ? { venue: normalizedVenue } : {}),
   } : null;
 }
