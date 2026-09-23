@@ -19,7 +19,7 @@ interface Props {
   papers: Paper[];
   folders: Folder[];
   /** 任一归属变更成功后回调（父级刷新） */
-  onChanged: () => void;
+  onChanged: () => void | Promise<void>;
   onError: (msg: string) => void;
 }
 
@@ -49,7 +49,8 @@ export function PaperFolderPicker({ open, onOpenChange, papers, folders, onChang
       } else {
         await addPapersToFolder(ids, node.folder.id);
       }
-      onChanged();
+      // 等父级取回最新 folder_ids 后再解除 busy，避免连续点击基于旧状态反向操作。
+      await onChanged();
     } catch (e) {
       onError(String(e));
     } finally {
@@ -64,6 +65,8 @@ export function PaperFolderPicker({ open, onOpenChange, papers, folders, onChang
       <div key={node.folder.id}>
         <button
           type="button"
+          role="checkbox"
+          aria-checked={isChecked ? true : indeterminate(node.folder.id) ? "mixed" : false}
           disabled={busy}
           onClick={() => void toggle(node)}
           className={cn(
@@ -123,10 +126,6 @@ export function PaperFolderPicker({ open, onOpenChange, papers, folders, onChang
           <DialogPrimitive.Title className="font-heading text-base font-medium">
             添加到文件夹
           </DialogPrimitive.Title>
-          <DialogPrimitive.Description className="text-sm text-muted-foreground">
-            已选 {papers.length} 篇论文 · 勾选即加入，取消勾选即移出（多归属）
-          </DialogPrimitive.Description>
-
           <div className="mt-3 max-h-72 overflow-y-auto pr-1">
             {tree.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">

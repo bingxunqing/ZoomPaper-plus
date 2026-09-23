@@ -150,29 +150,14 @@ const MIGRATIONS: &[&str] = &[
     FROM reading_plans rp, json_each(rp.paper_ids) je
     WHERE rp.type = 'papers' AND rp.paper_ids IS NOT NULL;
     "#,
-    // v12：论文阅读理解测验 —— quizzes 表。一次测验一行：出题配置 / 题目（含答案）/
-    // 用户作答 / 批改结果各为 JSON 列，作答中增量更新 answers，批改后写 grading/report/score。
+    // v12：保留浏览器导入的来源页，并记录论文关联的 GitHub 仓库。
     r#"
-    CREATE TABLE IF NOT EXISTS quizzes (
-        id         TEXT PRIMARY KEY,          -- UUID
-        paper_id   TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
-        mode       TEXT NOT NULL CHECK(mode IN ('exam', 'practice')),
-        config     TEXT NOT NULL,             -- QuizConfig JSON（题数/难度/侧重点/章节）
-        questions  TEXT NOT NULL,             -- Vec<QuizQuestion> JSON（含答案与解析）
-        answers    TEXT,                      -- Vec<UserAnswer> JSON，作答中增量更新
-        grading    TEXT,                      -- Vec<QuestionGrade> JSON，批改后写入
-        report     TEXT,                      -- 考试模式的总评报告 Markdown
-        score      REAL,                      -- 总得分（百分制），批改后写入
-        status     TEXT NOT NULL DEFAULT 'answering',  -- answering / done
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_quizzes_paper ON quizzes(paper_id);
-    "#,
-    // v13：papers 增加 github_url 列（解析时从 Markdown 提取的 GitHub 仓库链接）。
-    // NULL = 尚未扫描（存量论文，打开时惰性回填）；'' = 已扫描但没有；非空 = 仓库 URL。
-    r#"
+    ALTER TABLE papers ADD COLUMN source_url TEXT;
     ALTER TABLE papers ADD COLUMN github_url TEXT;
+    "#,
+    // v13：论文发表期刊或会议，用于论文库列表展示。
+    r#"
+    ALTER TABLE papers ADD COLUMN venue TEXT;
     "#,
 ];
 
@@ -185,6 +170,51 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             conn.execute_batch(sql)?;
             conn.pragma_update(None, "user_version", target)?;
         }
+    }
+    // Older v12/v13 databases may have different schemas. Reconcile by inspecting
+    // the actual schema, not user_version.
+    if version < 14 {
+        let tx = conn.unchecked_transaction()?;
+        let columns: Vec<String> = tx
+            .prepare("PRAGMA table_info(papers)")?
+            .query_map([], |row| row.get(1))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (name, sql) in [
+            (
+                "source_url",
+                "ALTER TABLE papers ADD COLUMN source_url TEXT",
+            ),
+            (
+                "github_url",
+                "ALTER TABLE papers ADD COLUMN github_url TEXT",
+            ),
+            ("venue", "ALTER TABLE papers ADD COLUMN venue TEXT"),
+        ] {
+            if !columns.iter().any(|column| column == name) {
+                tx.execute_batch(sql)?;
+            }
+        }
+        tx.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS quizzes (
+                id TEXT PRIMARY KEY,
+                paper_id TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+                mode TEXT NOT NULL CHECK(mode IN ('exam', 'practice')),
+                config TEXT NOT NULL,
+                questions TEXT NOT NULL,
+                answers TEXT,
+                grading TEXT,
+                report TEXT,
+                score REAL,
+                status TEXT NOT NULL DEFAULT 'answering',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_quizzes_paper ON quizzes(paper_id);
+        "#,
+        )?;
+        tx.pragma_update(None, "user_version", 14)?;
+        tx.commit()?;
     }
     Ok(())
 }
@@ -216,11 +246,17 @@ mod tests {
 
         // 升级
         migrate(&conn).unwrap();
-        assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 13);
+        assert_eq!(
+            conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            14
+        );
 
         // 论文数据无损
         let title: String = conn
-            .query_row("SELECT title FROM papers WHERE id = 'paper-1'", [], |r| r.get(0))
+            .query_row("SELECT title FROM papers WHERE id = 'paper-1'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(title, "Attention Is All You Need");
 
@@ -234,7 +270,9 @@ mod tests {
             .unwrap();
         assert!(cols.contains(&"starred".to_string()));
         let starred: i64 = conn
-            .query_row("SELECT starred FROM papers WHERE id = 'paper-1'", [], |r| r.get(0))
+            .query_row("SELECT starred FROM papers WHERE id = 'paper-1'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(starred, 0);
 
@@ -247,6 +285,9 @@ mod tests {
             .collect::<Result<_, _>>()
             .unwrap();
         assert!(cols.contains(&"finished_at".to_string()));
+        assert!(cols.contains(&"source_url".to_string()));
+        assert!(cols.contains(&"github_url".to_string()));
+        assert!(cols.contains(&"venue".to_string()));
         conn.execute(
             "INSERT INTO reading_sessions (paper_id, started_at, seconds) VALUES ('paper-1', 1700000003, 120)",
             [],
@@ -318,9 +359,11 @@ mod tests {
         )
         .unwrap();
         let quiz_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM quizzes WHERE paper_id = 'paper-1'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM quizzes WHERE paper_id = 'paper-1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(quiz_count, 1);
     }
@@ -364,7 +407,11 @@ mod tests {
         .unwrap();
 
         migrate(&conn).unwrap();
-        assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 13);
+        assert_eq!(
+            conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            14
+        );
 
         let items: Vec<(String, Option<i64>)> = conn
             .prepare(
@@ -377,7 +424,10 @@ mod tests {
             .unwrap();
         assert_eq!(
             items,
-            vec![("p1".to_string(), Some(1700100000)), ("p2".to_string(), Some(1700100000))],
+            vec![
+                ("p1".to_string(), Some(1700100000)),
+                ("p2".to_string(), Some(1700100000))
+            ],
             "存量条目应继承计划级 deadline"
         );
         let daily_items: i64 = conn
@@ -396,7 +446,74 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();
         migrate(&conn).unwrap();
-        let v: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-        assert_eq!(v, MIGRATIONS.len() as i64);
+        let v: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, 14);
+    }
+
+    #[test]
+    fn upstream_v13_schema_is_reconciled_without_losing_quizzes() {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..11] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute_batch("CREATE TABLE quizzes (id TEXT PRIMARY KEY, paper_id TEXT, mode TEXT, config TEXT, questions TEXT, answers TEXT, grading TEXT, report TEXT, score REAL, status TEXT, created_at INTEGER, updated_at INTEGER); CREATE INDEX idx_quizzes_paper ON quizzes(paper_id); ALTER TABLE papers ADD COLUMN github_url TEXT;").unwrap();
+        conn.execute("INSERT INTO quizzes (id, paper_id, mode, config, questions, status, created_at, updated_at) VALUES ('q1', 'p1', 'exam', '{}', '[]', 'done', 1, 1)", []).unwrap();
+        conn.pragma_update(None, "user_version", 13).unwrap();
+        migrate(&conn).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM quizzes", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        for column in ["source_url", "github_url", "venue"] {
+            let cols: Vec<String> = conn
+                .prepare("PRAGMA table_info(papers)")
+                .unwrap()
+                .query_map([], |r| r.get(1))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap();
+            assert!(cols.contains(&column.to_string()));
+        }
+        assert_eq!(
+            conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            14
+        );
+    }
+
+    #[test]
+    fn divergent_v13_schema_gains_quizzes_without_losing_source_metadata() {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..13] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute("INSERT INTO papers (id, title, pdf_path, md_path, source_url, github_url, venue) VALUES ('p1', 'Paper', '/p.pdf', '/p.md', 'https://example.org/p', 'https://github.com/a/b', 'ACL 2026')", []).unwrap();
+        conn.pragma_update(None, "user_version", 13).unwrap();
+        migrate(&conn).unwrap();
+        let metadata: (String, String, String) = conn
+            .query_row(
+                "SELECT source_url, github_url, venue FROM papers WHERE id='p1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            metadata,
+            (
+                "https://example.org/p".into(),
+                "https://github.com/a/b".into(),
+                "ACL 2026".into()
+            )
+        );
+        conn.execute("INSERT INTO quizzes (id, paper_id, mode, config, questions, status, created_at, updated_at) VALUES ('q1', 'p1', 'exam', '{}', '[]', 'answering', 1, 1)", []).unwrap();
+        migrate(&conn).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM quizzes", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
     }
 }

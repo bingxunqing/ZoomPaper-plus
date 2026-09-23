@@ -166,10 +166,9 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto min-h-0 w-full max-w-4xl flex-1 space-y-4 overflow-y-auto p-6">
+    <div className="mx-auto min-h-0 w-full max-w-2xl flex-1 space-y-4 overflow-y-auto">
       <div>
         <h1 className="text-2xl font-bold">设置</h1>
-        <p className="text-sm text-muted-foreground">配置 AI Provider、论文库和其他选项</p>
       </div>
 
       {error && (
@@ -183,7 +182,6 @@ export function SettingsPage() {
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
           <div>
             <CardTitle className="text-base">AI Provider</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">管理 LLM API 配置</p>
           </div>
           <Button size="sm" onClick={() => setShowAddDialog(true)}>
             <Plus className="mr-2 h-4 w-4" />

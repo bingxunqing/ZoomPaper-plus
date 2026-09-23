@@ -5,6 +5,7 @@
  */
 import { useRef, useState } from "react";
 import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu";
+import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { motion, useReducedMotion } from "motion/react";
 import {
   ChevronRight,
@@ -156,7 +157,7 @@ function FolderRow({
               }}
             >
               {hasChildren ? (
-                <button
+                <IconTooltip label={isOpen ? "收起文件夹" : "展开文件夹"} side="right"><button
                   type="button"
                   aria-label={isOpen ? "收起" : "展开"}
                   onClick={(e) => {
@@ -176,7 +177,7 @@ function FolderRow({
                   >
                     <ChevronRight className="h-3.5 w-3.5" />
                   </motion.span>
-                </button>
+                </button></IconTooltip>
               ) : (
                 <span className="h-4 w-4 shrink-0" />
               )}
@@ -342,13 +343,8 @@ export function FolderSidebar(props: FolderSidebarProps) {
   const allDrop = useDropHighlight((ids) => onDropPapers(ids, null));
 
   return (
-    <aside className="flex w-[220px] shrink-0 flex-col border-r border-zp-border">
-      {/* 文件夹小标题：12px uppercase，quaternary */}
-      <div className="px-3 pt-5 pb-2 text-[12px] font-medium tracking-[0.05em] text-zp-quaternary uppercase">
-        文件夹
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-2">
+    <aside className="flex w-[208px] shrink-0 flex-col border-r border-zp-border bg-[#f3f4f1] dark:bg-[#1d1d1c]">
+      <div className="flex-1 overflow-y-auto px-2 pt-3">
         <div className="flex flex-col gap-0.5">
           <SidebarEntry
             icon={<LibraryIcon className="h-4 w-4" />}
@@ -394,16 +390,17 @@ export function FolderSidebar(props: FolderSidebarProps) {
         </div>
       </div>
 
-      {/* 新建文件夹：底部弱操作，留白区隔（无显式分割线） */}
-      <div className="px-2 pb-4 pt-3">
+      <div className="flex justify-end px-2 pb-3 pt-2">
+        <IconTooltip label="新建文件夹" side="right">
         <button
           type="button"
           onClick={() => onCreateSubfolder("__root__")}
-          className="pressable flex w-full items-center gap-2 rounded-md px-2.5 py-1 text-[13px] text-zp-quaternary transition-colors hover:text-zp-primary"
+          aria-label="新建文件夹"
+          className="pressable flex h-7 w-7 items-center justify-center rounded-md text-zp-quaternary transition-colors hover:bg-zp-surface-hover hover:text-zp-primary"
         >
           <Plus className="h-4 w-4" />
-          新建文件夹
         </button>
+        </IconTooltip>
       </div>
     </aside>
   );

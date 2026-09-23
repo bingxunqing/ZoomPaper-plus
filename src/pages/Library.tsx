@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { AnimatePresence } from "motion/react";
 import {
   AlertDialog,
@@ -11,7 +11,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileText, Loader2 } from "lucide-react";
@@ -21,6 +20,7 @@ import {
   createReadingPlan,
   deleteFolder,
   deletePaper,
+  exportNotes,
   importPdf,
   listFolders,
   listPapers,
@@ -39,23 +39,27 @@ import {
   type ReadingStatus,
 } from "@/lib/api";
 import type { LibraryView } from "@/lib/folders";
+import { parseProgressPercent } from "@/lib/utils";
 import { usePaperSelection } from "@/hooks/usePaperSelection";
 import { FolderSidebar } from "@/components/library/FolderSidebar";
-import { TopBar, type SortBy } from "@/components/library/TopBar";
-import { FilterBar, type PaperFilter } from "@/components/library/FilterBar";
+import { TopBar, type LibraryLayout, type SortBy } from "@/components/library/TopBar";
+import type { PaperFilter } from "@/components/library/FilterBar";
 import { BulkBar } from "@/components/library/BulkBar";
 import { PaperCard } from "@/components/library/PaperCard";
 import { PaperGrid } from "@/components/library/PaperGrid";
 import { FolderDialog, type FolderDialogState } from "@/components/library/FolderDialog";
 import { PaperFolderPicker } from "@/components/library/PaperFolderPicker";
+import { PaperTable } from "@/components/library/PaperTable";
+import { PaperInspector } from "@/components/library/PaperInspector";
 
 type Renaming = { kind: "folder"; id: string } | { kind: "paper"; id: string };
 
 interface Props {
   onOpenPaper: (id: string) => void;
+  refreshSignal?: number;
 }
 
-export function Library({ onOpenPaper }: Props) {
+export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
   const [papers, setPapers] = useState<Paper[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [plans, setPlans] = useState<ReadingPlan[]>([]);
@@ -71,20 +75,36 @@ export function Library({ onOpenPaper }: Props) {
   const [filter, setFilter] = useState<PaperFilter>("all");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [sortBy, setSortBy] = useState<SortBy>("created");
-  const { selected, toggle, clear, isSelected, size: selectedSize } = usePaperSelection();
+  const [sortBy, setSortBy] = useState<SortBy>(() => {
+    const saved = localStorage.getItem("zoompaper.librarySort");
+    return saved === "title" || saved === "read" ? saved : "created";
+  });
+  const [layout, setLayout] = useState<LibraryLayout>(() =>
+    localStorage.getItem("zoompaper.libraryLayout") === "grid" ? "grid" : "list",
+  );
+  const [focusedPaperId, setFocusedPaperId] = useState<string | null>(null);
+  const { selected, toggle, clear, selectAll, isSelected, size: selectedSize } = usePaperSelection();
+  const [selectionMode, setSelectionMode] = useState(false);
+  const exitSelection = () => { clear(); setSelectionMode(false); };
+  const enterSelection = (id: string) => { setSelectionMode(true); if (!selected.has(id)) toggle(id); };
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [renaming, setRenaming] = useState<Renaming | null>(null);
   const [folderDialog, setFolderDialog] = useState<FolderDialogState | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerPapers, setPickerPapers] = useState<Paper[]>([]);
+  const [pickerPaperIds, setPickerPaperIds] = useState<string[]>([]);
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<Folder | null>(null);
   const [deleteTargets, setDeleteTargets] = useState<Paper[] | null>(null);
 
   const [importing, setImporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  /** 解析中论文的实时进度（按论文 id），解析完成/失败后移除条目 */
+  const [parsingId, setParsingId] = useState<string | null>(null);
   const [parseProgress, setParseProgress] = useState<Record<string, ParseProgress>>({});
+  const updateParseProgress = (id: string, progress: ParseProgress) => {
+    setParseProgress((prev) => ({ ...prev, [id]: progress }));
+    setNotice(`解析中 · ${Math.round(parseProgressPercent(progress))}%`);
+  };
+  const clearParseProgress = (id: string) => setParseProgress((prev) => { const next = { ...prev }; delete next[id]; return next; });
 
   const refresh = useCallback(async () => {
     try {
@@ -102,7 +122,15 @@ export function Library({ onOpenPaper }: Props) {
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, refreshSignal]);
+
+  useEffect(() => {
+    localStorage.setItem("zoompaper.librarySort", sortBy);
+  }, [sortBy]);
+
+  useEffect(() => {
+    localStorage.setItem("zoompaper.libraryLayout", layout);
+  }, [layout]);
 
   // ---------- 视图内论文（文件夹 × 状态过滤 × 关键词 交集 + 排序，星标置顶） ----------
 
@@ -118,14 +146,13 @@ export function Library({ onOpenPaper }: Props) {
     else if (filter === "read") list = list.filter((p) => p.reading_status === "read");
     else if (filter === "starred") list = list.filter((p) => p.starred);
 
-    // 关键词过滤：标题/作者子串，忽略大小写
-    const q = query.trim().toLowerCase();
-    if (q) {
-      list = list.filter(
-        (p) =>
-          p.title.toLowerCase().includes(q) ||
-          (p.authors ?? "").toLowerCase().includes(q)
-      );
+    // 多关键词过滤：标题、期刊/会议、作者与摘要均可检索，关键词取交集。
+    const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    if (words.length) {
+      list = list.filter((p) => {
+        const haystack = `${p.title} ${p.venue ?? ""} ${p.authors ?? ""} ${p.abstract ?? ""}`.toLocaleLowerCase();
+        return words.every((word) => haystack.includes(word));
+      });
     }
 
     const sorted = [...list];
@@ -146,6 +173,19 @@ export function Library({ onOpenPaper }: Props) {
     () => papers.filter((p) => selected.has(p.id)),
     [papers, selected]
   );
+  const focusedPaper = papers.find((paper) => paper.id === focusedPaperId) ?? null;
+
+  useEffect(() => {
+    if (focusedPaperId && !visiblePapers.some((paper) => paper.id === focusedPaperId)) {
+      setFocusedPaperId(null);
+    }
+  }, [focusedPaperId, visiblePapers]);
+  // 归属弹窗只保存稳定的 id，并始终从最新 papers 派生对象。否则刷新后弹窗仍会
+  // 持有旧 folder_ids，造成后端已加入文件夹、勾选状态却不更新。
+  const pickerPapers = useMemo(() => {
+    const ids = new Set(pickerPaperIds);
+    return papers.filter((paper) => ids.has(paper.id));
+  }, [papers, pickerPaperIds]);
 
   const isFolderView = view.type === "folder";
   const activeFolder = isFolderView ? folders.find((f) => f.id === view.folderId) : undefined;
@@ -155,17 +195,23 @@ export function Library({ onOpenPaper }: Props) {
     : view.type === "uncategorized"
       ? "未分类"
       : "论文库";
+  const continuePaper = useMemo(
+    () => [...papers]
+      .filter((paper) => paper.last_read_at != null)
+      .sort((a, b) => (b.last_read_at ?? 0) - (a.last_read_at ?? 0))[0] ?? null,
+    [papers]
+  );
 
   // ---------- 视图 / 过滤切换：清空选择（自动退出选择模式） ----------
 
   function handleSelectView(v: LibraryView) {
     setView(v);
-    clear();
+    exitSelection();
   }
 
   function handleFilterChange(v: PaperFilter) {
     setFilter(v);
-    clear();
+    exitSelection();
   }
 
   // ---------- 阅读状态 / 星标（乐观更新） ----------
@@ -266,62 +312,73 @@ export function Library({ onOpenPaper }: Props) {
   // ---------- 导入 / 解析 / 删除 ----------
 
   async function handleImport() {
-    const file = await open({
-      multiple: false,
+    const files = await open({
+      multiple: true,
       filters: [{ name: "PDF", extensions: ["pdf"] }],
     });
-    if (typeof file !== "string") return;
+    if (!files) return;
+    const paths = typeof files === "string" ? [files] : files;
 
     setImporting(true);
     setError(null);
-    let importedId: string | null = null;
+    setNotice(null);
     try {
-      const paper = await importPdf(file);
-      importedId = paper.id;
-      trackParse(paper.id);
-      try {
-        await parsePdf(paper.id, (p) => updateParseProgress(paper.id, p));
-      } catch (e) {
-        setError(`导入成功，但解析失败：${e}`);
+      const failures: string[] = [];
+      for (const [index, file] of paths.entries()) {
+        setNotice(`正在导入 ${index + 1} / ${paths.length}`);
+        try {
+          const paper = await importPdf(file);
+          if (currentFolderId) await addPapersToFolder([paper.id], currentFolderId);
+          setParsingId(paper.id);
+          setNotice(`正在解析并建立索引 ${index + 1} / ${paths.length}`);
+          try {
+            await parsePdf(paper.id, (progress) => updateParseProgress(paper.id, progress));
+          } catch (e) {
+            failures.push(`${paper.title}：已导入，解析失败（${e}）`);
+          } finally { clearParseProgress(paper.id); }
+        } catch (e) {
+          failures.push(`${file.split(/[\\/]/).pop() ?? file}：${e}`);
+        }
       }
       await refresh();
+      setNotice(`已处理 ${paths.length} 个文件${failures.length ? `，${failures.length} 项需要处理` : ""}`);
+      if (failures.length) setError(failures.join("\n"));
     } catch (e) {
       setError(`导入失败：${e}`);
     } finally {
       setImporting(false);
-      if (importedId) untrackParse(importedId);
+      setParsingId(null);
     }
   }
 
-  function trackParse(paperId: string) {
-    setParseProgress((m) => ({
-      ...m,
-      [paperId]: { stage: "uploading", extracted_pages: null, total_pages: null },
-    }));
-  }
-
-  function updateParseProgress(paperId: string, p: ParseProgress) {
-    setParseProgress((m) => ({ ...m, [paperId]: p }));
-  }
-
-  function untrackParse(paperId: string) {
-    setParseProgress((m) => {
-      const next = { ...m };
-      delete next[paperId];
-      return next;
+  async function handleExportNotes() {
+    const paper = selectedPapers[0];
+    if (selectedPapers.length !== 1 || !paper) return;
+    const safeTitle = paper.title.replace(/[\\/:*?"<>|]/g, "_").slice(0, 80);
+    const destination = await save({
+      defaultPath: `${safeTitle}-笔记.md`,
+      filters: [{ name: "Markdown", extensions: ["md"] }],
     });
+    if (!destination) return;
+    try {
+      await exportNotes(paper.id, destination);
+      setNotice("阅读笔记已导出");
+    } catch (e) {
+      setError(`导出失败：${e}`);
+    }
   }
 
   async function handleParse(paperId: string) {
-    trackParse(paperId);
+    setParsingId(paperId);
     setError(null);
     try {
-      await parsePdf(paperId, (p) => updateParseProgress(paperId, p));
+      await parsePdf(paperId, (progress) => updateParseProgress(paperId, progress));
       await refresh();
     } catch (e) {
       setError(String(e));
     } finally {
-      untrackParse(paperId);
+      setParsingId(null);
+      clearParseProgress(paperId);
     }
   }
 
@@ -333,7 +390,7 @@ export function Library({ onOpenPaper }: Props) {
       for (const p of deleteTargets) {
         await deletePaper(p.id);
       }
-      clear();
+      exitSelection();
       setDeleteTargets(null);
       await refresh();
     } catch (e) {
@@ -434,12 +491,12 @@ export function Library({ onOpenPaper }: Props) {
       selected.has(paper.id) && selected.size > 0
         ? papers.filter((p) => selected.has(p.id))
         : [paper];
-    setPickerPapers(targets);
+    setPickerPaperIds(targets.map((target) => target.id));
     setPickerOpen(true);
   }
 
   function handleBulkPickFolder() {
-    setPickerPapers(selectedPapers);
+    setPickerPaperIds(selectedPapers.map((paper) => paper.id));
     setPickerOpen(true);
   }
 
@@ -447,7 +504,7 @@ export function Library({ onOpenPaper }: Props) {
     if (!currentFolderId) return;
     try {
       await removePapersFromFolder([paper.id], currentFolderId);
-      clear();
+      exitSelection();
       await refresh();
     } catch (e) {
       setError(String(e));
@@ -464,13 +521,17 @@ export function Library({ onOpenPaper }: Props) {
       if (e.key === "Delete" && selectedSize > 0) {
         e.preventDefault();
         setDeleteTargets(selectedPapers);
-      } else if (e.key === "Escape" && selectedSize > 0) {
-        clear();
+      } else if (e.key === "Escape" && selectionMode) {
+        exitSelection();
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        setSelectionMode(true);
+        selectAll(visiblePapers.map((paper) => paper.id));
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [renaming, folderDialog, deleteTargets, pickerOpen, selectedSize, selectedPapers, clear]);
+  }, [renaming, folderDialog, deleteTargets, pickerOpen, selectedSize, selectedPapers, selectionMode, clear, selectAll, visiblePapers]);
 
   // ---------- 渲染 ----------
 
@@ -510,9 +571,29 @@ export function Library({ onOpenPaper }: Props) {
           onQueryChange={setQuery}
           onImport={() => void handleImport()}
           importing={importing}
+          filter={filter}
+          onFilterChange={handleFilterChange}
+          layout={layout}
+          onLayoutChange={setLayout}
+          selectionMode={selectionMode}
+          onToggleSelectionMode={() => selectionMode ? exitSelection() : setSelectionMode(true)}
         />
 
-        <FilterBar value={filter} onChange={handleFilterChange} />
+        <div className="flex min-h-0 flex-1">
+          <div className="flex min-w-0 flex-1 flex-col">
+        {continuePaper && selectedSize === 0 && layout === "grid" && (
+          <button
+            type="button"
+            onClick={() => onOpenPaper(continuePaper.id)}
+            className="pressable mx-4 mt-3 flex items-center justify-between rounded-xl border border-zp-border bg-white px-4 py-2.5 text-left shadow-sm transition-colors hover:bg-zp-surface-hover dark:bg-zp-surface"
+          >
+            <span className="min-w-0">
+              <span className="block text-[11px] font-medium tracking-wide text-zp-quaternary">继续上次阅读</span>
+              <span className="block truncate text-sm font-medium text-zp-primary">{continuePaper.title}</span>
+            </span>
+            <span className="ml-4 shrink-0 text-xs text-zp-tertiary">继续阅读 →</span>
+          </button>
+        )}
 
         {/* 批量操作栏：选中 ≥1 篇时浮现（入场/退场动画） */}
         <AnimatePresence>
@@ -522,29 +603,34 @@ export function Library({ onOpenPaper }: Props) {
               onMarkRead={() => void handleBulkSetStatus("read")}
               onSetStatus={(s) => void handleBulkSetStatus(s)}
               onPickFolder={handleBulkPickFolder}
+              onExport={() => void handleExportNotes()}
               onDelete={() => setDeleteTargets(selectedPapers)}
-              onClose={clear}
+              onClose={exitSelection}
             />
           )}
         </AnimatePresence>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <div className={`min-h-0 flex-1 overflow-auto ${layout === "grid" ? "px-4 py-4" : "bg-white dark:bg-zp-surface"}`}>
           {error && (
-            <div className="mb-3 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            <div className="m-3 whitespace-pre-wrap rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
               {error}
+            </div>
+          )}
+          {notice && !error && (
+            <div className="m-3 rounded-md border border-zp-border bg-white px-4 py-3 text-sm text-zp-secondary dark:bg-zp-surface">
+              {notice}
             </div>
           )}
 
           {loading ? (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
+            <div className={layout === "grid" ? "grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4" : "space-y-px p-2"}>
               {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-32 w-full rounded-[10px]" />
+                <Skeleton key={i} className={layout === "grid" ? "h-32 w-full rounded-[10px]" : "h-10 w-full rounded"} />
               ))}
             </div>
           ) : visiblePapers.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
-                <FileText className="h-10 w-10" />
+            <div className="flex flex-col items-center gap-2 py-24 text-zp-quaternary">
+                <FileText className="h-8 w-8" strokeWidth={1.5} />
                 {query.trim() ? (
                   <p>没有匹配「{query.trim()}」的论文</p>
                 ) : filter !== "all" ? (
@@ -556,8 +642,32 @@ export function Library({ onOpenPaper }: Props) {
                 ) : (
                   <p>还没有论文，点击「导入论文」开始</p>
                 )}
-              </CardContent>
-            </Card>
+            </div>
+          ) : layout === "list" ? (
+            <PaperTable
+              papers={visiblePapers}
+              folders={folders}
+              plans={plans}
+              selectedIds={selected}
+              selectionMode={selectionMode}
+              onLongPress={enterSelection}
+              focusedId={focusedPaperId}
+              currentFolderId={currentFolderId}
+              parsingId={parsingId}
+              onFocus={(paper) => setFocusedPaperId(paper.id)}
+              onToggle={toggle}
+              onOpen={onOpenPaper}
+              onRename={(paper) => setRenaming({ kind: "paper", id: paper.id })}
+              onPickFolder={handlePickFolder}
+              onSetStatus={(paper, status) => void handleSetStatus(paper, status)}
+              onPlanQuickAdd={(paper, planId, due) => void handlePlanQuickAdd(paper, planId, due)}
+              onPlanRemove={(paper, planId) => void handlePlanRemove(paper, planId)}
+              onPlanCustomDate={handlePlanCustomDate}
+              onToggleStar={(paper) => void handleToggleStar(paper)}
+              onParse={handleParse}
+              onDelete={(paper) => setDeleteTargets([paper])}
+              onRemoveFromCurrentFolder={handleRemoveFromCurrentFolder}
+            />
           ) : (
             <PaperGrid>
               {visiblePapers.map((paper) => (
@@ -567,8 +677,10 @@ export function Library({ onOpenPaper }: Props) {
                   folders={folders}
                   selected={isSelected(paper.id)}
                   selectedIds={selected}
-                  selectionMode={selectedSize > 0}
+                  selectionMode={selectionMode}
+                  onLongPress={enterSelection}
                   isRenaming={renaming?.kind === "paper" && renaming.id === paper.id}
+                  parsing={parsingId === paper.id}
                   progress={parseProgress[paper.id] ?? null}
                   currentFolderId={currentFolderId}
                   onToggle={toggle}
@@ -585,7 +697,7 @@ export function Library({ onOpenPaper }: Props) {
                   onToggleStar={(p) => void handleToggleStar(p)}
                   onJumpToFolder={(folderId) => {
                     setView({ type: "folder", folderId });
-                    clear();
+                    exitSelection();
                   }}
                   onParse={handleParse}
                   onDelete={(p) => setDeleteTargets([p])}
@@ -593,6 +705,19 @@ export function Library({ onOpenPaper }: Props) {
                 />
               ))}
             </PaperGrid>
+          )}
+        </div>
+          </div>
+          {layout === "list" && focusedPaper && !selectionMode && (
+            <PaperInspector
+              paper={focusedPaper}
+              folders={folders}
+              onClose={() => setFocusedPaperId(null)}
+              onOpen={() => onOpenPaper(focusedPaper.id)}
+              onToggleStar={() => void handleToggleStar(focusedPaper)}
+              onPickFolder={() => handlePickFolder(focusedPaper)}
+              onParse={() => handleParse(focusedPaper.id)}
+            />
           )}
         </div>
       </div>
@@ -613,7 +738,7 @@ export function Library({ onOpenPaper }: Props) {
         onOpenChange={setPickerOpen}
         papers={pickerPapers}
         folders={folders}
-        onChanged={() => void refresh()}
+        onChanged={refresh}
         onError={setError}
       />
 
