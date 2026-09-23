@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { QaChat } from "@/components/QaChat";
 import { ConversationDeleteDialog } from "@/components/ConversationDeleteDialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { deleteConversation, listConversations, type Conversation } from "@/lib/api";
 import { formatTime } from "@/lib/utils";
 import { History, Plus, Trash2 } from "lucide-react";
@@ -71,11 +72,12 @@ export function AskPage({ onOpenPaper }: Props) {
       <header className="flex h-12 shrink-0 items-center justify-between px-4">
         <h1 className="text-sm font-medium">知识库问答</h1>
         <div className="flex items-center gap-0.5">
-          <button type="button" onClick={startNew} disabled={sending} title="新对话" aria-label="新对话" className="pressable rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50">
+          <IconTooltip label={sending ? "回复中，暂时无法新建对话" : "新对话"} side="bottom"><button type="button" onClick={startNew} disabled={sending} aria-label="新对话" className="pressable rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50">
             <Plus className="h-4 w-4" />
-          </button>
+          </button></IconTooltip>
+          <IconTooltip label={sending ? "回复中，暂时无法切换会话" : "历史会话"} side="bottom">
           <Popover open={historyOpen} onOpenChange={setHistoryOpen}>
-            <PopoverTrigger disabled={sending} title="历史会话" aria-label="历史会话" className="pressable rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50">
+            <PopoverTrigger disabled={sending} aria-label="历史会话" className="pressable rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50">
               <History className="h-4 w-4" />
             </PopoverTrigger>
             <PopoverContent align="end" sideOffset={4} className="w-64 p-1">
@@ -91,15 +93,16 @@ export function AskPage({ onOpenPaper }: Props) {
                         <div className="truncate text-[13px] font-medium">{conversation.title || "未命名会话"}</div>
                         <div className="text-[11px] text-muted-foreground">{formatTime(conversation.updated_at)}</div>
                       </button>
-                      <button type="button" onClick={(event) => { event.stopPropagation(); setConfirmDelete(conversation); }} title="删除会话" aria-label="删除会话" className="pressable absolute top-1/2 right-1 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-destructive group-hover:opacity-100">
+                      <IconTooltip label="删除会话" side="left" className="absolute top-1/2 right-1 -translate-y-1/2"><button type="button" onClick={(event) => { event.stopPropagation(); setConfirmDelete(conversation); }} aria-label="删除会话" className="pressable rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-destructive group-hover:opacity-100">
                         <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      </button></IconTooltip>
                     </div>
                   ))}
                 </div>
               )}
             </PopoverContent>
           </Popover>
+          </IconTooltip>
         </div>
       </header>
 

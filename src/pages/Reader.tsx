@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/components/ui/button";
+import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BlogPanel } from "@/components/BlogPanel";
@@ -96,7 +97,7 @@ export function Reader({ paperId, initialPageIdx, onBack }: Props) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
       <div className="flex items-center gap-3">
-        <Button
+        <IconTooltip label="返回论文库" side="bottom"><Button
           variant="ghost"
           size="icon"
           onClick={onBack}
@@ -104,7 +105,7 @@ export function Reader({ paperId, initialPageIdx, onBack }: Props) {
           className="pressable"
         >
           <ArrowLeft className="h-4 w-4" />
-        </Button>
+        </Button></IconTooltip>
         <div className="min-w-0">
           <h1 className="truncate text-xl font-bold tracking-tight">
             {paper ? displayPaperTitle(paper.title) : "加载中…"}
@@ -116,16 +117,15 @@ export function Reader({ paperId, initialPageIdx, onBack }: Props) {
         {paper && (
           <div className="ml-auto flex shrink-0 items-center gap-3">
             {paper.github_url && (
-              <Button
+              <IconTooltip label="打开 GitHub 项目" side="bottom"><Button
                 variant="ghost"
                 size="icon"
                 onClick={() => void openUrl(paper.github_url!)}
-                title="打开 GitHub 项目"
                 aria-label="打开 GitHub 项目"
                 className="pressable"
               >
                 <GitFork className="h-4 w-4" />
-              </Button>
+              </Button></IconTooltip>
             )}
             <span
               className="flex items-center gap-1.5 text-sm text-muted-foreground"

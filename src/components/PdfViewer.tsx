@@ -11,6 +11,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { Button } from "@/components/ui/button";
+import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { SelectionToolbar, HIGHLIGHT_COLORS } from "@/components/SelectionToolbar";
@@ -1154,57 +1155,57 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       <div className="flex items-center gap-2 pt-2 pr-4">
         <div className="mr-auto flex items-center gap-1 pl-4">
           {outline && outline.length > 0 && (
-            <Button
+            <IconTooltip label="目录" side="bottom"><Button
               variant={showToc ? "secondary" : "ghost"}
               size="sm"
               className="h-7 px-2 text-xs"
               onClick={() => setShowToc((v) => !v)}
-              title="目录"
+              aria-label="目录"
             >
               <ListTree className="h-3.5 w-3.5" />
               <span className="ml-1 hidden sm:inline">目录</span>
-            </Button>
+            </Button></IconTooltip>
           )}
-          <Button
+          <IconTooltip label="注释" side="bottom"><Button
             variant={showAnnotations ? "secondary" : "ghost"}
             size="sm"
             className="h-7 px-2 text-xs"
             onClick={() => setShowAnnotations((v) => !v)}
-            title="注释"
+            aria-label="注释"
           >
             <List className="h-3.5 w-3.5" />
             <span className="ml-1 hidden sm:inline">
               注释{annotations.length ? ` ${annotations.length}` : ""}
             </span>
-          </Button>
+          </Button></IconTooltip>
         </div>
         <form className="flex items-center gap-1 text-xs text-muted-foreground tabular-nums" onSubmit={(e) => { e.preventDefault(); const page = Number(pageInput); if (Number.isInteger(page) && page >= 1 && page <= slots.length) jumpToPage(page - 1); else setPageInput(String(currentPage)); }}>
           <input aria-label="跳转页码" inputMode="numeric" value={pageInput} onChange={(e) => setPageInput(e.target.value)} onBlur={() => setPageInput(String(currentPage))} className="h-7 w-10 rounded-md border bg-background text-center outline-none focus:border-primary" />
           <span>/ {slots.length}</span>
         </form>
-        <Button
+        <IconTooltip label="缩小" side="bottom"><Button
           variant="ghost"
           size="icon"
           className="pressable h-7 w-7"
           disabled={scale <= MIN_SCALE}
           onClick={() => setScale((s) => Math.max(MIN_SCALE, s - SCALE_STEP))}
-          title="缩小"
+          aria-label="缩小"
         >
           <Minus className="h-3.5 w-3.5" />
-        </Button>
-        <button title="适合页面宽度" aria-label="适合页面宽度" onClick={() => setScale(1)} className="w-12 rounded-md py-1 text-center text-xs text-muted-foreground tabular-nums hover:bg-accent">
+        </Button></IconTooltip>
+        <IconTooltip label="适合页面宽度" side="bottom"><button aria-label="适合页面宽度" onClick={() => setScale(1)} className="w-12 rounded-md py-1 text-center text-xs text-muted-foreground tabular-nums hover:bg-accent">
           {Math.round(effectiveScale * 100)}%
-        </button>
-        <Button
+        </button></IconTooltip>
+        <IconTooltip label="放大" side="bottom"><Button
           variant="ghost"
           size="icon"
           className="pressable h-7 w-7"
           disabled={scale >= MAX_SCALE}
           onClick={() => setScale((s) => Math.min(MAX_SCALE, s + SCALE_STEP))}
-          title="放大"
+          aria-label="放大"
         >
           <Plus className="h-3.5 w-3.5" />
-        </Button>
+        </Button></IconTooltip>
       </div>
 
       {/* 连续滚动页面 */}
@@ -1383,30 +1384,30 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
                     第 {hl.page_idx + 1} 页
                   </span>
                   <span className="ml-auto flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                    <Button
+                    <IconTooltip label="编辑笔记" side="left"><Button
                       variant="ghost"
                       size="icon"
                       className="h-5 w-5"
-                      title="编辑笔记"
+                      aria-label="编辑笔记"
                       onClick={(e) => {
                         e.stopPropagation();
                         startEditNote(hl);
                       }}
                     >
                       <StickyNote className="h-3 w-3" />
-                    </Button>
-                    <Button
+                    </Button></IconTooltip>
+                    <IconTooltip label="删除高亮" side="left"><Button
                       variant="ghost"
                       size="icon"
                       className="h-5 w-5 text-destructive"
-                      title="删除高亮"
+                      aria-label="删除高亮"
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteHighlight(hl.id);
                       }}
                     >
                       <Trash2 className="h-3 w-3" />
-                    </Button>
+                    </Button></IconTooltip>
                   </span>
                 </div>
                 <p className="mt-1 line-clamp-2 text-xs leading-snug text-foreground/85">

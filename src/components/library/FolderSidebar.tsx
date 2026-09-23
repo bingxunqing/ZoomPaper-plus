@@ -5,6 +5,7 @@
  */
 import { useRef, useState } from "react";
 import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu";
+import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { motion, useReducedMotion } from "motion/react";
 import {
   ChevronRight,
@@ -156,7 +157,7 @@ function FolderRow({
               }}
             >
               {hasChildren ? (
-                <button
+                <IconTooltip label={isOpen ? "收起文件夹" : "展开文件夹"} side="right"><button
                   type="button"
                   aria-label={isOpen ? "收起" : "展开"}
                   onClick={(e) => {
@@ -176,7 +177,7 @@ function FolderRow({
                   >
                     <ChevronRight className="h-3.5 w-3.5" />
                   </motion.span>
-                </button>
+                </button></IconTooltip>
               ) : (
                 <span className="h-4 w-4 shrink-0" />
               )}
@@ -390,15 +391,16 @@ export function FolderSidebar(props: FolderSidebarProps) {
       </div>
 
       <div className="flex justify-end px-2 pb-3 pt-2">
+        <IconTooltip label="新建文件夹" side="right">
         <button
           type="button"
           onClick={() => onCreateSubfolder("__root__")}
           aria-label="新建文件夹"
-          title="新建文件夹"
           className="pressable flex h-7 w-7 items-center justify-center rounded-md text-zp-quaternary transition-colors hover:bg-zp-surface-hover hover:text-zp-primary"
         >
           <Plus className="h-4 w-4" />
         </button>
+        </IconTooltip>
       </div>
     </aside>
   );

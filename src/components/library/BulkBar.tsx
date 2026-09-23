@@ -7,6 +7,7 @@ import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { motion, useReducedMotion } from "motion/react";
 import { BookCheck, CircleDot, Download, FolderPlus, Trash2, X } from "lucide-react";
 import type { ReadingStatus } from "@/lib/api";
+import { IconTooltip } from "@/components/ui/icon-tooltip";
 
 /** 次级按钮：灰阶 ghost，hover 浮起 */
 const BAR_BTN =
@@ -70,14 +71,15 @@ export function BulkBar({
       <span className="h-4 w-px shrink-0 bg-zp-border" aria-hidden />
 
       {/* 中区：操作按钮组 */}
-      <button type="button" className={BAR_BTN} onClick={onMarkRead} title="标记已读" aria-label="标记已读">
+      <IconTooltip label="标记已读"><button type="button" className={BAR_BTN} onClick={onMarkRead} aria-label="标记已读">
         <BookCheck className="h-4 w-4" />
-      </button>
+      </button></IconTooltip>
 
+      <IconTooltip label="修改阅读状态">
       <MenuPrimitive.Root>
         <MenuPrimitive.Trigger
           render={
-            <button type="button" className={BAR_BTN} title="修改阅读状态" aria-label="修改阅读状态">
+            <button type="button" className={BAR_BTN} aria-label="修改阅读状态">
               <CircleDot className="h-4 w-4" />
             </button>
           }
@@ -98,43 +100,47 @@ export function BulkBar({
           </MenuPrimitive.Positioner>
         </MenuPrimitive.Portal>
       </MenuPrimitive.Root>
+      </IconTooltip>
 
-      <button type="button" className={BAR_BTN} onClick={onPickFolder} title="添加到文件夹" aria-label="添加到文件夹">
+      <IconTooltip label="添加到文件夹"><button type="button" className={BAR_BTN} onClick={onPickFolder} aria-label="添加到文件夹">
         <FolderPlus className="h-4 w-4" />
-      </button>
+      </button></IconTooltip>
 
+      <IconTooltip label={count === 1 ? "导出阅读笔记" : "每次请选择一篇论文导出笔记"}>
       <button
         type="button"
         className={`${BAR_BTN} disabled:cursor-not-allowed disabled:opacity-40`}
         onClick={onExport}
         disabled={count !== 1}
-        title={count === 1 ? "导出阅读笔记" : "每次请选择一篇论文导出笔记"}
         aria-label="导出阅读笔记"
       >
         <Download className="h-4 w-4" />
       </button>
+      </IconTooltip>
 
       {/* 删除：红字浅红底（危险可见但不过重） */}
+      <IconTooltip label="删除所选论文">
       <button
         type="button"
         className="pressable flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-red-600 transition-colors hover:bg-red-500/10 dark:text-red-400"
         onClick={onDelete}
-        title="删除"
-        aria-label="删除"
+        aria-label="删除所选论文"
       >
         <Trash2 className="h-4 w-4" />
       </button>
+      </IconTooltip>
 
       {/* 右区：关闭（清空选择） */}
+      <IconTooltip label="清空选择" className="ml-auto">
       <button
         type="button"
-        title="清空选择"
         aria-label="清空选择"
         onClick={onClose}
-        className="pressable ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-zp-quaternary transition-colors hover:bg-zp-surface-hover hover:text-zp-primary"
+        className="pressable flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-zp-quaternary transition-colors hover:bg-zp-surface-hover hover:text-zp-primary"
       >
         <X className="h-4 w-4" />
       </button>
+      </IconTooltip>
     </motion.div>
   );
 }

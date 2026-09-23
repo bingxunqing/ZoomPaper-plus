@@ -10,6 +10,7 @@ import {
   Settings as SettingsIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { IconTooltip } from "@/components/ui/icon-tooltip";
 
 export type NavItem = "library" | "timeline" | "search" | "ask" | "settings";
 
@@ -38,10 +39,8 @@ export function NavRail({ active, onSelect }: Props) {
           const Icon = item.icon;
           const isActive = active === item.name;
           return (
-            <button
-              key={item.name}
+            <IconTooltip key={item.name} label={item.label} side="right"><button
               type="button"
-              title={item.label}
               aria-label={item.label}
               onClick={() => onSelect(item.name)}
               className={cn(
@@ -55,7 +54,7 @@ export function NavRail({ active, onSelect }: Props) {
                 <span className="absolute -left-2 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-zp-primary" />
               )}
               <Icon className="h-5 w-5" strokeWidth={1.8} />
-            </button>
+            </button></IconTooltip>
           );
         })}
       </div>

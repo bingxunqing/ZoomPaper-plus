@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { QaChat } from "@/components/QaChat";
 import { ConversationDeleteDialog } from "@/components/ConversationDeleteDialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { deleteConversation, listConversations, type Conversation } from "@/lib/api";
 import { formatTime } from "@/lib/utils";
 import type { AnnotationRect } from "@/lib/api";
@@ -275,27 +276,26 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
         }}
       >
         {/* 收纳态：整根竖条可点击展开 */}
-        <button
+        <IconTooltip label="展开对话" side="left" className={collapsed ? "flex flex-1" : "hidden"}><button
           onClick={() => toggleCollapsed(false)}
-          title="展开对话"
-          className={`items-start px-2 py-3 text-muted-foreground transition-colors hover:text-foreground ${
-            collapsed ? "flex flex-1" : "hidden"
-          }`}
+          aria-label="展开对话"
+          className="flex flex-1 items-start px-2 py-3 text-muted-foreground transition-colors hover:text-foreground"
         >
           <PanelRightOpen className="h-4 w-4" />
-        </button>
+        </button></IconTooltip>
 
         {/* 展开态：display:none 保持挂载，不丢会话状态 */}
         <div className={`min-h-0 flex-1 flex-col ${collapsed ? "hidden" : "flex"}`}>
           <div className="flex h-12 items-center justify-between px-4">
             <p className="text-sm font-medium">论文助手</p>
             <div className="flex items-center gap-0.5">
-              <button onClick={startNew} disabled={sending} title="新对话" aria-label="新对话" className="rounded-md p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-50"><Plus className="h-4 w-4" /></button>
+              <IconTooltip label={sending ? "回复中，暂时无法新建对话" : "新对话"} side="bottom"><button onClick={startNew} disabled={sending} aria-label="新对话" className="rounded-md p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-50"><Plus className="h-4 w-4" /></button></IconTooltip>
               {/* 历史会话下拉：当前论文历史会话选择 / 删除 */}
+              <IconTooltip label={sending ? "生成中不可切换会话" : "历史会话"} side="bottom">
               <Popover open={historyOpen} onOpenChange={setHistoryOpen}>
                 <PopoverTrigger
                   disabled={sending}
-                  title={sending ? "生成中不可切换会话" : "历史会话"}
+                  aria-label="历史会话"
                   className="pressable rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <History className="h-4 w-4" />
@@ -329,24 +329,26 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
                               {formatTime(c.updated_at)}
                             </div>
                           </button>
-                          <button
+                          <IconTooltip label="删除会话" side="left" className="absolute top-1/2 right-1 -translate-y-1/2"><button
                             onClick={(e) => {
                               e.stopPropagation();
                               setConfirmDelete(c);
                             }}
-                            title="删除会话"
-                            className="pressable absolute top-1/2 right-1 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-destructive group-hover:opacity-100"
+                            aria-label="删除会话"
+                            className="pressable rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-destructive group-hover:opacity-100"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          </button></IconTooltip>
                         </div>
                       ))}
                     </div>
                   )}
                 </PopoverContent>
               </Popover>
+              </IconTooltip>
+              <IconTooltip label="帮助" side="bottom">
               <Popover>
-                <PopoverTrigger title="帮助" aria-label="帮助" className="pressable rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+                <PopoverTrigger aria-label="帮助" className="pressable rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
                   <CircleHelp className="h-4 w-4" />
                 </PopoverTrigger>
                 <PopoverContent align="end" sideOffset={6} className="w-72 space-y-2 p-3 text-xs leading-relaxed text-muted-foreground">
@@ -355,13 +357,16 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
                   <p><strong className="text-foreground">引用</strong>　在论文中划词后选择“提问”，原文会自动附到下一条消息。</p>
                 </PopoverContent>
               </Popover>
+              </IconTooltip>
+              <IconTooltip label="收起对话" side="bottom">
               <button
                 onClick={() => toggleCollapsed(true)}
-                title="收起对话"
+                aria-label="收起对话"
                 className="pressable rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
                 <PanelRightClose className="h-4 w-4" />
               </button>
+              </IconTooltip>
             </div>
           </div>
           <div className="flex min-h-0 flex-1 flex-col px-3 pb-3">

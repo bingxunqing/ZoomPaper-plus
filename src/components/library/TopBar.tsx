@@ -6,6 +6,7 @@
 import { useEffect, useRef } from "react";
 import { LayoutGrid, List, Loader2, Search as SearchIcon, Upload, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { IconTooltip } from "@/components/ui/icon-tooltip";
 import {
   Select,
   SelectContent,
@@ -101,14 +102,16 @@ export function TopBar({
             className="h-8 w-64 rounded-md border-zp-border bg-zp-surface pl-8 pr-8 shadow-none"
           />
           {query && (
+            <IconTooltip label="清空搜索" className="absolute top-1/2 right-2 -translate-y-1/2">
             <button
               type="button"
               aria-label="清空搜索"
               onClick={() => onQueryChange("")}
-              className="pressable absolute top-1/2 right-2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-zp-quaternary transition-colors hover:bg-zp-surface-hover hover:text-zp-primary"
+              className="pressable flex h-5 w-5 items-center justify-center rounded-full text-zp-quaternary transition-colors hover:bg-zp-surface-hover hover:text-zp-primary"
             >
               <X className="h-3.5 w-3.5" />
             </button>
+            </IconTooltip>
           )}
         </div>
 
@@ -133,12 +136,12 @@ export function TopBar({
           </SelectContent>
         </Select>
         <div className="flex items-center rounded-md border border-zp-border bg-zp-surface p-0.5">
-          <button type="button" aria-label="列表视图" title="列表视图" onClick={() => onLayoutChange("list")} className={`flex h-6 w-7 items-center justify-center rounded ${layout === "list" ? "bg-white text-zp-primary shadow-sm dark:bg-zp-surface-active" : "text-zp-quaternary"}`}><List className="h-3.5 w-3.5" /></button>
-          <button type="button" aria-label="卡片视图" title="卡片视图" onClick={() => onLayoutChange("grid")} className={`flex h-6 w-7 items-center justify-center rounded ${layout === "grid" ? "bg-white text-zp-primary shadow-sm dark:bg-zp-surface-active" : "text-zp-quaternary"}`}><LayoutGrid className="h-3.5 w-3.5" /></button>
+          <IconTooltip label="列表视图"><button type="button" aria-label="列表视图" onClick={() => onLayoutChange("list")} className={`flex h-6 w-7 items-center justify-center rounded ${layout === "list" ? "bg-white text-zp-primary shadow-sm dark:bg-zp-surface-active" : "text-zp-quaternary"}`}><List className="h-3.5 w-3.5" /></button></IconTooltip>
+          <IconTooltip label="卡片视图"><button type="button" aria-label="卡片视图" onClick={() => onLayoutChange("grid")} className={`flex h-6 w-7 items-center justify-center rounded ${layout === "grid" ? "bg-white text-zp-primary shadow-sm dark:bg-zp-surface-active" : "text-zp-quaternary"}`}><LayoutGrid className="h-3.5 w-3.5" /></button></IconTooltip>
         </div>
-        <button type="button" onClick={onImport} disabled={importing} aria-label="导入论文" title="导入论文" className="flex h-8 w-8 items-center justify-center rounded-md bg-zp-primary text-white transition-opacity hover:opacity-90 disabled:opacity-50">
+        <IconTooltip label={importing ? "正在导入论文" : "导入论文"}><button type="button" onClick={onImport} disabled={importing} aria-label="导入论文" className="flex h-8 w-8 items-center justify-center rounded-md bg-zp-primary text-white transition-opacity hover:opacity-90 disabled:opacity-50">
           {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-        </button>
+        </button></IconTooltip>
       </div>
     </header>
   );

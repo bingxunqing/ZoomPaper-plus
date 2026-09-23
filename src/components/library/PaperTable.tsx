@@ -7,6 +7,7 @@ import { folderColor } from "@/lib/folderColors";
 import type { Folder, Paper, ReadingPlan, ReadingStatus } from "@/lib/api";
 import { PaperMenuItems, type PaperMenuActions } from "./paperMenu";
 import { PlanSubmenu, type PlanMenuPrimitives } from "./planMenu";
+import { IconTooltip } from "@/components/ui/icon-tooltip";
 
 export interface PaperTableProps {
   papers: Paper[];
@@ -126,8 +127,8 @@ export function PaperTable(props: PaperTableProps) {
                 ))}
               </div>
               <span className="truncate text-xs text-zp-quaternary">{paper.last_read_at ? formatTime(paper.last_read_at) : "—"}</span>
-              <MenuPrimitive.Root>
-                <MenuPrimitive.Trigger render={<button type="button" aria-label="更多操作" title="更多操作" onClick={(event) => event.stopPropagation()} className="flex h-7 w-7 items-center justify-center rounded-md text-zp-quaternary opacity-0 hover:bg-white hover:text-zp-primary group-hover:opacity-100 focus-visible:opacity-100 dark:hover:bg-zp-surface"><MoreHorizontal className="h-4 w-4" /></button>} />
+              <IconTooltip label="更多操作"><MenuPrimitive.Root>
+                <MenuPrimitive.Trigger render={<button type="button" aria-label="更多操作" onClick={(event) => event.stopPropagation()} className="flex h-7 w-7 items-center justify-center rounded-md text-zp-quaternary opacity-0 hover:bg-white hover:text-zp-primary group-hover:opacity-100 focus-visible:opacity-100 dark:hover:bg-zp-surface"><MoreHorizontal className="h-4 w-4" /></button>} />
                 <MenuPrimitive.Portal>
                   <MenuPrimitive.Positioner align="end" sideOffset={4} className="isolate z-50">
                     <MenuPrimitive.Popup className="z-50 min-w-44 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-none">
@@ -149,7 +150,7 @@ export function PaperTable(props: PaperTableProps) {
                     </MenuPrimitive.Popup>
                   </MenuPrimitive.Positioner>
                 </MenuPrimitive.Portal>
-              </MenuPrimitive.Root>
+              </MenuPrimitive.Root></IconTooltip>
               </ContextMenuPrimitive.Trigger>
               <ContextMenuPrimitive.Portal>
                 <ContextMenuPrimitive.Positioner alignOffset={4} className="isolate z-50">

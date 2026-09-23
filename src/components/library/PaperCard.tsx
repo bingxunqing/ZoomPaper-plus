@@ -20,6 +20,7 @@ import {
   type PlanMenuPrimitives,
 } from "./planMenu";
 import { RenameInput } from "./RenameInput";
+import { IconTooltip } from "@/components/ui/icon-tooltip";
 
 /** 解析状态 pill：已解析深色填充，其余弱化 */
 const PARSE_STYLE: Record<string, { label: string; className: string }> = {
@@ -239,9 +240,8 @@ export function PaperCard(props: PaperCardProps) {
 
                 <div className="flex shrink-0 items-center gap-0.5">
                   {/* 星标：独立响应，不触发选择 */}
-                  <button
+                  <IconTooltip label={paper.starred ? "取消星标" : "添加星标"}><button
                     type="button"
-                    title={paper.starred ? "取消星标" : "添加星标"}
                     aria-label={paper.starred ? "取消星标" : "添加星标"}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -258,15 +258,15 @@ export function PaperCard(props: PaperCardProps) {
                       className={cn("h-[18px] w-[18px]", paper.starred && "fill-current")}
                       strokeWidth={1.8}
                     />
-                  </button>
+                  </button></IconTooltip>
 
                   {/* ⋯ 更多菜单（与右键菜单同构） */}
+                  <IconTooltip label="更多操作">
                   <MenuPrimitive.Root>
                     <MenuPrimitive.Trigger
                       render={
                         <button
                           type="button"
-                          title="更多操作"
                           aria-label="更多操作"
                           className="pressable flex h-7 w-7 items-center justify-center rounded-full text-zp-quaternary opacity-0 transition-opacity group-hover:opacity-100 hover:bg-zp-surface-hover hover:text-zp-primary focus-visible:opacity-100"
                           onClick={(e) => e.stopPropagation()}
@@ -294,6 +294,7 @@ export function PaperCard(props: PaperCardProps) {
                       </MenuPrimitive.Positioner>
                     </MenuPrimitive.Portal>
                   </MenuPrimitive.Root>
+                  </IconTooltip>
                 </div>
               </div>
 
