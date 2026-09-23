@@ -41,8 +41,9 @@ settings.json
 # ---- 开发工具 / MCP ----
 .mcp.json
 .playwright-mcp/
-.claude/settings.local.json
+.claude/
 .agent/
+AGENTS.md
 
 # ---- 本地文件 ----
 *.local

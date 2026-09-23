@@ -8,12 +8,26 @@ export interface ApiKeys {
   deepseek: string;
 }
 
+export interface ProviderConfig {
+  id: string;
+  name: string;
+  provider_type: string;
+  api_key: string;
+  base_url?: string | null;
+  default_model: string;
+  models: string[];
+  enabled: boolean;
+}
+
 export interface Settings {
-  api_keys: ApiKeys;
+  providers: ProviderConfig[];
+  active_provider_id: string;
+  mineru_api_key: string;
+  api_keys?: ApiKeys | null;
   paper_library_path: string | null;
   embedding_model: string;
-  llm_provider: string;
-  llm_model: string;
+  llm_provider?: string | null;
+  llm_model?: string | null;
   /** 联网搜索 provider：none / auto / deepseek / anthropic（复用对应 API Key） */
   web_search_provider: string;
   /** 原生搜索用模型名；null = 用 provider 默认 */
@@ -94,6 +108,7 @@ export interface QaMessage {
   trace?: ToolStep[] | null;
   /** AI 耗时记录（仅 assistant 消息携带；旧数据为 null） */
   timing?: Timing | null;
+  selections?: { text: string; pageIdx: number | null; location?: string }[] | null;
 }
 
 /** agent 深度模式的一步工具调用轨迹（前端展示用） */
@@ -227,11 +242,9 @@ export const getSettings = () => invoke<Settings>("get_settings");
 /** 判断联网搜索是否已配置可用：provider 非 none 且对应 API Key 非空（auto 时任一 Key） */
 export function isWebSearchConfigured(s: Settings): boolean {
   const p = (s.web_search_provider ?? "").toLowerCase();
-  if (!p || p === "none") return false;
-  if (p === "deepseek") return !!s.api_keys.deepseek;
-  if (p === "anthropic") return !!s.api_keys.anthropic;
-  if (p === "auto") return !!(s.api_keys.deepseek || s.api_keys.anthropic);
-  return false;
+  const has = (id: string) => s.providers.some((provider) => provider.id === id && provider.enabled && !!provider.api_key);
+  if (p === "deepseek" || p === "anthropic") return has(p);
+  return p === "auto" && (has("deepseek") || has("anthropic"));
 }
 export const generateBlog = (paperId: string) =>
   invoke<string>("generate_blog", { paperId });
@@ -256,7 +269,24 @@ export const importPdfUrl = (
   githubUrl: githubUrl ?? null,
   venue: venue ?? null,
 });
-export const parsePdf = (paperId: string) => invoke<Paper>("parse_pdf", { paperId });
+export interface ParseProgress {
+  /** uploading / pending / converting / running / downloading / indexing */
+  stage: string;
+  /** 仅 stage=running 且 MinerU 返回了页数进度时有值 */
+  extracted_pages: number | null;
+  total_pages: number | null;
+}
+
+export const parsePdf = (
+  paperId: string,
+  onProgress?: (p: ParseProgress) => void,
+) => {
+  // 后端 Channel 参数必填，缺省时创建空通道
+  const ch = new Channel<ParseProgress>();
+  ch.onmessage = (p) => onProgress?.(p);
+  return invoke<Paper>("parse_pdf", { paperId, onProgress: ch });
+};
+
 export const deletePaper = (paperId: string) => invoke<void>("delete_paper", { paperId });
 
 // ---------- 论文整理（虚拟文件夹） ----------
@@ -639,3 +669,126 @@ export const setReadingStatus = (paperIds: string[], status: string) => invoke<v
 export const exportNotes = (paperId: string, destination: string) => invoke<void>("export_notes", { paperId, destination });
 
 export const keywordSearch = (query: string, paperId: string | null) => invoke<SearchHit[]>("keyword_search", { query, paperId });
+
+export const addProvider = (config: ProviderConfig) =>
+  invoke<Settings>("add_provider", { config });
+
+export const updateProvider = (id: string, config: ProviderConfig) =>
+  invoke<Settings>("update_provider", { id, config });
+
+export const deleteProvider = (id: string) =>
+  invoke<Settings>("delete_provider", { id });
+
+export const setActiveProvider = (id: string) =>
+  invoke<Settings>("set_active_provider", { id });
+
+
+export interface QuizConfig {
+  /** 选择题数量（0-10） */
+  choice_count: number;
+  /** 主观题数量（0-5） */
+  subjective_count: number;
+  /** 难度：基础 / 进阶 / 挑战 */
+  difficulty: string;
+  /** 侧重点：全面 / 方法 / 实验 / 结论 */
+  focus: string;
+  /** 出题章节（原样章节名）；空数组 = 全文 */
+  sections: string[];
+}
+
+export type QuizQuestionType = "choice" | "subjective";
+
+/** 一道测验题（含答案与解析） */
+export interface QuizQuestion {
+  id: number;
+  qtype: QuizQuestionType;
+  question: string;
+  /** 选择题选项（不含字母前缀）；主观题为 null/缺省 */
+  options?: string[] | null;
+  /** 选择题：正确选项字母（"A"）；主观题：参考答案 */
+  answer: string;
+  /** 选择题：解析；主观题：评分要点 */
+  explanation: string;
+  /** 出处章节名（可能为空串） */
+  section: string;
+}
+
+/** 用户对一道题的作答 */
+export interface UserAnswer {
+  question_id: number;
+  /** 选择题：选项字母；主观题：自由文本 */
+  answer: string;
+}
+
+/** 一道题的批改结果 */
+export interface QuestionGrade {
+  question_id: number;
+  /** 选择题：本地判定的对错；主观题缺省 */
+  correct?: boolean | null;
+  score: number;
+  max_score: number;
+  feedback: string;
+  /** 未掌握的具体知识点 */
+  gaps: string[];
+}
+
+/** 完整测验记录 */
+export interface Quiz {
+  id: string;
+  paper_id: string;
+  /** exam / practice */
+  mode: string;
+  config: QuizConfig;
+  questions: QuizQuestion[];
+  answers: UserAnswer[];
+  grading: QuestionGrade[];
+  report?: string | null;
+  /** 总得分（百分制），批改完成后有值 */
+  score?: number | null;
+  /** answering / done */
+  status: string;
+  created_at: number;
+  updated_at: number;
+}
+
+/** 历史列表条目（不含题目与批改详情） */
+export interface QuizSummary {
+  id: string;
+  mode: string;
+  difficulty: string;
+  focus: string;
+  question_count: number;
+  score?: number | null;
+  status: string;
+  created_at: number;
+  updated_at: number;
+}
+
+/** 论文的章节列表（出题配置的章节多选数据源） */
+export const quizSections = (paperId: string) =>
+  invoke<string[]>("quiz_sections", { paperId });
+
+/** 出题：mode 为 "exam" / "practice"；返回新建的测验（status=answering） */
+export const quizGenerate = (paperId: string, mode: string, config: QuizConfig) =>
+  invoke<Quiz>("quiz_generate", { paperId, mode, config });
+
+/** 练习模式：提交一道题的作答并即时批改，返回该题批改结果 */
+export const quizSubmitAnswer = (quizId: string, questionId: number, answer: string) =>
+  invoke<QuestionGrade>("quiz_submit_answer", { quizId, questionId, answer });
+
+/** 考试模式：整卷交卷，返回批改完成的完整测验（含总评报告与总分） */
+export const quizGradeAll = (quizId: string, answers: UserAnswer[]) =>
+  invoke<Quiz>("quiz_grade_all", { quizId, answers });
+
+/** 某篇论文的测验历史列表（新的在前） */
+export const quizList = (paperId: string) =>
+  invoke<QuizSummary[]>("quiz_list", { paperId });
+
+/** 取一份测验的完整内容 */
+export const quizGet = (quizId: string) => invoke<Quiz>("quiz_get", { quizId });
+
+/** 删除一份测验记录 */
+export const quizDelete = (quizId: string) =>
+  invoke<void>("quiz_delete", { quizId });
+
+export const reindexAllPapers = () => invoke<[number, number]>("reindex_all_papers");

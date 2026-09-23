@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { QaChat } from "@/components/QaChat";
+import { QuizPanel } from "@/components/QuizPanel";
 import { ConversationDeleteDialog } from "@/components/ConversationDeleteDialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
@@ -70,6 +71,9 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
   { paperId, onJumpPage, onJumpToSelection },
   ref,
 ) {
+  const [tab, setTab] = useState<"qa" | "quiz">(() => localStorage.getItem(`zoompaper.qaTab.${paperId}`) === "quiz" ? "quiz" : "qa");
+  function switchTab(next: "qa" | "quiz") { setTab(next); localStorage.setItem(`zoompaper.qaTab.${paperId}`, next); }
+  useEffect(() => { setTab(localStorage.getItem(`zoompaper.qaTab.${paperId}`) === "quiz" ? "quiz" : "qa"); }, [paperId]);
   const [width, setWidth] = useState(loadWidth);
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSED_KEY) === "1",
@@ -102,6 +106,7 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
       location?: string,
     ) {
       setCollapsed(false);
+      switchTab("qa");
       setSelections((prev) => {
         // 同页同文本去重；达到上限后忽略
         if (prev.some((s) => s.text === text && s.pageIdx === pageIdx)) return prev;
@@ -110,6 +115,18 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
       });
     },
   }));
+
+  function requoteSelection(sel: { text: string; pageIdx: number | null; location?: string }) {
+    setSelections((prev) => prev.length >= MAX_SELECTIONS || prev.some((item) => item.text === sel.text && item.pageIdx === sel.pageIdx) ? prev : [...prev, sel]);
+    switchTab("qa");
+  }
+  function restoreSelections(items: { text: string; pageIdx: number | null; location?: string }[]) {
+    setSelections((prev) => {
+      const next = [...prev];
+      for (const item of items) if (next.length < MAX_SELECTIONS && !next.some((x) => x.text === item.text && x.pageIdx === item.pageIdx)) next.push(item);
+      return next;
+    });
+  }
 
   // 当前允许的最大宽度：行容器宽 − 左列最小宽 − 分隔条宽，且不超过 MAX_WIDTH
   function currentMaxWidth(): number {
@@ -287,7 +304,7 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
         {/* 展开态：display:none 保持挂载，不丢会话状态 */}
         <div className={`min-h-0 flex-1 flex-col ${collapsed ? "hidden" : "flex"}`}>
           <div className="flex h-12 items-center justify-between px-4">
-            <p className="text-sm font-medium">论文助手</p>
+            <div className="flex items-center gap-1" role="tablist" aria-label="论文助手">{(["qa", "quiz"] as const).map((item) => <button key={item} role="tab" aria-selected={tab === item} onClick={() => switchTab(item)} className={`rounded-md px-2.5 py-1 text-sm ${tab === item ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>{item === "qa" ? "问答" : "测验"}</button>)}</div>
             <div className="flex items-center gap-0.5">
               <IconTooltip label={sending ? "回复中，暂时无法新建对话" : "新对话"} side="bottom"><button onClick={startNew} disabled={sending} aria-label="新对话" className="rounded-md p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-50"><Plus className="h-4 w-4" /></button></IconTooltip>
               {/* 历史会话下拉：当前论文历史会话选择 / 删除 */}
@@ -369,7 +386,7 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
               </IconTooltip>
             </div>
           </div>
-          <div className="flex min-h-0 flex-1 flex-col px-3 pb-3">
+          <div className={`min-h-0 flex-1 flex-col px-3 pb-3 ${tab === "qa" ? "flex" : "hidden"}`}>
             {historyLoading ? <div role="status" className="flex flex-1 items-center justify-center text-sm text-muted-foreground">正在恢复对话…</div> : <QaChat
               key={`${paperId}:${chatRevision}`}
               paperId={paperId}
@@ -379,6 +396,8 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
               selections={selections}
               maxSelections={MAX_SELECTIONS}
               onClearSelections={() => setSelections([])}
+              onRequoteSelection={requoteSelection}
+              onRestoreSelections={restoreSelections}
               onRemoveSelection={(i) =>
                 setSelections((prev) => prev.filter((_, idx) => idx !== i))
               }
@@ -386,6 +405,7 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
               onSendingChange={setSending}
             />}
           </div>
+          <div className={`min-h-0 flex-1 flex-col px-3 pb-3 ${tab === "quiz" ? "flex" : "hidden"}`}><QuizPanel paperId={paperId} /></div>
         </div>
       </aside>
 

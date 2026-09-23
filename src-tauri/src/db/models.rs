@@ -73,21 +73,6 @@ pub struct Folder {
     pub created_at: i64,
 }
 
-/// 论文文本分块（RAG 检索单元）。
-///
-/// `start_line`/`end_line` 语义为 content_list 的块索引范围（非 md 行号）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Chunk {
-    pub id: i64,
-    pub paper_id: String,
-    pub section: String,
-    pub content: String,
-    pub start_line: i64,
-    pub end_line: i64,
-    pub page_idx: Option<i64>,
-    pub bbox: Option<String>,
-}
-
 /// 检索命中结果。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchHit {
@@ -119,4 +104,24 @@ pub struct Conversation {
     pub feynman_state: Option<String>,
     /// 费曼「概念级独立会话」标记：NULL = 主行（或 qa / 旧版单会话）；N = 概念 N 的会话行。
     pub concept_index: Option<i64>,
+}
+
+/// 阅读理解测验记录（quizzes 表行）。config / questions / answers / grading 为 JSON
+/// 字符串列，由命令层解析为 `crate::quiz` 模块的结构体后返回给前端。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuizRow {
+    pub id: String,
+    pub paper_id: String,
+    /// exam / practice。
+    pub mode: String,
+    pub config: String,
+    pub questions: String,
+    pub answers: Option<String>,
+    pub grading: Option<String>,
+    pub report: Option<String>,
+    pub score: Option<f64>,
+    /// answering / done。
+    pub status: String,
+    pub created_at: i64,
+    pub updated_at: i64,
 }

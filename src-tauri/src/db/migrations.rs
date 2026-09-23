@@ -171,6 +171,51 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             conn.pragma_update(None, "user_version", target)?;
         }
     }
+    // v12/v13 were released independently by ZoomPaper and ZoomPaper Plus with
+    // different schemas. Reconcile by inspecting the actual schema, not user_version.
+    if version < 14 {
+        let tx = conn.unchecked_transaction()?;
+        let columns: Vec<String> = tx
+            .prepare("PRAGMA table_info(papers)")?
+            .query_map([], |row| row.get(1))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (name, sql) in [
+            (
+                "source_url",
+                "ALTER TABLE papers ADD COLUMN source_url TEXT",
+            ),
+            (
+                "github_url",
+                "ALTER TABLE papers ADD COLUMN github_url TEXT",
+            ),
+            ("venue", "ALTER TABLE papers ADD COLUMN venue TEXT"),
+        ] {
+            if !columns.iter().any(|column| column == name) {
+                tx.execute_batch(sql)?;
+            }
+        }
+        tx.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS quizzes (
+                id TEXT PRIMARY KEY,
+                paper_id TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+                mode TEXT NOT NULL CHECK(mode IN ('exam', 'practice')),
+                config TEXT NOT NULL,
+                questions TEXT NOT NULL,
+                answers TEXT,
+                grading TEXT,
+                report TEXT,
+                score REAL,
+                status TEXT NOT NULL DEFAULT 'answering',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_quizzes_paper ON quizzes(paper_id);
+        "#,
+        )?;
+        tx.pragma_update(None, "user_version", 14)?;
+        tx.commit()?;
+    }
     Ok(())
 }
 
@@ -201,11 +246,17 @@ mod tests {
 
         // 升级
         migrate(&conn).unwrap();
-        assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 13);
+        assert_eq!(
+            conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            14
+        );
 
         // 论文数据无损
         let title: String = conn
-            .query_row("SELECT title FROM papers WHERE id = 'paper-1'", [], |r| r.get(0))
+            .query_row("SELECT title FROM papers WHERE id = 'paper-1'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(title, "Attention Is All You Need");
 
@@ -219,7 +270,9 @@ mod tests {
             .unwrap();
         assert!(cols.contains(&"starred".to_string()));
         let starred: i64 = conn
-            .query_row("SELECT starred FROM papers WHERE id = 'paper-1'", [], |r| r.get(0))
+            .query_row("SELECT starred FROM papers WHERE id = 'paper-1'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(starred, 0);
 
@@ -297,6 +350,22 @@ mod tests {
             .optional()
             .unwrap();
         assert!(legacy_state.is_none());
+
+        // v12：quizzes 新表可用（测验记录随论文级联删除）
+        conn.execute(
+            "INSERT INTO quizzes (id, paper_id, mode, config, questions, status, created_at, updated_at) \
+             VALUES ('q-1', 'paper-1', 'exam', '{}', '[]', 'answering', 1700000005, 1700000005)",
+            [],
+        )
+        .unwrap();
+        let quiz_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM quizzes WHERE paper_id = 'paper-1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(quiz_count, 1);
     }
 
     /// v10 → v11：存量计划的 paper_ids JSON + 计划级 deadline 搬运为条目级 due date。
@@ -338,7 +407,11 @@ mod tests {
         .unwrap();
 
         migrate(&conn).unwrap();
-        assert_eq!(conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 13);
+        assert_eq!(
+            conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            14
+        );
 
         let items: Vec<(String, Option<i64>)> = conn
             .prepare(
@@ -351,7 +424,10 @@ mod tests {
             .unwrap();
         assert_eq!(
             items,
-            vec![("p1".to_string(), Some(1700100000)), ("p2".to_string(), Some(1700100000))],
+            vec![
+                ("p1".to_string(), Some(1700100000)),
+                ("p2".to_string(), Some(1700100000))
+            ],
             "存量条目应继承计划级 deadline"
         );
         let daily_items: i64 = conn
@@ -370,7 +446,74 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();
         migrate(&conn).unwrap();
-        let v: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-        assert_eq!(v, MIGRATIONS.len() as i64);
+        let v: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, 14);
+    }
+
+    #[test]
+    fn upstream_v13_schema_is_reconciled_without_losing_quizzes() {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..11] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute_batch("CREATE TABLE quizzes (id TEXT PRIMARY KEY, paper_id TEXT, mode TEXT, config TEXT, questions TEXT, answers TEXT, grading TEXT, report TEXT, score REAL, status TEXT, created_at INTEGER, updated_at INTEGER); CREATE INDEX idx_quizzes_paper ON quizzes(paper_id); ALTER TABLE papers ADD COLUMN github_url TEXT;").unwrap();
+        conn.execute("INSERT INTO quizzes (id, paper_id, mode, config, questions, status, created_at, updated_at) VALUES ('q1', 'p1', 'exam', '{}', '[]', 'done', 1, 1)", []).unwrap();
+        conn.pragma_update(None, "user_version", 13).unwrap();
+        migrate(&conn).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM quizzes", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        for column in ["source_url", "github_url", "venue"] {
+            let cols: Vec<String> = conn
+                .prepare("PRAGMA table_info(papers)")
+                .unwrap()
+                .query_map([], |r| r.get(1))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap();
+            assert!(cols.contains(&column.to_string()));
+        }
+        assert_eq!(
+            conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            14
+        );
+    }
+
+    #[test]
+    fn plus_v13_schema_gains_quizzes_without_losing_source_metadata() {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..13] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute("INSERT INTO papers (id, title, pdf_path, md_path, source_url, github_url, venue) VALUES ('p1', 'Paper', '/p.pdf', '/p.md', 'https://example.org/p', 'https://github.com/a/b', 'ACL 2026')", []).unwrap();
+        conn.pragma_update(None, "user_version", 13).unwrap();
+        migrate(&conn).unwrap();
+        let metadata: (String, String, String) = conn
+            .query_row(
+                "SELECT source_url, github_url, venue FROM papers WHERE id='p1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            metadata,
+            (
+                "https://example.org/p".into(),
+                "https://github.com/a/b".into(),
+                "ACL 2026".into()
+            )
+        );
+        conn.execute("INSERT INTO quizzes (id, paper_id, mode, config, questions, status, created_at, updated_at) VALUES ('q1', 'p1', 'exam', '{}', '[]', 'answering', 1, 1)", []).unwrap();
+        migrate(&conn).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM quizzes", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
     }
 }

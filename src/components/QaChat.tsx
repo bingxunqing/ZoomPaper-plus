@@ -6,6 +6,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import { ChatComposer } from "@/components/ChatComposer";
+import { useStickyScroll } from "@/hooks/useStickyScroll";
 import { CitationBadge } from "@/components/CitationBadge";
 import { LiveClock } from "@/components/LiveClock";
 import { ThinkingPanel } from "@/components/ThinkingPanel";
@@ -53,6 +54,8 @@ interface Props {
     location?: string;
   }[] | null;
   onClearSelections?: () => void;
+  onRequoteSelection?: (selection: { text: string; pageIdx: number | null; location?: string }) => void;
+  onRestoreSelections?: (selections: { text: string; pageIdx: number | null; location?: string }[]) => void;
   /** 移除第 i 条引用 */
   onRemoveSelection?: (index: number) => void;
   /** 引用条数上限（达到时在头部提示） */
@@ -110,13 +113,11 @@ function AssistantBody({ content, citations, onOpenPaper, onJumpPage, currentPap
   );
 }
 
-export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onConversationCreated, selections, onClearSelections, onRemoveSelection, maxSelections, onJumpToSelection, onSendingChange }: Props) {
+export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onConversationCreated, selections, onClearSelections, onRequoteSelection, onRestoreSelections, onRemoveSelection, maxSelections, onJumpToSelection, onSendingChange }: Props) {
   const [messages, setMessages] = useState<QaMessage[]>([]);
   const [convId, setConvId] = useState<string | null>(conversationId ?? null);
   const [input, setInput] = useState("");
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const [awayFromBottom, setAwayFromBottom] = useState(false);
-  const followBottom = useRef(true);
   const [sending, setSending] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(!!conversationId);
   const [error, setError] = useState<string | null>(null);
@@ -143,7 +144,7 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
   const [thinkingText, setThinkingText] = useState("");
   const [streamingText, setStreamingText] = useState("");
   const [liveTrace, setLiveTrace] = useState<LiveToolStep[]>([]);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const { scrollRef, atBottom, onScroll, scrollToBottom, stick } = useStickyScroll([messages, sending, streamingText, thinkingText]);
   // 引用条目悬停：完整内容 + 「跳转到原文」（显示在条目左侧）
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [hoverPos, setHoverPos] = useState<{
@@ -269,11 +270,6 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
     setLiveTrace([]);
   }, [conversationId]);
 
-  // 新消息滚动到底部（含流式增量）
-  useEffect(() => {
-    if (followBottom.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages, sending, streamingText, thinkingText]);
-
   /** 实时事件分发：思考/正文增量、工具开始/完成 */
   function onAgentEvent(evt: AgentEvent) {
     switch (evt.type) {
@@ -313,8 +309,7 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
   /** 提交澄清回答：续跑被 ask_user 中断的深度研究 */
   async function submitReply(reply: string) {
     if (!convId || sending) return;
-    followBottom.current = true;
-    setAwayFromBottom(false);
+    stick();
     setInput("");
     setSending(true);
     setError(null);
@@ -363,8 +358,7 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
     }
     // 发送时捕获当前引用列表；仅成功后清空（且用户未增删引用）
     const sentSelections = selections;
-    followBottom.current = true;
-    setAwayFromBottom(false);
+    stick();
     setInput("");
     setSending(true);
     setError(null);
@@ -374,7 +368,7 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
     setThinkingText("");
     setStreamingText("");
     setLiveTrace([]);
-    setMessages((prev) => [...prev, { role: "user", content: question }]);
+    setMessages((prev) => [...prev, { role: "user", content: question, selections: sentSelections?.map(({ text, pageIdx, location }) => ({ text, pageIdx, location })) }]);
     try {
       const ch = new Channel<AgentEvent>();
       ch.onmessage = onAgentEvent;
@@ -424,6 +418,7 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
       }
     } catch (e) {
       setError(String(e));
+      if (sentSelections?.length) onRestoreSelections?.(sentSelections);
     } finally {
       setSending(false);
     }
@@ -432,7 +427,7 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
   return (
     <div className="chat-workspace flex min-h-0 min-w-0 flex-1 flex-col gap-3">
       <div ref={scrollRef} className="chat-transcript flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-1 py-4" aria-label="对话消息"
-        onScroll={() => { const el = scrollRef.current; if (!el) return; const away = el.scrollHeight - el.scrollTop - el.clientHeight > 80; followBottom.current = !away; setAwayFromBottom(away); }}>
+        onScroll={onScroll}>
         {loadingHistory ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -445,6 +440,7 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
             m.role === "user" ? (
               <div key={i} className="flex justify-end">
                 <div className="max-w-[90%] break-words rounded-2xl rounded-br-md bg-accent px-4 py-3 text-sm leading-6 whitespace-pre-wrap text-foreground">
+                  {m.selections?.map((sel, index) => <button key={index} type="button" title="重新引用" onClick={() => onRequoteSelection?.(sel)} className="mb-2 block w-full truncate rounded border-l-2 border-foreground/25 px-2 py-1 text-left text-xs text-muted-foreground hover:text-foreground">{sel.text}</button>)}
                   {m.content}
                 </div>
               </div>
@@ -535,7 +531,7 @@ export function QaChat({ paperId, conversationId, onOpenPaper, onJumpPage, onCon
         )}
       </div>
 
-      {awayFromBottom && <button onClick={() => { followBottom.current = true; setAwayFromBottom(false); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }); }} className="mx-auto flex items-center gap-1 rounded-full border bg-background px-3 py-1.5 text-xs shadow-sm"><ArrowDown size={13} />回到最新消息</button>}
+      {!atBottom && <button onClick={scrollToBottom} className="mx-auto flex items-center gap-1 rounded-full border bg-background px-3 py-1.5 text-xs shadow-sm"><ArrowDown size={13} />回到最新消息</button>}
       {error && (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}

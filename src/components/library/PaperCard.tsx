@@ -6,13 +6,13 @@
  */
 import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { CalendarClock, Check, MoreHorizontal, Star } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
-import { cn, displayPaperTitle } from "@/lib/utils";
+import { cn, displayPaperTitle, parseProgressPercent } from "@/lib/utils";
 import { folderColor } from "@/lib/folderColors";
 import { PAPER_DRAG_MIME } from "@/lib/folders";
-import type { Folder, Paper, ReadingPlan, ReadingStatus } from "@/lib/api";
+import type { Folder, Paper, ParseProgress, ReadingPlan, ReadingStatus } from "@/lib/api";
 import { PaperMenuItems, type PaperMenuActions } from "./paperMenu";
 import {
   PlanSubmenu,
@@ -51,6 +51,7 @@ export interface PaperCardProps {
   selectionMode: boolean;
   isRenaming: boolean;
   parsing: boolean;
+  progress?: ParseProgress | null;
   /** 当前处于某文件夹视图时的 folderId；null = 全部/未分类视图 */
   currentFolderId: string | null;
   onToggle: (paperId: string) => void;
@@ -85,6 +86,7 @@ export function PaperCard(props: PaperCardProps) {
     selectionMode,
     isRenaming,
     parsing,
+    progress,
     currentFolderId,
     onToggle,
     onOpen,
@@ -105,6 +107,9 @@ export function PaperCard(props: PaperCardProps) {
   } = props;
 
   const st = PARSE_STYLE[paper.parse_status] ?? PARSE_STYLE.unparsed;
+  const percentRef = useRef(0);
+  if (!progress) percentRef.current = 0;
+  else percentRef.current = Math.max(percentRef.current, parseProgressPercent(progress));
   const status = readingStatusOf(paper.reading_status);
   const reduceMotion = useReducedMotion();
   // 归属文件夹（多归属；按 id 解析，脏数据过滤）
@@ -304,6 +309,8 @@ export function PaperCard(props: PaperCardProps) {
                   {paper.venue}
                 </p>
               )}
+
+              {progress && <div role="progressbar" aria-valuenow={Math.round(percentRef.current)} aria-valuemin={0} aria-valuemax={100} aria-label="解析进度" className="ml-[42px] mt-2 h-1 overflow-hidden rounded-full bg-zp-surface-hover"><div className="h-full rounded-full bg-primary/65 transition-[width] duration-300" style={{ width: `${percentRef.current}%` }} /></div>}
 
               {/* footer：低强调的解析状态 + 归属文件夹（最多 3 个，点击跳转） */}
               <div className="mt-1 flex flex-wrap items-center gap-1.5 pl-[42px]">

@@ -8,6 +8,7 @@ mod db;
 mod feynman;
 mod fs;
 mod qa;
+mod quiz;
 mod rag;
 mod settings;
 mod translate;
@@ -59,6 +60,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
             commands::update_settings,
+            commands::add_provider,
+            commands::update_provider,
+            commands::delete_provider,
+            commands::set_active_provider,
             commands::list_papers,
             commands::get_paper,
             commands::open_paper,
@@ -70,6 +75,7 @@ pub fn run() {
             commands::parse_pdf,
             commands::delete_paper,
             commands::index_paper,
+            commands::reindex_all_papers,
             commands::search,
             commands::keyword_search,
             commands::generate_blog,
@@ -112,6 +118,13 @@ pub fn run() {
             commands::feynman_next,
             commands::feynman_review,
             commands::get_feynman_conversation,
+            commands::quiz_sections,
+            commands::quiz_generate,
+            commands::quiz_submit_answer,
+            commands::quiz_grade_all,
+            commands::quiz_list,
+            commands::quiz_get,
+            commands::quiz_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

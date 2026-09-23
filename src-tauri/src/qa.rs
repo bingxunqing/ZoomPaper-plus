@@ -9,8 +9,8 @@ use anyhow::Result;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
-/// RAG 问答 system prompt：只依据上下文，用 [n] 标注引用，缺失则明说。
-const QA_SYSTEM_PROMPT: &str = "你是一个论文知识库问答助手。\n\n规则：\n1. 只依据下面提供的【上下文资料】回答，引用某段资料时用 [n] 标注（n 为该资料的编号）。\n2. 资料里没有的信息就明确说「资料中没有相关信息」，不要编造。\n3. 用中文回答，简洁准确。";
+/// RAG 问答 system prompt：只依据上下文，用 [n] 标注引用，缺失则明说；公式须带定界符。
+const QA_SYSTEM_PROMPT: &str = "你是一个论文知识库问答助手。\n\n规则：\n1. 只依据下面提供的【上下文资料】回答，引用某段资料时用 [n] 标注（n 为该资料的编号）。\n2. 资料里没有的信息就明确说「资料中没有相关信息」，不要编造。\n3. 用中文回答，简洁准确。\n4. 输出公式时：独立公式用 $$ 定界符并单独成段（前后留空行），行内公式用 $...$ 包裹，禁止输出没有定界符的裸 LaTeX。";
 
 /// 绑定论文（阅读页会话）时追加的系统提示段：强调当前论文优先，不要用通用知识替代论文内容。
 fn bound_paper_prompt(title: &str) -> String {
@@ -66,6 +66,9 @@ pub struct QaMessage {
     /// AI 耗时记录（仅 assistant 消息携带；旧数据为 None）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timing: Option<crate::agent::Timing>,
+    /// 用户消息携带的选中段落引用（仅 user 消息；旧数据为 None）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selections: Option<Vec<SelectionInput>>,
 }
 
 /// ask_user 澄清请求（模型调用 ask_user 工具中断循环后随 Answer 返回）。
@@ -206,8 +209,12 @@ pub fn prepare(
 
 /// Assemble context after embedding work completes outside the database lock.
 pub fn prepare_with_hits(
-    conn: &Connection, question: &str, paper_id: Option<&str>,
-    history: &[QaMessage], selections: &[SelectionInput], hits: &[SearchHit],
+    conn: &Connection,
+    question: &str,
+    paper_id: Option<&str>,
+    history: &[QaMessage],
+    selections: &[SelectionInput],
+    hits: &[SearchHit],
 ) -> Result<Prepared> {
     // 阅读页会话绑定论文的标题：用于 system 提示「当前阅读论文」段与选中段落引用标注；
     // 查询失败回退「当前论文」。
@@ -329,6 +336,7 @@ mod tests {
                 citations: None,
                 trace: None,
                 timing: None,
+                selections: None,
             },
             QaMessage {
                 role: Role::Assistant,
@@ -336,6 +344,7 @@ mod tests {
                 citations: None,
                 trace: None,
                 timing: None,
+                selections: None,
             },
         ];
         let msgs = build_messages("它为何有效？", "【上下文资料】\n[1] …", &history, None);
@@ -350,7 +359,12 @@ mod tests {
         assert!(!msgs[0].content.contains("当前阅读论文"));
 
         // 绑定论文：system 追加「当前阅读论文」段（含标题）
-        let bound = build_messages("它为何有效？", "【上下文资料】\n[1] …", &history, Some("注意力论文"));
+        let bound = build_messages(
+            "它为何有效？",
+            "【上下文资料】\n[1] …",
+            &history,
+            Some("注意力论文"),
+        );
         assert!(bound[0].content.contains("当前阅读论文《注意力论文》"));
         assert!(bound[0].content.contains("优先锚定这篇论文的内容"));
         // 超长标题注入提示词前被截断

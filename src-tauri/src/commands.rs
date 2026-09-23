@@ -2,12 +2,17 @@
 
 use crate::ai::llm::{Llm, Role};
 use crate::ai::mineru::MineruClient;
-use crate::db::models::{Conversation, Folder, Paper, ReadingPlan, ReadingPlanItem, SearchHit};
+use crate::db::models::{
+    Conversation, Folder, Paper, QuizRow, ReadingPlan, ReadingPlanItem, SearchHit,
+};
+use crate::db::Db;
 use crate::feynman::{
     ConceptStatus, FeynmanMessage, FeynmanState, FeynmanTurn, PlanItem, StageStatus,
 };
 use crate::qa::{Answer, Citation, QaMessage};
-use crate::db::Db;
+use crate::quiz::{
+    QuestionGrade, QuestionType, Quiz, QuizConfig, QuizQuestion, QuizSummary, UserAnswer,
+};
 use crate::settings::Settings;
 use futures_util::StreamExt;
 use rusqlite::{params, OptionalExtension};
@@ -20,6 +25,16 @@ use std::sync::{Arc, Mutex, OnceLock};
 use tauri::State;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
+
+fn user_selections(
+    selections: &[crate::qa::SelectionInput],
+) -> Option<Vec<crate::qa::SelectionInput>> {
+    if selections.is_empty() {
+        None
+    } else {
+        Some(selections.to_vec())
+    }
+}
 
 // ---------- 生成取消（「暂停」按钮） ----------
 //
@@ -49,7 +64,10 @@ pub(crate) fn register_cancel(token: &str) -> Arc<AtomicBool> {
     if pending_cancels().lock().unwrap().remove(token) {
         flag.store(true, Ordering::Relaxed);
     }
-    cancel_flags().lock().unwrap().insert(token.to_string(), flag.clone());
+    cancel_flags()
+        .lock()
+        .unwrap()
+        .insert(token.to_string(), flag.clone());
     flag
 }
 
@@ -113,6 +131,91 @@ pub fn update_settings(new_settings: Settings) -> Result<Settings, String> {
     Ok(new_settings)
 }
 
+/// 添加 provider 配置
+#[tauri::command]
+pub fn add_provider(config: crate::settings::ProviderConfig) -> Result<Settings, String> {
+    let mut settings = Settings::load().map_err(|e| e.to_string())?;
+
+    // 检查 id 是否已存在
+    if settings.providers.iter().any(|p| p.id == config.id) {
+        return Err(format!("Provider ID '{}' 已存在", config.id));
+    }
+
+    settings.providers.push(config.clone());
+
+    // 如果没有激活的 provider，自动激活新添加的
+    if settings.active_provider_id.is_empty() {
+        settings.active_provider_id = config.id;
+    }
+
+    settings.save().map_err(|e| e.to_string())?;
+    Ok(settings)
+}
+
+/// 更新 provider 配置
+#[tauri::command]
+pub fn update_provider(
+    id: String,
+    config: crate::settings::ProviderConfig,
+) -> Result<Settings, String> {
+    let mut settings = Settings::load().map_err(|e| e.to_string())?;
+
+    let provider = settings
+        .providers
+        .iter_mut()
+        .find(|p| p.id == id)
+        .ok_or_else(|| format!("Provider '{}' 不存在", id))?;
+
+    // 更新配置（保留原 id）
+    let old_id = provider.id.clone();
+    *provider = config;
+    provider.id = old_id;
+
+    settings.save().map_err(|e| e.to_string())?;
+    Ok(settings)
+}
+
+/// 删除 provider 配置
+#[tauri::command]
+pub fn delete_provider(id: String) -> Result<Settings, String> {
+    let mut settings = Settings::load().map_err(|e| e.to_string())?;
+
+    // 不允许删除当前激活的 provider
+    if settings.active_provider_id == id {
+        return Err(format!(
+            "不能删除当前激活的 provider '{}'，请先切换到其他 provider",
+            id
+        ));
+    }
+
+    let index = settings
+        .providers
+        .iter()
+        .position(|p| p.id == id)
+        .ok_or_else(|| format!("Provider '{}' 不存在", id))?;
+
+    settings.providers.remove(index);
+    settings.save().map_err(|e| e.to_string())?;
+    Ok(settings)
+}
+
+/// 设置激活的 provider
+#[tauri::command]
+pub fn set_active_provider(id: String) -> Result<Settings, String> {
+    let mut settings = Settings::load().map_err(|e| e.to_string())?;
+
+    // 验证 provider 存在
+    settings
+        .providers
+        .iter()
+        .find(|p| p.id == id)
+        .ok_or_else(|| format!("Provider '{}' 不存在", id))?;
+
+    settings.active_provider_id = id;
+    settings.save().map_err(|e| e.to_string())?;
+    Ok(settings)
+}
+
 // ---------- 论文 ----------
 
 /// 论文查询公共前缀：LEFT JOIN paper_folders 聚合所属文件夹（多归属）。
@@ -173,7 +276,9 @@ fn list_papers_inner(db: &Db) -> Result<Vec<Paper>, String> {
     let rows = stmt
         .query_map([], row_to_paper)
         .map_err(|e| e.to_string())?;
-    let mut papers = rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    let mut papers = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
     drop(stmt);
     for paper in &mut papers {
         backfill_paper_venue(&conn, paper)?;
@@ -218,33 +323,54 @@ pub fn open_paper(db: State<'_, Db>, paper_id: String) -> Result<Paper, String> 
 fn open_paper_inner(db: &Db, paper_id: &str) -> Result<Paper, String> {
     {
         let conn = db.conn();
-        let changed = conn.execute(
-            "UPDATE papers SET last_read_at = ?2 WHERE id = ?1",
-            params![paper_id, chrono::Utc::now().timestamp()],
-        ).map_err(|e| e.to_string())?;
-        if changed == 0 { return Err("论文不存在".into()); }
+        let changed = conn
+            .execute(
+                "UPDATE papers SET last_read_at = ?2 WHERE id = ?1",
+                params![paper_id, chrono::Utc::now().timestamp()],
+            )
+            .map_err(|e| e.to_string())?;
+        if changed == 0 {
+            return Err("论文不存在".into());
+        }
     }
     get_paper_inner(db, paper_id)
 }
 
 #[tauri::command]
-pub fn set_reading_status(db: State<'_, Db>, paper_ids: Vec<String>, status: String) -> Result<(), String> {
+pub fn set_reading_status(
+    db: State<'_, Db>,
+    paper_ids: Vec<String>,
+    status: String,
+) -> Result<(), String> {
     set_reading_status_inner(&db, &paper_ids, &status)
 }
 fn set_reading_status_inner(db: &Db, paper_ids: &[String], status: &str) -> Result<(), String> {
-    if !["unread", "reading", "finished"].contains(&status) { return Err("无效的阅读状态".into()); }
+    if !["unread", "reading", "finished"].contains(&status) {
+        return Err("无效的阅读状态".into());
+    }
     let mut conn = db.conn();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     for id in paper_ids {
-        let changed = tx.execute("UPDATE papers SET reading_status = ?2 WHERE id = ?1", params![id, status]).map_err(|e| e.to_string())?;
-        if changed == 0 { return Err("论文不存在，未更改任何阅读状态".into()); }
+        let changed = tx
+            .execute(
+                "UPDATE papers SET reading_status = ?2 WHERE id = ?1",
+                params![id, status],
+            )
+            .map_err(|e| e.to_string())?;
+        if changed == 0 {
+            return Err("论文不存在，未更改任何阅读状态".into());
+        }
     }
     tx.commit().map_err(|e| e.to_string())
 }
 
 /// Export the three annotation sources into a user-selected Markdown file.
 #[tauri::command]
-pub fn export_notes(db: State<'_, Db>, paper_id: String, destination: String) -> Result<(), String> {
+pub fn export_notes(
+    db: State<'_, Db>,
+    paper_id: String,
+    destination: String,
+) -> Result<(), String> {
     export_notes_inner(&db, &paper_id, &destination)
 }
 
@@ -255,19 +381,39 @@ fn export_notes_inner(db: &Db, paper_id: &str, destination: &str) -> Result<(), 
         if let Some(raw) = get_annotations_file(&db, &paper_id, file)? {
             let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
             {
-                let highlights = value["highlights"].as_array().ok_or("标注文件格式无效，导出已停止")?;
+                let highlights = value["highlights"]
+                    .as_array()
+                    .ok_or("标注文件格式无效，导出已停止")?;
                 for h in highlights {
-                    let source = h["label"].as_str().map(String::from).unwrap_or_else(|| format!("{} · 第 {} 页", if kind == "annotations" { "原文" } else { kind }, h["page_idx"].as_u64().unwrap_or(0) + 1));
+                    let source = h["label"].as_str().map(String::from).unwrap_or_else(|| {
+                        format!(
+                            "{} · 第 {} 页",
+                            if kind == "annotations" {
+                                "原文"
+                            } else {
+                                kind
+                            },
+                            h["page_idx"].as_u64().unwrap_or(0) + 1
+                        )
+                    });
                     output.push_str(&format!("## {}\n\n", source));
-                    if let Some(text) = h["text"].as_str() { for line in text.lines() { output.push_str(&format!("> {}\n", line)); } }
-                    if let Some(note) = h["note"]["text"].as_str() { output.push_str(&format!("\n{}\n", note)); }
+                    if let Some(text) = h["text"].as_str() {
+                        for line in text.lines() {
+                            output.push_str(&format!("> {}\n", line));
+                        }
+                    }
+                    if let Some(note) = h["note"]["text"].as_str() {
+                        output.push_str(&format!("\n{}\n", note));
+                    }
                     output.push('\n');
                 }
             }
         }
     }
     let destination = Path::new(&destination);
-    if destination.extension().and_then(|s| s.to_str()) != Some("md") { return Err("请选择 .md 文件".into()); }
+    if destination.extension().and_then(|s| s.to_str()) != Some("md") {
+        return Err("请选择 .md 文件".into());
+    }
     crate::fs::write_md(destination, &output).map_err(|e| e.to_string())
 }
 
@@ -401,7 +547,9 @@ fn normalize_github_repo_url(raw: &str) -> Option<String> {
     if parsed.scheme() != "https" || parsed.host_str()?.to_ascii_lowercase() != "github.com" {
         return None;
     }
-    let mut segments = parsed.path_segments()?.filter(|segment| !segment.is_empty());
+    let mut segments = parsed
+        .path_segments()?
+        .filter(|segment| !segment.is_empty());
     let owner = segments.next()?;
     let repo = segments.next()?.trim_end_matches(".git");
     if owner.is_empty() || repo.is_empty() {
@@ -416,7 +564,9 @@ fn extract_github_repo_url(text: &str) -> Option<String> {
     while let Some(start) = rest.find(marker) {
         let candidate = &rest[start..];
         let end = candidate
-            .find(|ch: char| ch.is_whitespace() || matches!(ch, ')' | ']' | '}' | '>' | '"' | '\'' | ',' | ';'))
+            .find(|ch: char| {
+                ch.is_whitespace() || matches!(ch, ')' | ']' | '}' | '>' | '"' | '\'' | ',' | ';')
+            })
             .unwrap_or(candidate.len());
         let candidate = candidate[..end].trim_end_matches(['.', ':']);
         if let Some(url) = normalize_github_repo_url(candidate) {
@@ -449,13 +599,19 @@ fn venue_from_text(text: &str) -> Option<String> {
     }
     let patterns = [
         ("empiricalmethodsnaturallanguageprocessing", "EMNLP"),
-        ("northamericanchapterassociationforcomputationallinguistics", "NAACL"),
+        (
+            "northamericanchapterassociationforcomputationallinguistics",
+            "NAACL",
+        ),
         ("associationforcomputationallinguistics", "ACL"),
         ("internationalconferenceonmachinelearning", "ICML"),
         ("internationalconferenceonlearningrepresentations", "ICLR"),
         ("neuralinformationprocessingsystems", "NeurIPS"),
         ("computervisionandpatternrecognition", "CVPR"),
-        ("associationfortheadvancementofartificialintelligence", "AAAI"),
+        (
+            "associationfortheadvancementofartificialintelligence",
+            "AAAI",
+        ),
     ];
     let (label, compact_index) = patterns
         .iter()
@@ -528,14 +684,17 @@ fn venue_from_content_list(bytes: &[u8]) -> Option<String> {
 
 fn venue_from_paper_dir(md_path: &str) -> Option<String> {
     let dir = Path::new(md_path).parent()?;
-    std::fs::read_dir(dir).ok()?.filter_map(Result::ok).find_map(|entry| {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.ends_with("content_list.json") && !name.ends_with("content_list_v2.json") {
-            return None;
-        }
-        let bytes = std::fs::read(entry.path()).ok()?;
-        venue_from_content_list(&bytes)
-    })
+    std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(Result::ok)
+        .find_map(|entry| {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.ends_with("content_list.json") && !name.ends_with("content_list_v2.json") {
+                return None;
+            }
+            let bytes = std::fs::read(entry.path()).ok()?;
+            venue_from_content_list(&bytes)
+        })
 }
 
 fn backfill_paper_venue(conn: &rusqlite::Connection, paper: &mut Paper) -> Result<(), String> {
@@ -549,7 +708,10 @@ fn backfill_paper_venue(conn: &rusqlite::Connection, paper: &mut Paper) -> Resul
         .or_else(|| venue_from_paper_dir(&paper.md_path));
     let auto_label = paper.venue.as_deref().is_some_and(|current| {
         let short = current.split_whitespace().next().unwrap_or("");
-        ["ACL", "EMNLP", "NAACL", "ICML", "ICLR", "NeurIPS", "CVPR", "AAAI"].contains(&short)
+        [
+            "ACL", "EMNLP", "NAACL", "ICML", "ICLR", "NeurIPS", "CVPR", "AAAI",
+        ]
+        .contains(&short)
     });
     let should_update = match (&paper.venue, &detected) {
         (None, Some(_)) => true,
@@ -580,7 +742,9 @@ fn validate_remote_pdf_url(raw: &str) -> Result<reqwest::Url, String> {
     }
     if let Ok(ip) = host.parse::<IpAddr>() {
         let private = match ip {
-            IpAddr::V4(ip) => ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified(),
+            IpAddr::V4(ip) => {
+                ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified()
+            }
             IpAddr::V6(ip) => ip.is_loopback() || ip.is_unique_local() || ip.is_unspecified(),
         };
         if private {
@@ -626,7 +790,10 @@ pub async fn import_pdf_url(
         .error_for_status()
         .map_err(|e| format!("论文服务器返回错误：{e}"))?;
     validate_remote_pdf_url(response.url().as_str())?;
-    if response.content_length().is_some_and(|size| size > MAX_REMOTE_PDF_BYTES) {
+    if response
+        .content_length()
+        .is_some_and(|size| size > MAX_REMOTE_PDF_BYTES)
+    {
         return Err("PDF 超过 100 MB，已停止导入".to_string());
     }
 
@@ -679,9 +846,31 @@ pub async fn import_pdf_url(
     result
 }
 
+/// 解析失败时恢复数据库状态，避免论文一直显示“解析中”。
+struct ParseFailGuard<'a> {
+    db: &'a Db,
+    paper_id: &'a str,
+    complete: bool,
+}
+impl Drop for ParseFailGuard<'_> {
+    fn drop(&mut self) {
+        if !self.complete {
+            let conn = self.db.conn();
+            let _ = conn.execute(
+                "UPDATE papers SET parse_status = 'failed' WHERE id = ?1",
+                [self.paper_id],
+            );
+        }
+    }
+}
+
 /// 调用 MinerU 解析论文 Markdown 并更新状态。
 #[tauri::command]
-pub async fn parse_pdf(db: State<'_, Db>, paper_id: String) -> Result<Paper, String> {
+pub async fn parse_pdf(
+    db: State<'_, Db>,
+    paper_id: String,
+    on_progress: tauri::ipc::Channel<crate::ai::mineru::ParseProgress>,
+) -> Result<Paper, String> {
     // 标记为解析中（不放锁跨 await）
     {
         let conn = db.conn();
@@ -691,6 +880,12 @@ pub async fn parse_pdf(db: State<'_, Db>, paper_id: String) -> Result<Paper, Str
         )
         .map_err(|e| e.to_string())?;
     }
+
+    let mut fail_guard = ParseFailGuard {
+        db: &db,
+        paper_id: &paper_id,
+        complete: false,
+    };
 
     // 读取路径与 API Key
     let (pdf_path, md_path) = {
@@ -702,10 +897,7 @@ pub async fn parse_pdf(db: State<'_, Db>, paper_id: String) -> Result<Paper, Str
         )
         .map_err(|e| e.to_string())?
     };
-    let api_key = Settings::load()
-        .map_err(|e| e.to_string())?
-        .api_keys
-        .mineru;
+    let api_key = Settings::load().map_err(|e| e.to_string())?.mineru_api_key;
     if api_key.is_empty() {
         return Err("未配置 MinerU API Key，请先在设置页填写".into());
     }
@@ -713,13 +905,17 @@ pub async fn parse_pdf(db: State<'_, Db>, paper_id: String) -> Result<Paper, Str
     // 网络调用（await 期间不持有数据库锁）
     let client = MineruClient::new(api_key);
     let output = client
-        .extract_pdf(Path::new(&pdf_path))
+        .extract_pdf(Path::new(&pdf_path), &|p| {
+            let _ = on_progress.send(p);
+        })
         .await
         .map_err(|e| format!("MinerU 解析失败: {e}"))?;
 
     // 落盘 markdown + 图片 + 结构化 JSON（论文目录下）
     crate::fs::write_md(Path::new(&md_path), &output.markdown).map_err(|e| e.to_string())?;
-    let paper_dir = Path::new(&md_path).parent().unwrap_or_else(|| Path::new("."));
+    let paper_dir = Path::new(&md_path)
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
     crate::fs::write_extracted_files(paper_dir, &output.files).map_err(|e| e.to_string())?;
 
     // 提取元数据并更新状态
@@ -738,10 +934,17 @@ pub async fn parse_pdf(db: State<'_, Db>, paper_id: String) -> Result<Paper, Str
     }
 
     // Heavy inference runs on a blocking worker, never while holding the database lock.
+    let _ = on_progress.send(crate::ai::mineru::ParseProgress {
+        stage: "indexing".into(),
+        extracted_pages: None,
+        total_pages: None,
+    });
     if let Err(e) = index_paper(db.clone(), paper_id.clone()).await {
         eprintln!("索引论文 {paper_id} 失败: {e}");
     }
 
+    fail_guard.complete = true;
+    drop(fail_guard);
     get_paper(db, paper_id)
 }
 
@@ -835,7 +1038,8 @@ fn list_folders_inner(db: &Db) -> Result<Vec<Folder>, String> {
     let rows = stmt
         .query_map([], row_to_folder)
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 /// 新建文件夹（parent_id 为 None = 顶级）。同级重名拒绝。
@@ -1026,7 +1230,11 @@ fn remove_papers_from_folder_inner(
 
 /// 重命名论文（仅更新 title 元数据；磁盘文件不动）。trim 后非空校验。
 #[tauri::command]
-pub fn rename_paper(db: State<'_, Db>, paper_id: String, new_title: String) -> Result<Paper, String> {
+pub fn rename_paper(
+    db: State<'_, Db>,
+    paper_id: String,
+    new_title: String,
+) -> Result<Paper, String> {
     rename_paper_inner(&db, &paper_id, &new_title)
 }
 
@@ -1054,7 +1262,11 @@ fn rename_paper_inner(db: &Db, paper_id: &str, new_title: &str) -> Result<Paper,
 /// 顺带维护时间线字段：reading → 刷新 last_read_at；read → 记 finished_at；unread → 清 finished_at。
 /// 阅读页的「标记已读」请用 mark_paper_read（同时刷新 last_read_at）。
 #[tauri::command]
-pub fn set_paper_status(db: State<'_, Db>, paper_id: String, status: String) -> Result<Paper, String> {
+pub fn set_paper_status(
+    db: State<'_, Db>,
+    paper_id: String,
+    status: String,
+) -> Result<Paper, String> {
     if !matches!(status.as_str(), "unread" | "reading" | "read") {
         return Err(format!("非法阅读状态：{status}"));
     }
@@ -1085,7 +1297,11 @@ pub fn set_paper_status(db: State<'_, Db>, paper_id: String, status: String) -> 
 
 /// 设置论文星标（true / false）。返回更新后的论文。
 #[tauri::command]
-pub fn set_paper_starred(db: State<'_, Db>, paper_id: String, starred: bool) -> Result<Paper, String> {
+pub fn set_paper_starred(
+    db: State<'_, Db>,
+    paper_id: String,
+    starred: bool,
+) -> Result<Paper, String> {
     {
         let conn = db.conn();
         let n = conn
@@ -1194,13 +1410,18 @@ fn plan_items(conn: &rusqlite::Connection, plan_id: &str) -> Result<Vec<ReadingP
             })
         })
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 /// 读单个计划并填充条目。
 fn load_plan(conn: &rusqlite::Connection, plan_id: &str) -> Result<ReadingPlan, String> {
     let mut plan = conn
-        .query_row(&format!("{PLAN_SELECT} WHERE id = ?1"), [plan_id], row_to_plan)
+        .query_row(
+            &format!("{PLAN_SELECT} WHERE id = ?1"),
+            [plan_id],
+            row_to_plan,
+        )
         .map_err(|e| e.to_string())?;
     plan.items = plan_items(conn, plan_id)?;
     Ok(plan)
@@ -1242,7 +1463,16 @@ fn create_reading_plan_inner(
     conn.execute(
         "INSERT INTO reading_plans (id, type, target_count, created_at) \
          VALUES (?1, ?2, ?3, ?4)",
-        params![&id, plan_type, if plan_type == "daily" { target_count } else { None }, now],
+        params![
+            &id,
+            plan_type,
+            if plan_type == "daily" {
+                target_count
+            } else {
+                None
+            },
+            now
+        ],
     )
     .map_err(|e| e.to_string())?;
     for pid in &ids {
@@ -1265,10 +1495,14 @@ pub fn list_reading_plans(db: State<'_, Db>) -> Result<Vec<ReadingPlan>, String>
 fn list_reading_plans_inner(db: &Db) -> Result<Vec<ReadingPlan>, String> {
     let conn = db.conn();
     let mut stmt = conn
-        .prepare(&format!("{PLAN_SELECT} ORDER BY active DESC, created_at DESC"))
+        .prepare(&format!(
+            "{PLAN_SELECT} ORDER BY active DESC, created_at DESC"
+        ))
         .map_err(|e| e.to_string())?;
     let rows = stmt.query_map([], row_to_plan).map_err(|e| e.to_string())?;
-    let mut plans = rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    let mut plans = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
     for plan in &mut plans {
         plan.items = plan_items(&conn, &plan.id)?;
     }
@@ -1431,7 +1665,8 @@ fn update_reading_plan_inner(
             let rows = stmt
                 .query_map([plan_id], |r| r.get(0))
                 .map_err(|e| e.to_string())?;
-            rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?
         };
         let now = chrono::Utc::now().timestamp();
         for pid in &existing {
@@ -1643,11 +1878,43 @@ fn timeline_stats_inner(db: &Db, days: i64) -> Result<TimelineStats, String> {
 #[tauri::command]
 pub async fn index_paper(db: State<'_, Db>, paper_id: String) -> Result<usize, String> {
     let md_path = get_paper_inner(&db, &paper_id)?.md_path;
-    let (drafts, embeddings) = tokio::task::spawn_blocking(move || crate::rag::prepare_index(&md_path))
-        .await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+    let (drafts, embeddings) =
+        tokio::task::spawn_blocking(move || crate::rag::prepare_index(&md_path))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
     let conn = db.conn();
     crate::rag::insert_chunks(&conn, &paper_id, &drafts, &embeddings).map_err(|e| e.to_string())?;
     Ok(drafts.len())
+}
+
+/// 重建所有已解析论文的向量索引（分块逻辑变更后迁移存量数据用）。
+/// 单篇失败跳过并记日志；返回 (成功篇数, 失败篇数)。
+#[tauri::command]
+pub fn reindex_all_papers(db: State<'_, Db>) -> Result<(usize, usize), String> {
+    let conn = db.conn();
+    let ids: Vec<String> = {
+        let mut stmt = conn
+            .prepare("SELECT id FROM papers WHERE parse_status = 'ready'")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
+    };
+    let mut ok = 0;
+    let mut failed = 0;
+    for id in ids {
+        match crate::rag::index_paper(&conn, &id) {
+            Ok(_) => ok += 1,
+            Err(e) => {
+                eprintln!("重建索引 {id} 失败: {e}");
+                failed += 1;
+            }
+        }
+    }
+    Ok((ok, failed))
 }
 
 /// 向量检索。`paper_id` 为 `Some` 时只在该论文内检索。
@@ -1659,27 +1926,52 @@ pub async fn search(
     paper_id: Option<String>,
 ) -> Result<Vec<SearchHit>, String> {
     let embedding = tokio::task::spawn_blocking(move || crate::ai::embed::embed_query(&query))
-        .await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
     let conn = db.conn();
-    crate::rag::search_with_embedding(&conn, &embedding, top_k.clamp(1, 100), paper_id.as_deref()).map_err(|e| e.to_string())
+    crate::rag::search_with_embedding(&conn, &embedding, top_k.clamp(1, 100), paper_id.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn keyword_search(db: State<'_, Db>, query: String, paper_id: Option<String>) -> Result<Vec<SearchHit>, String> {
+pub fn keyword_search(
+    db: State<'_, Db>,
+    query: String,
+    paper_id: Option<String>,
+) -> Result<Vec<SearchHit>, String> {
     let papers = list_papers_inner(&db)?;
     let terms: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
-    if terms.is_empty() { return Ok(vec![]); }
+    if terms.is_empty() {
+        return Ok(vec![]);
+    }
     let mut hits = Vec::new();
     for paper in papers {
-        if paper_id.as_ref().is_some_and(|id| id != &paper.id) { continue; }
-        let Ok(markdown) = std::fs::read_to_string(&paper.md_path) else { continue; };
+        if paper_id.as_ref().is_some_and(|id| id != &paper.id) {
+            continue;
+        }
+        let Ok(markdown) = std::fs::read_to_string(&paper.md_path) else {
+            continue;
+        };
         let mut section = String::new();
         for (index, block) in markdown.split("\n\n").enumerate() {
-            if block.starts_with('#') { section = block.trim_start_matches('#').trim().to_string(); }
+            if block.starts_with('#') {
+                section = block.trim_start_matches('#').trim().to_string();
+            }
             let lower = block.to_lowercase();
             if terms.iter().all(|term| lower.contains(term)) {
-                hits.push(SearchHit { chunk_id: index as i64, paper_id: paper.id.clone(), paper_title: paper.title.clone(), section: section.clone(), content: block.chars().take(2000).collect(), page_idx: None, distance: 0.0 });
-                if hits.len() >= 50 { return Ok(hits); }
+                hits.push(SearchHit {
+                    chunk_id: index as i64,
+                    paper_id: paper.id.clone(),
+                    paper_title: paper.title.clone(),
+                    section: section.clone(),
+                    content: block.chars().take(2000).collect(),
+                    page_idx: None,
+                    distance: 0.0,
+                });
+                if hits.len() >= 50 {
+                    return Ok(hits);
+                }
             }
         }
     }
@@ -1691,10 +1983,7 @@ pub fn keyword_search(db: State<'_, Db>, query: String, paper_id: Option<String>
 /// 调用 LLM 生成博客（科普版正文 + 第一性原理深度剖析），落盘 `blog.md` 并回写
 /// `blog_md_path`。返回组合后的博客 Markdown 文本。
 #[tauri::command]
-pub async fn generate_blog(
-    db: State<'_, Db>,
-    paper_id: String,
-) -> Result<String, String> {
+pub async fn generate_blog(db: State<'_, Db>, paper_id: String) -> Result<String, String> {
     let settings = Settings::load().map_err(|e| e.to_string())?;
     let llm = crate::ai::llm::Llm::from_settings(&settings).map_err(|e| e.to_string())?;
 
@@ -1761,10 +2050,13 @@ pub async fn translate_selection(text: String, context: Option<String>) -> Resul
     let context: String = context.unwrap_or_default().chars().take(1000).collect();
     let messages = crate::translate::build_selection_messages(text, &context);
     let result = tokio::time::timeout(std::time::Duration::from_secs(45), llm.chat(&messages))
-        .await.map_err(|_| "翻译超时，请重试".to_string())?
+        .await
+        .map_err(|_| "翻译超时，请重试".to_string())?
         .map_err(|e| e.to_string())?;
     let result = result.trim();
-    if result.is_empty() { return Err("未收到译文，请重试".into()); }
+    if result.is_empty() {
+        return Err("未收到译文，请重试".into());
+    }
     Ok(result.to_string())
 }
 
@@ -1969,13 +2261,17 @@ async fn quick_answer(
     sink: &mut (dyn FnMut(crate::agent::AgentEvent) + Send),
 ) -> Result<(String, Vec<Citation>, crate::agent::Timing), String> {
     let query = question.to_owned();
-    let embedding = tauri::async_runtime::spawn_blocking(move || crate::ai::embed::embed_query(&query))
-        .await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+    let embedding =
+        tauri::async_runtime::spawn_blocking(move || crate::ai::embed::embed_query(&query))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
     // Only SQL and context assembly hold the database lock.
     let prepared = {
         let conn = db.conn();
-        let hits = crate::rag::search_with_embedding(&conn, &embedding, top_k.clamp(1, 50), paper_id)
-            .map_err(|e| e.to_string())?;
+        let hits =
+            crate::rag::search_with_embedding(&conn, &embedding, top_k.clamp(1, 50), paper_id)
+                .map_err(|e| e.to_string())?;
         crate::qa::prepare_with_hits(&conn, question, paper_id, history, selections, &hits)
             .map_err(|e| e.to_string())?
     };
@@ -2060,11 +2356,15 @@ impl<'a> EventBatcher<'a> {
     fn flush(&mut self) {
         if !self.thinking.is_empty() {
             let text = std::mem::take(&mut self.thinking);
-            let _ = self.channel.send(crate::agent::AgentEvent::Thinking { text });
+            let _ = self
+                .channel
+                .send(crate::agent::AgentEvent::Thinking { text });
         }
         if !self.content.is_empty() {
             let text = std::mem::take(&mut self.content);
-            let _ = self.channel.send(crate::agent::AgentEvent::Content { text });
+            let _ = self
+                .channel
+                .send(crate::agent::AgentEvent::Content { text });
         }
         self.last_flush = std::time::Instant::now();
     }
@@ -2135,10 +2435,7 @@ fn load_agent_state(db: &Db, conv_id: &str) -> Result<Option<crate::agent::Agent
     }
 }
 
-fn load_memory(
-    db: &Db,
-    conv_id: &str,
-) -> Result<Vec<crate::agent::memory::MemoryEntry>, String> {
+fn load_memory(db: &Db, conv_id: &str) -> Result<Vec<crate::agent::memory::MemoryEntry>, String> {
     let conn = db.conn();
     // 列为 NULL（新会话/未生成记忆）→ 空数组；行不存在 → 空数组
     let raw: Option<String> = conn
@@ -2233,13 +2530,8 @@ pub async fn ask_question(
 
     // 取/建会话与历史
     let now = chrono::Utc::now().timestamp();
-    let (conv_id, history) = load_or_create_conv(
-        &db,
-        &question,
-        paper_id.as_deref(),
-        conversation_id,
-        now,
-    )?;
+    let (conv_id, history) =
+        load_or_create_conv(&db, &question, paper_id.as_deref(), conversation_id, now)?;
     let selections = selections.as_deref().unwrap_or_default();
 
     // 实时事件转发（Thinking/Content 批处理防抖）
@@ -2268,6 +2560,7 @@ pub async fn ask_question(
             citations: None,
             trace: None,
             timing: None,
+            selections: user_selections(selections),
         });
         hist.push(QaMessage {
             role: Role::Assistant,
@@ -2275,6 +2568,7 @@ pub async fn ask_question(
             citations: Some(citations.clone()),
             trace: None,
             timing: Some(timing),
+            selections: None,
         });
         write_messages(&db.conn(), &conv_id, &hist, now)?;
         return Ok(Answer {
@@ -2298,6 +2592,7 @@ pub async fn ask_question(
             citations: None,
             trace: None,
             timing: None,
+            selections: user_selections(selections),
         });
         write_messages(&db.conn(), &conv_id, &hist, now)?;
     }
@@ -2325,7 +2620,10 @@ pub async fn ask_question(
         }) => {
             batcher.flush();
             let cancelled = cancel.is_some_and(|c| c.load(Ordering::Relaxed));
-            update_memory(&db, &llm, &conv_id, memory, &question, &citations, &trace, now).await?;
+            update_memory(
+                &db, &llm, &conv_id, memory, &question, &citations, &trace, now,
+            )
+            .await?;
             clear_agent_state(&db, &conv_id)?;
             let mut hist = history;
             hist.push(QaMessage {
@@ -2334,6 +2632,7 @@ pub async fn ask_question(
                 citations: None,
                 trace: None,
                 timing: None,
+                selections: user_selections(selections),
             });
             hist.push(QaMessage {
                 role: Role::Assistant,
@@ -2345,6 +2644,7 @@ pub async fn ask_question(
                     Some(trace.clone())
                 },
                 timing: Some(timing),
+                selections: None,
             });
             write_messages(&db.conn(), &conv_id, &hist, now)?;
             Ok(Answer {
@@ -2419,6 +2719,7 @@ pub async fn ask_question(
                         citations: None,
                         trace: None,
                         timing: None,
+                        selections: user_selections(selections),
                     });
                     hist.push(QaMessage {
                         role: Role::Assistant,
@@ -2426,6 +2727,7 @@ pub async fn ask_question(
                         citations: Some(citations.clone()),
                         trace: Some(trace.clone()),
                         timing: Some(timing),
+                        selections: None,
                     });
                     write_messages(&db.conn(), &conv_id, &hist, now)?;
                     Ok(Answer {
@@ -2496,6 +2798,7 @@ pub async fn ask_question_reply(
         citations: None,
         trace: None,
         timing: None,
+        selections: None,
     });
     write_messages(&db.conn(), &conversation_id, &hist, now)?;
     let memory = load_memory(&db, &conversation_id)?;
@@ -2543,6 +2846,7 @@ pub async fn ask_question_reply(
                     Some(trace.clone())
                 },
                 timing: Some(timing),
+                selections: None,
             });
             write_messages(&db.conn(), &conversation_id, &hist, now)?;
             Ok(Answer {
@@ -2610,7 +2914,8 @@ pub fn list_conversations(db: State<'_, Db>) -> Result<Vec<Conversation>, String
             })
         })
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 /// 删除单个问答会话（含其 agent 状态与研究记忆列，随行删除）。
@@ -2622,10 +2927,7 @@ pub fn delete_conversation(db: State<'_, Db>, conversation_id: String) -> Result
 fn delete_conversation_inner(db: &Db, conversation_id: &str) -> Result<(), String> {
     let conn = db.conn();
     let n = conn
-        .execute(
-            "DELETE FROM conversations WHERE id = ?1",
-            [conversation_id],
-        )
+        .execute("DELETE FROM conversations WHERE id = ?1", [conversation_id])
         .map_err(|e| e.to_string())?;
     if n == 0 {
         return Err("会话不存在".into());
@@ -2822,7 +3124,8 @@ async fn generate_plan(llm: &Llm, toc: &str, full_paper: &str) -> Vec<PlanItem> 
     }
     vec![PlanItem {
         name: "论文核心内容".to_string(),
-        objective: "能用自己的话概括这篇论文解决了什么问题、用了什么方法、得出什么结论。".to_string(),
+        objective: "能用自己的话概括这篇论文解决了什么问题、用了什么方法、得出什么结论。"
+            .to_string(),
     }]
 }
 
@@ -2938,7 +3241,13 @@ async fn ask_concept_opening(
     cancel: Option<&AtomicBool>,
     on_event: &tauri::ipc::Channel<crate::agent::AgentEvent>,
 ) -> Result<
-    (String, String, Vec<crate::agent::ToolStep>, crate::agent::Timing, bool),
+    (
+        String,
+        String,
+        Vec<crate::agent::ToolStep>,
+        crate::agent::Timing,
+        bool,
+    ),
     String,
 > {
     let query = format!("{} {}", concept.name, concept.objective);
@@ -3005,7 +3314,8 @@ pub async fn feynman_start(db: State<'_, Db>, paper_id: String) -> Result<Feynma
     // 锁内：读章节地图（TOC）
     let toc = {
         let conn = db.conn();
-        let sections = crate::rag::sections_for_paper(&conn, &paper_id).map_err(|e| e.to_string())?;
+        let sections =
+            crate::rag::sections_for_paper(&conn, &paper_id).map_err(|e| e.to_string())?;
         crate::feynman::build_toc(&sections)
     };
     // 无锁：生成概念计划
@@ -3161,7 +3471,9 @@ pub async fn feynman_turn(
             let (_main_id, st) = load_main(&db, &pid)?;
             let st = st.ok_or_else(|| "费曼学习进度缺失".to_string())?;
             if is_legacy_state(&st) {
-                return Err("该会话来自旧版本，仅可查看，请点「重新开始」使用新的概念会话机制".to_string());
+                return Err(
+                    "该会话来自旧版本，仅可查看，请点「重新开始」使用新的概念会话机制".to_string(),
+                );
             }
             if cidx >= st.plan.len() {
                 return Err("概念索引越界".to_string());
@@ -3439,7 +3751,13 @@ pub async fn feynman_quiz(
             },
             timing: Some(timing),
         });
-        save_concept_session(&conn, &conversation_id, &history, new_summary.as_deref(), now)?;
+        save_concept_session(
+            &conn,
+            &conversation_id,
+            &history,
+            new_summary.as_deref(),
+            now,
+        )?;
         save_feynman_state(&conn, &main_id, &state)?;
     }
 
@@ -3552,12 +3870,7 @@ pub async fn feynman_judge(
     if passed {
         let summary_reply = crate::feynman::turn(
             &llm,
-            &crate::feynman::build_concept_summary_messages(
-                &toc,
-                &context,
-                &window,
-                &concept.name,
-            ),
+            &crate::feynman::build_concept_summary_messages(&toc, &context, &window, &concept.name),
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -3598,7 +3911,13 @@ pub async fn feynman_judge(
             },
             timing: Some(timing),
         });
-        save_concept_session(&conn, &conversation_id, &history, new_summary.as_deref(), now)?;
+        save_concept_session(
+            &conn,
+            &conversation_id,
+            &history,
+            new_summary.as_deref(),
+            now,
+        )?;
         save_feynman_state(&conn, &main_id, &state)?;
     }
 
@@ -3669,8 +3988,13 @@ pub async fn feynman_next(
 
     // 创建下一个概念的会话行
     let next_idx = idx + 1;
-    let next_id =
-        create_concept_session(&db, &paper_id, next_idx, &format!("概念 {}", next_idx + 1), now)?;
+    let next_id = create_concept_session(
+        &db,
+        &paper_id,
+        next_idx,
+        &format!("概念 {}", next_idx + 1),
+        now,
+    )?;
     state.current_index = next_idx;
     state.concepts[next_idx].status = ConceptStatus::Teaching;
     state.concepts[next_idx].session_id = Some(next_id.clone());
@@ -3717,10 +4041,7 @@ pub async fn feynman_next(
 /// 生成教学复盘：新机制基于「全部概念的完成摘要链」给出整体评估；
 /// 旧版（legacy）回退为基于单会话历史与滚动摘要的复盘。
 #[tauri::command]
-pub async fn feynman_review(
-    db: State<'_, Db>,
-    conversation_id: String,
-) -> Result<String, String> {
+pub async fn feynman_review(db: State<'_, Db>, conversation_id: String) -> Result<String, String> {
     let settings = Settings::load().map_err(|e| e.to_string())?;
     let llm = Llm::from_settings(&settings).map_err(|e| e.to_string())?;
 
@@ -3756,7 +4077,10 @@ pub async fn feynman_review(
                         |r| Ok((r.get(0)?, r.get(1)?)),
                     )
                     .map_err(|e| format!("会话不存在: {e}"))?;
-                (serde_json::from_str(&messages_json).map_err(|e| e.to_string())?, summary)
+                (
+                    serde_json::from_str(&messages_json).map_err(|e| e.to_string())?,
+                    summary,
+                )
             };
             let (overflow, window) =
                 crate::feynman::split_window(&history, crate::feynman::WINDOW_MAX_MSGS);
@@ -3836,7 +4160,10 @@ fn extract_metadata(md: &str) -> (String, Option<String>, Option<String>) {
             continue;
         }
         if in_abstract {
-            if lower.starts_with("1 ") || trimmed.starts_with('#') || lower.starts_with("introduction") {
+            if lower.starts_with("1 ")
+                || trimmed.starts_with('#')
+                || lower.starts_with("introduction")
+            {
                 break;
             }
             if !trimmed.is_empty() {
@@ -3857,6 +4184,485 @@ fn extract_metadata(md: &str) -> (String, Option<String>, Option<String>) {
     // authors 暂不提取（Markdown 中作者格式不稳定，Phase 2 处理）
     (title, None, abstract_text)
 }
+
+const QUIZ_GRADING_CTX_MAX: usize = 12000;
+
+/// 取选中章节的拼接内容（按章节名逐节查 paper_chunks，块按 id 序，带 `### 章节名` 标题）。
+/// sections 为空返回空串；总量超过 cap 时截断。
+fn fetch_sections_content(
+    conn: &rusqlite::Connection,
+    paper_id: &str,
+    sections: &[String],
+    cap: usize,
+) -> Result<String, String> {
+    let mut out = String::new();
+    for sec in sections {
+        let mut stmt = conn
+            .prepare(
+                "SELECT content FROM paper_chunks \
+                 WHERE paper_id = ?1 AND section = ?2 ORDER BY id",
+            )
+            .map_err(|e| e.to_string())?;
+        let texts = stmt
+            .query_map(params![paper_id, sec], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        if texts.is_empty() {
+            continue;
+        }
+        out.push_str(&format!("### {sec}\n"));
+        for t in texts {
+            out.push_str(&t);
+            out.push_str("\n\n");
+        }
+    }
+    if out.chars().count() > cap {
+        out = out.chars().take(cap).collect();
+        out.push_str("\n\n……（内容过长，已截断）");
+    }
+    Ok(out)
+}
+
+/// 读 quizzes 表行。
+fn load_quiz_row(conn: &rusqlite::Connection, quiz_id: &str) -> Result<QuizRow, String> {
+    conn.query_row(
+        "SELECT id, paper_id, mode, config, questions, answers, grading, report, score, status, created_at, updated_at \
+         FROM quizzes WHERE id = ?1",
+        [quiz_id],
+        |r| {
+            Ok(QuizRow {
+                id: r.get(0)?,
+                paper_id: r.get(1)?,
+                mode: r.get(2)?,
+                config: r.get(3)?,
+                questions: r.get(4)?,
+                answers: r.get(5)?,
+                grading: r.get(6)?,
+                report: r.get(7)?,
+                score: r.get(8)?,
+                status: r.get(9)?,
+                created_at: r.get(10)?,
+                updated_at: r.get(11)?,
+            })
+        },
+    )
+    .map_err(|e| format!("测验不存在: {e}"))
+}
+
+/// 解析可空 JSON 列（NULL / 空串 → Default）。
+fn parse_json_column<T: serde::de::DeserializeOwned + Default>(
+    raw: Option<String>,
+) -> Result<T, String> {
+    match raw {
+        None => Ok(T::default()),
+        Some(s) if s.trim().is_empty() => Ok(T::default()),
+        Some(s) => serde_json::from_str(&s).map_err(|e| format!("测验数据解析失败: {e}")),
+    }
+}
+
+/// 表行 → 前端-facing 的 Quiz（JSON 列逐个解析）。
+fn quiz_row_to_quiz(row: QuizRow) -> Result<Quiz, String> {
+    Ok(Quiz {
+        id: row.id,
+        paper_id: row.paper_id,
+        mode: row.mode,
+        config: serde_json::from_str(&row.config).map_err(|e| e.to_string())?,
+        questions: serde_json::from_str(&row.questions).map_err(|e| e.to_string())?,
+        answers: parse_json_column(row.answers)?,
+        grading: parse_json_column(row.grading)?,
+        report: row.report,
+        score: row.score,
+        status: row.status,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
+}
+
+/// 论文的章节列表（出题配置的章节多选数据源）。
+#[tauri::command]
+pub fn quiz_sections(db: State<'_, Db>, paper_id: String) -> Result<Vec<String>, String> {
+    let conn = db.conn();
+    crate::rag::sections_for_paper(&conn, &paper_id).map_err(|e| e.to_string())
+}
+
+/// 出题：取论文内容（全文或选中章节）→ LLM 出题（失败重试一次）→ 建行并返回。
+#[tauri::command]
+pub async fn quiz_generate(
+    db: State<'_, Db>,
+    paper_id: String,
+    mode: String,
+    config: QuizConfig,
+) -> Result<Quiz, String> {
+    if mode != "exam" && mode != "practice" {
+        return Err(format!("未知答题模式: {mode}"));
+    }
+    let mut config = config;
+    config.choice_count = config.choice_count.min(10);
+    config.subjective_count = config.subjective_count.min(5);
+    if config.choice_count + config.subjective_count == 0 {
+        return Err("请至少选择一道题".to_string());
+    }
+    let settings = Settings::load().map_err(|e| e.to_string())?;
+    let llm = Llm::from_settings(&settings).map_err(|e| e.to_string())?;
+    let now = chrono::Utc::now().timestamp();
+
+    // 锁内：md 路径 + 章节地图 +（按章节模式）章节内容
+    let (md_path, toc, section_content) = {
+        let conn = db.conn();
+        let md_path: String = conn
+            .query_row(
+                "SELECT md_path FROM papers WHERE id = ?1",
+                [&paper_id],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let sections =
+            crate::rag::sections_for_paper(&conn, &paper_id).map_err(|e| e.to_string())?;
+        let toc = crate::feynman::build_toc(&sections);
+        let content = if config.sections.is_empty() {
+            String::new()
+        } else {
+            fetch_sections_content(
+                &conn,
+                &paper_id,
+                &config.sections,
+                crate::quiz::CONTENT_MAX_CHARS,
+            )?
+        };
+        (md_path, toc, content)
+    };
+    // 无锁：全文模式读 md 文件
+    let content = if config.sections.is_empty() {
+        let md = crate::fs::read_md(Path::new(&md_path)).map_err(|e| e.to_string())?;
+        crate::quiz::truncate_content(&md)
+    } else {
+        section_content
+    };
+    if content.trim().is_empty() {
+        return Err("没有可用于出题的论文内容（若按章节出题，请检查所选章节）".to_string());
+    }
+
+    // 无锁：LLM 出题，输出无法解析时重试一次
+    let messages = crate::quiz::build_generate_messages(&config, &toc, &content);
+    let mut questions = None;
+    for _ in 0..2 {
+        match llm.chat(&messages).await {
+            Ok(raw) => {
+                if let Some(qs) = crate::quiz::parse_questions(&raw) {
+                    questions = Some(qs);
+                    break;
+                }
+            }
+            Err(_) => continue,
+        }
+    }
+    let questions = questions.ok_or_else(|| "出题失败：模型输出无法解析，请重试".to_string())?;
+
+    // 锁内：建行（answering 状态）
+    let id = Uuid::new_v4().to_string();
+    let config_json = serde_json::to_string(&config).map_err(|e| e.to_string())?;
+    let questions_json = serde_json::to_string(&questions).map_err(|e| e.to_string())?;
+    {
+        let conn = db.conn();
+        conn.execute(
+            "INSERT INTO quizzes (id, paper_id, mode, config, questions, status, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, 'answering', ?6, ?6)",
+            params![&id, &paper_id, &mode, &config_json, &questions_json, now],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    Ok(Quiz {
+        id,
+        paper_id,
+        mode,
+        config,
+        questions,
+        answers: vec![],
+        grading: vec![],
+        report: None,
+        score: None,
+        status: "answering".to_string(),
+        created_at: now,
+        updated_at: now,
+    })
+}
+
+/// 练习模式：提交一道题的作答并即时批改（选择题本地判分，主观题 LLM 批改）。
+/// 全部题目作答完毕后测验置 done 并写入总分。返回该题批改结果。
+#[tauri::command]
+pub async fn quiz_submit_answer(
+    db: State<'_, Db>,
+    quiz_id: String,
+    question_id: i64,
+    answer: String,
+) -> Result<QuestionGrade, String> {
+    // 锁内：读测验与目标题
+    let (paper_id, question) = {
+        let conn = db.conn();
+        let row = load_quiz_row(&conn, &quiz_id)?;
+        if row.status != "answering" {
+            return Err("该测验已批改完成".to_string());
+        }
+        let questions: Vec<QuizQuestion> =
+            serde_json::from_str(&row.questions).map_err(|e| e.to_string())?;
+        let q = questions
+            .into_iter()
+            .find(|q| q.id == question_id as usize)
+            .ok_or_else(|| "题目不存在".to_string())?;
+        (row.paper_id, q)
+    };
+
+    let grade = if question.qtype == QuestionType::Choice {
+        crate::quiz::grade_choice(&question, &answer)
+    } else {
+        // 无锁：LLM 批改主观题（附题目出处章节的原文）
+        let settings = Settings::load().map_err(|e| e.to_string())?;
+        let llm = Llm::from_settings(&settings).map_err(|e| e.to_string())?;
+        let context = {
+            let conn = db.conn();
+            if question.section.is_empty() {
+                String::new()
+            } else {
+                fetch_sections_content(
+                    &conn,
+                    &paper_id,
+                    std::slice::from_ref(&question.section),
+                    QUIZ_GRADING_CTX_MAX,
+                )?
+            }
+        };
+        let messages = crate::quiz::build_judge_one_messages(&question, &answer, &context);
+        let mut grade = None;
+        for _ in 0..2 {
+            match llm.chat(&messages).await {
+                Ok(raw) => {
+                    if let Some(g) = crate::quiz::parse_judge_one(&raw, question.id) {
+                        grade = Some(g);
+                        break;
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+        grade.ok_or_else(|| "批改失败：模型输出无法解析，请重试".to_string())?
+    };
+
+    // 锁内：upsert answers/grading；全部作答 → done + 总分
+    let now = chrono::Utc::now().timestamp();
+    {
+        let conn = db.conn();
+        let row = load_quiz_row(&conn, &quiz_id)?;
+        let total: Vec<QuizQuestion> =
+            serde_json::from_str(&row.questions).map_err(|e| e.to_string())?;
+        let mut answers: Vec<UserAnswer> = parse_json_column(row.answers)?;
+        answers.retain(|a| a.question_id != question.id);
+        answers.push(UserAnswer {
+            question_id: question.id,
+            answer,
+        });
+        let mut grading: Vec<QuestionGrade> = parse_json_column(row.grading)?;
+        grading.retain(|g| g.question_id != question.id);
+        grading.push(grade.clone());
+        let done = grading.len() >= total.len();
+        let score = if done {
+            crate::quiz::compute_score(&grading)
+        } else {
+            None
+        };
+        conn.execute(
+            "UPDATE quizzes SET answers = ?2, grading = ?3, score = ?4, status = ?5, updated_at = ?6 \
+             WHERE id = ?1",
+            params![
+                quiz_id,
+                serde_json::to_string(&answers).map_err(|e| e.to_string())?,
+                serde_json::to_string(&grading).map_err(|e| e.to_string())?,
+                score,
+                if done { "done" } else { "answering" },
+                now
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(grade)
+}
+
+/// 考试模式：整卷交卷。选择题本地判分；主观题一次 LLM 调用批改并生成总评报告；
+/// 写入 answers/grading/report/score，置 done，返回完整测验。
+#[tauri::command]
+pub async fn quiz_grade_all(
+    db: State<'_, Db>,
+    quiz_id: String,
+    answers: Vec<UserAnswer>,
+) -> Result<Quiz, String> {
+    // 锁内：读测验
+    let (paper_id, questions) = {
+        let conn = db.conn();
+        let row = load_quiz_row(&conn, &quiz_id)?;
+        if row.status != "answering" {
+            return Err("该测验已批改完成".to_string());
+        }
+        let questions: Vec<QuizQuestion> =
+            serde_json::from_str(&row.questions).map_err(|e| e.to_string())?;
+        (row.paper_id, questions)
+    };
+
+    // 选择题本地判分（未作答按答错计）
+    let choice_grades: Vec<QuestionGrade> = questions
+        .iter()
+        .filter(|q| q.qtype == QuestionType::Choice)
+        .map(|q| {
+            let ans = answers
+                .iter()
+                .find(|a| a.question_id == q.id)
+                .map(|a| a.answer.as_str())
+                .unwrap_or("");
+            crate::quiz::grade_choice(q, ans)
+        })
+        .collect();
+
+    let subjective: Vec<&QuizQuestion> = questions
+        .iter()
+        .filter(|q| q.qtype == QuestionType::Subjective)
+        .collect();
+
+    let mut grading = choice_grades.clone();
+    let mut report = None;
+    if !subjective.is_empty() {
+        // 无锁：LLM 整卷批改（附全部主观题出处章节的原文）
+        let settings = Settings::load().map_err(|e| e.to_string())?;
+        let llm = Llm::from_settings(&settings).map_err(|e| e.to_string())?;
+        let sections: Vec<String> = subjective
+            .iter()
+            .map(|q| q.section.clone())
+            .filter(|s| !s.is_empty())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        let context = {
+            let conn = db.conn();
+            fetch_sections_content(&conn, &paper_id, &sections, QUIZ_GRADING_CTX_MAX)?
+        };
+        let messages =
+            crate::quiz::build_grade_all_messages(&questions, &answers, &choice_grades, &context);
+        let mut parsed = None;
+        for _ in 0..2 {
+            match llm.chat(&messages).await {
+                Ok(raw) => {
+                    if let Some(p) = crate::quiz::parse_grade_all(&raw) {
+                        parsed = Some(p);
+                        break;
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+        let (mut subj_grades, rep) =
+            parsed.ok_or_else(|| "批改失败：模型输出无法解析，请重试".to_string())?;
+        // LLM 漏批的主观题给兜底结果（不阻塞整卷交卷）
+        for q in &subjective {
+            if !subj_grades.iter().any(|g| g.question_id == q.id) {
+                subj_grades.push(QuestionGrade {
+                    question_id: q.id,
+                    correct: None,
+                    score: 0.0,
+                    max_score: crate::quiz::QUESTION_MAX_SCORE,
+                    feedback: "该题未能批改，请对照参考答案自查。".to_string(),
+                    gaps: vec![],
+                });
+            }
+        }
+        report = Some(rep);
+        grading.extend(subj_grades);
+    }
+    let score = crate::quiz::compute_score(&grading);
+
+    // 锁内：写回并返回完整测验
+    let now = chrono::Utc::now().timestamp();
+    {
+        let conn = db.conn();
+        conn.execute(
+            "UPDATE quizzes SET answers = ?2, grading = ?3, report = ?4, score = ?5, status = 'done', updated_at = ?6 \
+             WHERE id = ?1",
+            params![
+                quiz_id,
+                serde_json::to_string(&answers).map_err(|e| e.to_string())?,
+                serde_json::to_string(&grading).map_err(|e| e.to_string())?,
+                report,
+                score,
+                now
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        let row = load_quiz_row(&conn, &quiz_id)?;
+        quiz_row_to_quiz(row)
+    }
+}
+
+/// 某篇论文的测验历史列表（新的在前，不含题目与批改详情）。
+#[tauri::command]
+pub fn quiz_list(db: State<'_, Db>, paper_id: String) -> Result<Vec<QuizSummary>, String> {
+    let conn = db.conn();
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, mode, config, questions, score, status, created_at, updated_at \
+             FROM quizzes WHERE paper_id = ?1 ORDER BY created_at DESC",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([&paper_id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, Option<f64>>(4)?,
+                r.get::<_, String>(5)?,
+                r.get::<_, i64>(6)?,
+                r.get::<_, i64>(7)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for (id, mode, config, questions, score, status, created_at, updated_at) in rows {
+        let config: QuizConfig = serde_json::from_str(&config).map_err(|e| e.to_string())?;
+        let questions: Vec<QuizQuestion> =
+            serde_json::from_str(&questions).map_err(|e| e.to_string())?;
+        out.push(QuizSummary {
+            id,
+            mode,
+            difficulty: config.difficulty,
+            focus: config.focus,
+            question_count: questions.len(),
+            score,
+            status,
+            created_at,
+            updated_at,
+        });
+    }
+    Ok(out)
+}
+
+/// 取一份测验的完整内容（恢复进行中的测验或查看历史详情）。
+#[tauri::command]
+pub fn quiz_get(db: State<'_, Db>, quiz_id: String) -> Result<Quiz, String> {
+    let conn = db.conn();
+    quiz_row_to_quiz(load_quiz_row(&conn, &quiz_id)?)
+}
+
+/// 删除一份测验记录。
+#[tauri::command]
+pub fn quiz_delete(db: State<'_, Db>, quiz_id: String) -> Result<(), String> {
+    let conn = db.conn();
+    conn.execute("DELETE FROM quizzes WHERE id = ?1", [&quiz_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ---------- 元数据提取（轻量启发式，Phase 2 再增强） ----------
 
 #[cfg(test)]
 mod tests {
@@ -3881,12 +4687,17 @@ mod tests {
         let paper = import_pdf_inner(&db, &library, src.to_str().unwrap()).unwrap();
         assert_eq!(paper.parse_status, "unparsed");
         assert!(Path::new(&paper.pdf_path).exists(), "PDF 应被复制进论文库");
-        assert_eq!(Path::new(&paper.pdf_path).parent().unwrap(), library.join(&paper.id));
+        assert_eq!(
+            Path::new(&paper.pdf_path).parent().unwrap(),
+            library.join(&paper.id)
+        );
 
         // 数据库里能查回
         let conn = db.conn();
         let stored: String = conn
-            .query_row("SELECT title FROM papers WHERE id = ?1", [&paper.id], |r| r.get(0))
+            .query_row("SELECT title FROM papers WHERE id = ?1", [&paper.id], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(stored, "src-paper.pdf");
 
@@ -3929,7 +4740,9 @@ mod tests {
         let (title, authors, abstract_text) = extract_metadata(md);
         assert_eq!(title, "Attention Is All You Need");
         assert_eq!(authors, None);
-        assert!(abstract_text.unwrap().contains("dominant sequence transduction"));
+        assert!(abstract_text
+            .unwrap()
+            .contains("dominant sequence transduction"));
     }
 
     #[test]
@@ -3978,17 +4791,26 @@ mod tests {
         let src = tmp.join("sample.pdf");
         fs::write(&src, b"%PDF-1.4 test").unwrap();
         let paper = import_pdf_inner(&db, &tmp.join("papers"), src.to_str().unwrap()).unwrap();
-        save_annotations_file(&db, &paper.id, "annotations.json", r#"{"highlights":[{"page_idx":2,"text":"Evidence","note":{"text":"My note"}}]}"#).unwrap();
+        save_annotations_file(
+            &db,
+            &paper.id,
+            "annotations.json",
+            r#"{"highlights":[{"page_idx":2,"text":"Evidence","note":{"text":"My note"}}]}"#,
+        )
+        .unwrap();
         let dest = tmp.join("notes.md");
         export_notes_inner(&db, &paper.id, dest.to_str().unwrap()).unwrap();
         let text = fs::read_to_string(&dest).unwrap();
         assert!(text.contains("第 3 页"));
         assert!(text.contains("> Evidence"));
         assert!(text.contains("My note"));
-        save_annotations_file(&db, &paper.id, "annotations.json", r#"{"highlights":null}"#).unwrap();
+        save_annotations_file(&db, &paper.id, "annotations.json", r#"{"highlights":null}"#)
+            .unwrap();
         assert!(export_notes_inner(&db, &paper.id, dest.to_str().unwrap()).is_err());
         assert_eq!(fs::read_to_string(&dest).unwrap(), text);
-        assert!(export_notes_inner(&db, &paper.id, tmp.join("notes.pdf").to_str().unwrap()).is_err());
+        assert!(
+            export_notes_inner(&db, &paper.id, tmp.join("notes.pdf").to_str().unwrap()).is_err()
+        );
         fs::remove_dir_all(&tmp).unwrap();
     }
 
@@ -4008,16 +4830,19 @@ mod tests {
         let paper = import_pdf_inner(&db, &library, src.to_str().unwrap()).unwrap();
 
         // 初始无标注
-        assert_eq!(get_annotations_file(&db, &paper.id, "annotations.json").unwrap(), None);
+        assert_eq!(
+            get_annotations_file(&db, &paper.id, "annotations.json").unwrap(),
+            None
+        );
 
         // 保存后可读回，且落在论文目录下
         let data = r#"{"version":1,"highlights":[{"id":"h1","page_idx":0,"rects":[{"x":0.1,"y":0.2,"w":0.4,"h":0.015}],"color":"rgba(255,213,0,.45)","text":"hello","note":null,"created_at":1712000000}]}"#;
         save_annotations_file(&db, &paper.id, "annotations.json", data).unwrap();
-        let back = get_annotations_file(&db, &paper.id, "annotations.json").unwrap().unwrap();
+        let back = get_annotations_file(&db, &paper.id, "annotations.json")
+            .unwrap()
+            .unwrap();
         assert_eq!(back, data);
-        let file = library
-            .join(&paper.id)
-            .join("annotations.json");
+        let file = library.join(&paper.id).join("annotations.json");
         assert!(file.exists(), "annotations.json 应写入论文目录");
 
         fs::remove_dir_all(&tmp).ok();
@@ -4041,7 +4866,11 @@ mod tests {
         for (kind, filename, payload) in [
             ("annotations", "annotations.json", r#"{"kind":"pdf"}"#),
             ("blog", "blog_annotations.json", r#"{"kind":"blog"}"#),
-            ("translate", "translation_annotations.json", r#"{"kind":"translate"}"#),
+            (
+                "translate",
+                "translation_annotations.json",
+                r#"{"kind":"translate"}"#,
+            ),
         ] {
             let file = resolve_annotation_file(Some(kind)).unwrap();
             assert_eq!(file, filename);
@@ -4097,14 +4926,8 @@ mod tests {
         assert_eq!(root.tags, vec!["深度学习", "2024"]);
 
         // 子文件夹
-        let child = create_folder_inner(
-            &db,
-            "Transformer",
-            Some(root.id.clone()),
-            None,
-            None,
-        )
-        .unwrap();
+        let child =
+            create_folder_inner(&db, "Transformer", Some(root.id.clone()), None, None).unwrap();
         assert_eq!(child.parent_id.as_deref(), Some(root.id.as_str()));
 
         // 同级重名拒绝；不同父级允许
@@ -4132,7 +4955,11 @@ mod tests {
         let folders = list_folders_inner(&db).unwrap();
         let child_now = folders.iter().find(|f| f.id == child.id).unwrap();
         assert_eq!(child_now.parent_id, None, "子文件夹应上移为顶级");
-        assert_eq!(folders.len(), 2, "剩两个顶级文件夹（AI 的后代重名文件夹 + 上移的 Transformer）");
+        assert_eq!(
+            folders.len(),
+            2,
+            "剩两个顶级文件夹（AI 的后代重名文件夹 + 上移的 Transformer）"
+        );
 
         fs::remove_dir_all(&tmp).ok();
     }
@@ -4199,7 +5026,10 @@ mod tests {
         set_reading_status_inner(&db, &ids, "reading").unwrap();
         let broken = vec![ids[0].clone(), "missing".into()];
         assert!(set_reading_status_inner(&db, &broken, "finished").is_err());
-        assert_eq!(get_paper_inner(&db, &ids[0]).unwrap().reading_status, "reading");
+        assert_eq!(
+            get_paper_inner(&db, &ids[0]).unwrap().reading_status,
+            "reading"
+        );
         fs::remove_dir_all(&tmp).ok();
     }
 
@@ -4211,8 +5041,14 @@ mod tests {
         assert!(opened.last_read_at.is_some());
         assert_eq!(opened.title, before.title);
         assert_eq!(opened.reading_status, before.reading_status);
-        assert_eq!(get_paper_inner(&db, &ids[0]).unwrap().last_read_at, opened.last_read_at);
-        assert!(get_paper_inner(&db, &ids[1]).unwrap().last_read_at.is_none());
+        assert_eq!(
+            get_paper_inner(&db, &ids[0]).unwrap().last_read_at,
+            opened.last_read_at
+        );
+        assert!(get_paper_inner(&db, &ids[1])
+            .unwrap()
+            .last_read_at
+            .is_none());
         assert!(open_paper_inner(&db, "missing").is_err());
         fs::remove_dir_all(&tmp).ok();
     }
@@ -4234,7 +5070,16 @@ mod tests {
     #[test]
     fn effective_settings_turns_off_web_provider() {
         let mut s = Settings::default();
-        s.api_keys.deepseek = "sk-test".into();
+        s.providers.push(crate::settings::ProviderConfig {
+            id: "deepseek".into(),
+            name: "DeepSeek".into(),
+            provider_type: "openai-compat".into(),
+            api_key: "sk-test".into(),
+            base_url: Some("https://api.deepseek.com".into()),
+            default_model: "deepseek-chat".into(),
+            models: vec![],
+            enabled: true,
+        });
         s.web_search_provider = "auto".into();
         // 开 → 原样
         let on = effective_settings(&s, true);
@@ -4384,11 +5229,9 @@ mod tests {
         assert_eq!(qa_count(&db), 1);
         assert!(
             db.conn()
-                .query_row(
-                    "SELECT 1 FROM conversations WHERE id = ?1",
-                    [&id2],
-                    |_| Ok(()),
-                )
+                .query_row("SELECT 1 FROM conversations WHERE id = ?1", [&id2], |_| Ok(
+                    ()
+                ),)
                 .is_ok(),
             "id2 应保留"
         );
@@ -4528,20 +5371,29 @@ mod tests {
 
         // papers 计划（deadline 作为所有条目的初始 due）
         let dl = chrono::Utc::now().timestamp() + 7 * 86400;
-        let papers_plan =
-            create_reading_plan_inner(&db, "papers", None, Some(vec!["p1".into(), "p2".into()]), Some(dl))
-                .unwrap();
+        let papers_plan = create_reading_plan_inner(
+            &db,
+            "papers",
+            None,
+            Some(vec!["p1".into(), "p2".into()]),
+            Some(dl),
+        )
+        .unwrap();
         assert_eq!(papers_plan.items.len(), 2);
         assert!(
             papers_plan.items.iter().all(|i| i.due_date == Some(dl)),
             "新建条目应继承传入的 deadline 作为初始 due"
         );
-        assert_eq!(papers_plan.target_count, None, "papers 计划不应存 target_count");
+        assert_eq!(
+            papers_plan.target_count, None,
+            "papers 计划不应存 target_count"
+        );
 
         // 更新：改目标、停用
         let updated = update_reading_plan_inner(&db, &daily.id, Some(3), None, None, None).unwrap();
         assert_eq!(updated.target_count, Some(3));
-        let updated = update_reading_plan_inner(&db, &daily.id, None, None, None, Some(false)).unwrap();
+        let updated =
+            update_reading_plan_inner(&db, &daily.id, None, None, None, Some(false)).unwrap();
         assert!(!updated.active);
 
         // 列表：active 在前
@@ -4562,7 +5414,8 @@ mod tests {
         insert_test_paper(&db, "p2");
         insert_test_paper(&db, "p3");
 
-        let plan = create_reading_plan_inner(&db, "papers", None, Some(vec!["p1".into()]), None).unwrap();
+        let plan =
+            create_reading_plan_inner(&db, "papers", None, Some(vec!["p1".into()]), None).unwrap();
         assert_eq!(plan.items.len(), 1);
         assert_eq!(plan.items[0].due_date, None);
 
@@ -4584,10 +5437,20 @@ mod tests {
 
         // 设置/清除条目 due
         let plan = set_plan_item_due_inner(&db, &plan.id, "p1", Some(due)).unwrap();
-        assert_eq!(plan.items[0].paper_id, "p1", "有条目带 due 后应排在无日期条目前");
+        assert_eq!(
+            plan.items[0].paper_id, "p1",
+            "有条目带 due 后应排在无日期条目前"
+        );
         assert_eq!(plan.items[0].due_date, Some(due));
         let plan = set_plan_item_due_inner(&db, &plan.id, "p1", None).unwrap();
-        assert_eq!(plan.items.iter().find(|i| i.paper_id == "p1").unwrap().due_date, None);
+        assert_eq!(
+            plan.items
+                .iter()
+                .find(|i| i.paper_id == "p1")
+                .unwrap()
+                .due_date,
+            None
+        );
         assert!(set_plan_item_due_inner(&db, &plan.id, "p3", Some(due)).is_err());
 
         // 移除条目
@@ -4596,7 +5459,15 @@ mod tests {
         assert!(remove_paper_from_plan_inner(&db, &plan.id, "p2").is_err());
 
         // update_reading_plan 的 paper_ids 兼容入口：同步条目集
-        let plan = update_reading_plan_inner(&db, &plan.id, None, Some(vec!["p1".into(), "p3".into()]), None, None).unwrap();
+        let plan = update_reading_plan_inner(
+            &db,
+            &plan.id,
+            None,
+            Some(vec!["p1".into(), "p3".into()]),
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(plan.items.len(), 2);
         assert!(plan.items.iter().any(|i| i.paper_id == "p3"));
     }

@@ -32,9 +32,9 @@ pub mod memory;
 pub mod tools;
 pub mod web;
 
-/// 单轮问答最多模型调用次数（含工具轮次）。
-pub const MAX_STEPS: usize = 6;
-/// 单轮模型调用中最多执行的工具条数（防御）。
+/// 单轮问答最多模型调用次数（含工具轮次）。参考 DeepSeek harness，复杂研究任务需要更多轮次。
+pub const MAX_STEPS: usize = 15;
+/// 单轮模型调用中最多执行的工具条数（防御）。超出部分会注入错误结果以保持协议完整性。
 const MAX_TOOLS_PER_TURN: usize = 8;
 /// 用户暂停后无正文可提交时的回答提示。
 const PAUSED_ANSWER: &str = "已暂停生成。";
@@ -150,7 +150,9 @@ pub async fn run_agent<L: LlmChat>(
             .unwrap_or_else(|_| "当前论文".to_string())
     });
     let tools = tools::build_tools(settings, paper_id, selections);
-    let web_enabled = tools.iter().any(|t| matches!(t, tools::ToolKind::WebSearch));
+    let web_enabled = tools
+        .iter()
+        .any(|t| matches!(t, tools::ToolKind::WebSearch));
 
     let mut messages: Vec<AgentMsg> = Vec::new();
     // system 提示注入标题前截断（防超长标题撑爆提示词）
@@ -175,7 +177,10 @@ pub async fn run_agent<L: LlmChat>(
         content: question.to_string(),
     }));
 
-    run_agent_loop(llm, db, settings, messages, paper_id, selections, tools, cancel, sink).await
+    run_agent_loop(
+        llm, db, settings, messages, paper_id, selections, tools, cancel, sink,
+    )
+    .await
 }
 
 /// 通用循环入口：给定完整消息列表（system + 历史 + user）与工具集，运行 agent 循环。
@@ -209,8 +214,20 @@ pub async fn run_agent_loop<L: LlmChat>(
     let mut model_ms: u64 = 0;
     let mut tool_ms: u64 = 0;
     drive_loop(
-        llm, &ctx, &tools, &mut messages, &schemas, 0, &mut citations, &mut trace, false, "",
-        cancel, sink, &mut model_ms, &mut tool_ms,
+        llm,
+        &ctx,
+        &tools,
+        &mut messages,
+        &schemas,
+        0,
+        &mut citations,
+        &mut trace,
+        false,
+        "",
+        cancel,
+        sink,
+        &mut model_ms,
+        &mut tool_ms,
     )
     .await
 }
@@ -327,9 +344,7 @@ async fn drive_loop<L: LlmChat>(
         let t0 = std::time::Instant::now();
         let resp = llm
             .stream_chat_with_tools_abortable(messages, schemas, cancel, &mut |evt| match evt {
-                crate::ai::llm::StreamEvent::Thinking(t) => {
-                    sink(AgentEvent::Thinking { text: t })
-                }
+                crate::ai::llm::StreamEvent::Thinking(t) => sink(AgentEvent::Thinking { text: t }),
                 crate::ai::llm::StreamEvent::Content(t) => sink(AgentEvent::Content { text: t }),
             })
             .await?;
@@ -373,6 +388,7 @@ async fn drive_loop<L: LlmChat>(
             reasoning: resp.reasoning.clone(),
             calls: calls.clone(),
         });
+
         let mut offset = citations.len();
         for (i, call) in calls.iter().take(MAX_TOOLS_PER_TURN).enumerate() {
             let kind = tools
@@ -508,6 +524,39 @@ async fn drive_loop<L: LlmChat>(
             });
             trace.push(step_out);
         }
+
+        // 协议完整性：执行完前 MAX_TOOLS_PER_TURN 个工具后，为超限的工具调用注入错误结果
+        if calls.len() > MAX_TOOLS_PER_TURN {
+            for call in calls.iter().skip(MAX_TOOLS_PER_TURN) {
+                let err_msg = format!(
+                    "工具执行失败：本轮已执行 {} 个工具（达到上限），请在下一轮继续调用此工具。建议分步执行：先处理最关键的信息，再逐步补充细节。",
+                    MAX_TOOLS_PER_TURN
+                );
+                messages.push(AgentMsg::ToolResult {
+                    call_id: call.id.clone(),
+                    name: call.name.clone(),
+                    content: err_msg.clone(),
+                });
+                trace.push(ToolStep {
+                    name: call.name.clone(),
+                    args: call.arguments.clone(),
+                    summary: String::new(),
+                    error: Some(format!(
+                        "超出单轮工具数量限制（{}/{}）",
+                        calls.len(),
+                        MAX_TOOLS_PER_TURN
+                    )),
+                });
+                sink(AgentEvent::ToolEnd {
+                    name: call.name.clone(),
+                    summary: String::new(),
+                    error: Some(format!(
+                        "已达工具调用上限（{MAX_TOOLS_PER_TURN}），请下一轮继续"
+                    )),
+                    elapsed_ms: 0,
+                });
+            }
+        }
     }
     // 步数耗尽：兜底
     Ok(RunResult::Done {
@@ -536,15 +585,22 @@ fn build_system_prompt(
     let mut p = String::from(
         "你是一名论文研究助手，帮助用户深入理解论文。你可以调用工具从多个角度研读论文：\
          本地知识库语义检索、章节精读、章节目录、论文元数据、用户标注与译文。\n\n\
-         工作流程建议：\n\
+         工作流程建议（分阶段执行）：\n\
          1. 先用 get_outline / get_paper_meta 了解论文结构与背景；\n\
          2. 再用 search_papers / read_section 精读与问题相关的章节；\n\
          3. 需要外部信息时联网搜索，然后综合所有资料给出有依据的回答。\n\n\
+         工具调用策略：\n\
+         - 每轮最多调用 8 个工具，超出部分会被延迟到下一轮；\n\
+         - 对于复杂问题，优先调用最核心的工具（如先检索概览，再精读关键章节），逐步深入；\n\
+         - 避免一次性调用过多工具，建议分 2-3 轮完成深度研究；\n\
+         - 如果某轮工具被限制，系统会提示你在下一轮继续。\n\n\
          澄清说明：如果问题有歧义、或需要用户选择研究方向，且现有信息不足以继续时，\
          可调用 ask_user 向用户澄清（每轮最多一次）；优先基于已有信息回答，不要频繁打断。\n\n\
          引用规则：\n\
          - 引用本地资料时，必须复用工具结果中给出的编号 [n]；\n\
          - 资料中没有的信息要明确说明「资料中没有相关信息」，不要编造。\n\n\
+         公式格式：独立公式用 $$ 定界符并单独成段（前后留空行），行内公式用 $...$ 包裹，\
+         禁止输出没有定界符的裸 LaTeX。\n\n\
          要求：用中文回答，简洁准确。",
     );
     // 绑定论文：注入「当前论文优先」段（阅读页会话的注意力锚点）
@@ -600,7 +656,10 @@ fn build_fallback_answer(trace: &[ToolStep]) -> String {
             .as_deref()
             .map(|e| format!("（失败：{e}）"))
             .unwrap_or_default();
-        out.push_str(&format!("- 工具 `{}`：{}{}\n", step.name, step.summary, err));
+        out.push_str(&format!(
+            "- 工具 `{}`：{}{}\n",
+            step.name, step.summary, err
+        ));
     }
     out.push_str("\n你可以继续追问，或切换为「快速问答」模式。");
     out
@@ -691,9 +750,20 @@ mod tests {
     async fn direct_answer_without_tools() {
         let (db, settings) = setup();
         let llm = ScriptedLlm::new(vec![content("直接回答")]);
-        match run_agent(&llm, &db, &settings, "你好", Some("p1"), &[], &[], &[], None, &mut |_| {})
-            .await
-            .unwrap()
+        match run_agent(
+            &llm,
+            &db,
+            &settings,
+            "你好",
+            Some("p1"),
+            &[],
+            &[],
+            &[],
+            None,
+            &mut |_| {},
+        )
+        .await
+        .unwrap()
         {
             RunResult::Done {
                 answer,
@@ -721,9 +791,20 @@ mod tests {
             calls(&[("c3", "read_selection", json!({ "index": 1 }))]),
             content("综合 [1] 与 [3] 得出结论。"),
         ]);
-        match run_agent(&llm, &db, &settings, "问题", Some("p1"), &[], &selections, &[], None, &mut |_| {})
-            .await
-            .unwrap()
+        match run_agent(
+            &llm,
+            &db,
+            &settings,
+            "问题",
+            Some("p1"),
+            &[],
+            &selections,
+            &[],
+            None,
+            &mut |_| {},
+        )
+        .await
+        .unwrap()
         {
             RunResult::Done {
                 answer,
@@ -747,9 +828,20 @@ mod tests {
             calls(&[("c1", "search_papers", json!({}))]),
             content("我无法检索，但可以基于已有知识回答。"),
         ]);
-        match run_agent(&llm, &db, &settings, "问题", Some("p1"), &[], &[], &[], None, &mut |_| {})
-            .await
-            .unwrap()
+        match run_agent(
+            &llm,
+            &db,
+            &settings,
+            "问题",
+            Some("p1"),
+            &[],
+            &[],
+            &[],
+            None,
+            &mut |_| {},
+        )
+        .await
+        .unwrap()
         {
             RunResult::Done { answer, trace, .. } => {
                 assert_eq!(answer, "我无法检索，但可以基于已有知识回答。");
@@ -764,9 +856,20 @@ mod tests {
     async fn unknown_tool_aborts_loop_with_error() {
         let (db, settings) = setup();
         let llm = ScriptedLlm::new(vec![calls(&[("c1", "no_such_tool", json!({}))])]);
-        let err = run_agent(&llm, &db, &settings, "问题", Some("p1"), &[], &[], &[], None, &mut |_| {})
-            .await
-            .unwrap_err();
+        let err = run_agent(
+            &llm,
+            &db,
+            &settings,
+            "问题",
+            Some("p1"),
+            &[],
+            &[],
+            &[],
+            None,
+            &mut |_| {},
+        )
+        .await
+        .unwrap_err();
         assert!(err.to_string().contains("未知工具"));
     }
 
@@ -775,7 +878,8 @@ mod tests {
         let (db, settings) = setup();
         let selections = [sel("选中", None)];
         let mut responses = Vec::new();
-        for i in 0..6 {
+        // 使用 MAX_STEPS 常量而非硬编码，确保测试随配置更新
+        for i in 0..MAX_STEPS {
             responses.push(calls(&[(
                 &format!("c{i}"),
                 "read_selection",
@@ -783,12 +887,23 @@ mod tests {
             )]));
         }
         let llm = ScriptedLlm::new(responses);
-        match run_agent(&llm, &db, &settings, "问题", Some("p1"), &[], &selections, &[], None, &mut |_| {})
-            .await
-            .unwrap()
+        match run_agent(
+            &llm,
+            &db,
+            &settings,
+            "问题",
+            Some("p1"),
+            &[],
+            &selections,
+            &[],
+            None,
+            &mut |_| {},
+        )
+        .await
+        .unwrap()
         {
             RunResult::Done { answer, trace, .. } => {
-                assert_eq!(trace.len(), 6);
+                assert_eq!(trace.len(), MAX_STEPS);
                 assert!(answer.contains("未能整理出完整回答"));
                 assert!(answer.contains("read_selection"));
             }
@@ -884,7 +999,10 @@ mod tests {
         match run {
             RunResult::Done { answer, trace, .. } => {
                 assert!(trace.len() >= 1, "第一轮工具应已执行");
-                assert!(answer.contains("已暂停"), "回答应为暂停提示，实际: {answer}");
+                assert!(
+                    answer.contains("已暂停"),
+                    "回答应为暂停提示，实际: {answer}"
+                );
             }
             RunResult::NeedInput { .. } => panic!("不应请求澄清"),
         }
@@ -942,9 +1060,20 @@ mod tests {
             ask_user_call("c1", "你想对比哪个方向？", json!(["A", "B"])),
             content("根据你的选择，最终回答。"),
         ]);
-        let run = run_agent(&llm, &db, &settings, "问题", Some("p1"), &[], &[], &[], None, &mut |_| {})
-            .await
-            .unwrap();
+        let run = run_agent(
+            &llm,
+            &db,
+            &settings,
+            "问题",
+            Some("p1"),
+            &[],
+            &[],
+            &[],
+            None,
+            &mut |_| {},
+        )
+        .await
+        .unwrap();
         let (question, options, free_text, state) = match run {
             RunResult::NeedInput {
                 question,
@@ -985,9 +1114,20 @@ mod tests {
             ask_user_call("c2", "第二次澄清", json!([])),
             content("最终回答"),
         ]);
-        let run = run_agent(&llm, &db, &settings, "问题", Some("p1"), &[], &[], &[], None, &mut |_| {})
-            .await
-            .unwrap();
+        let run = run_agent(
+            &llm,
+            &db,
+            &settings,
+            "问题",
+            Some("p1"),
+            &[],
+            &[],
+            &[],
+            None,
+            &mut |_| {},
+        )
+        .await
+        .unwrap();
         let state = match &run {
             RunResult::NeedInput { state, .. } => state.clone(),
             _ => panic!("应请求澄清"),
@@ -999,10 +1139,8 @@ mod tests {
             RunResult::Done { answer, trace, .. } => {
                 assert_eq!(answer, "最终回答");
                 // 第二次 ask_user 被拒绝并标记错误
-                let ask_steps: Vec<&ToolStep> = trace
-                    .iter()
-                    .filter(|t| t.name == "ask_user")
-                    .collect();
+                let ask_steps: Vec<&ToolStep> =
+                    trace.iter().filter(|t| t.name == "ask_user").collect();
                 assert_eq!(ask_steps.len(), 2);
                 assert!(ask_steps[1].error.is_some());
             }
@@ -1017,14 +1155,29 @@ mod tests {
         let llm = ScriptedLlm::new(vec![
             calls(&[
                 ("c1", "read_selection", json!({ "index": 0 })),
-                ("c2", "ask_user", json!({ "question": "确认方向", "options": [] })),
+                (
+                    "c2",
+                    "ask_user",
+                    json!({ "question": "确认方向", "options": [] }),
+                ),
                 ("c3", "read_selection", json!({ "index": 0 })),
             ]),
             content("完成"),
         ]);
-        let run = run_agent(&llm, &db, &settings, "问题", Some("p1"), &[], &selections, &[], None, &mut |_| {})
-            .await
-            .unwrap();
+        let run = run_agent(
+            &llm,
+            &db,
+            &settings,
+            "问题",
+            Some("p1"),
+            &[],
+            &selections,
+            &[],
+            None,
+            &mut |_| {},
+        )
+        .await
+        .unwrap();
         let state = match run {
             RunResult::NeedInput { state, .. } => state,
             _ => panic!("应请求澄清"),
@@ -1163,6 +1316,144 @@ mod tests {
             AgentEvent::Content { .. } => "content",
             AgentEvent::ToolStart { .. } => "tool_start",
             AgentEvent::ToolEnd { .. } => "tool_end",
+        }
+    }
+
+    // ---------- 工具超限协议修复测试 ----------
+
+    #[tokio::test]
+    async fn tools_over_limit_get_error_results() {
+        let (db, settings) = setup();
+        let selections: Vec<_> = (0..10).map(|i| sel(&format!("段落{i}"), Some(i))).collect();
+        // 模型一次返回 10 个工具调用（超过 MAX_TOOLS_PER_TURN=8）
+        let mut tool_calls = Vec::new();
+        for i in 0..10 {
+            tool_calls.push((
+                format!("c{i}").leak() as &str,
+                "read_selection",
+                json!({ "index": i }),
+            ));
+        }
+        let llm = ScriptedLlm::new(vec![calls(&tool_calls), content("综合所有资料回答")]);
+
+        let mut events = Vec::new();
+        match run_agent(
+            &llm,
+            &db,
+            &settings,
+            "问题",
+            Some("p1"),
+            &[],
+            &selections,
+            &[],
+            None,
+            &mut |e| events.push(e),
+        )
+        .await
+        .unwrap()
+        {
+            RunResult::Done { answer, trace, .. } => {
+                // 应该有 10 条轨迹：前 8 个正常执行，后 2 个标记错误
+                assert_eq!(trace.len(), 10);
+
+                // 前 8 个工具正常执行（无错误）
+                for i in 0..8 {
+                    assert!(trace[i].error.is_none(), "工具 {} 不应有错误", i);
+                }
+
+                // 后 2 个工具被限制（有错误）
+                for i in 8..10 {
+                    assert!(trace[i].error.is_some(), "工具 {} 应标记错误", i);
+                    assert!(
+                        trace[i]
+                            .error
+                            .as_ref()
+                            .unwrap()
+                            .contains("超出单轮工具数量限制"),
+                        "错误消息应说明超限"
+                    );
+                }
+
+                // 模型收到错误提示后应能继续生成回答
+                assert_eq!(answer, "综合所有资料回答");
+            }
+            RunResult::NeedInput { .. } => panic!("不应请求澄清"),
+        }
+
+        // 验证事件流：前 8 个 ToolStart/ToolEnd，后 2 个只有 ToolEnd（带错误）
+        let tool_events: Vec<&AgentEvent> = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::ToolStart { .. } | AgentEvent::ToolEnd { .. }))
+            .collect();
+
+        // 前 8 个：start + end = 16 个事件
+        // 后 2 个：只有 end = 2 个事件
+        // 总共 18 个工具相关事件
+        assert_eq!(tool_events.len(), 18);
+
+        // 检查后 2 个工具的 ToolEnd 事件带有错误
+        let last_two_ends: Vec<&AgentEvent> = tool_events.iter().rev().take(2).copied().collect();
+        for evt in last_two_ends {
+            if let AgentEvent::ToolEnd { error, .. } = evt {
+                assert!(error.is_some(), "超限工具的 ToolEnd 应带错误");
+                assert!(error.as_ref().unwrap().contains("工具调用上限"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn model_can_continue_after_tool_limit_error() {
+        let (db, settings) = setup();
+        let selections: Vec<_> = (0..10).map(|i| sel(&format!("段落{i}"), Some(i))).collect();
+
+        // 第一轮：10 个工具（超限）
+        let mut first_round = Vec::new();
+        for i in 0..10 {
+            first_round.push((
+                format!("c1_{i}").leak() as &str,
+                "read_selection",
+                json!({ "index": i }),
+            ));
+        }
+
+        // 第二轮：模型理解错误提示，只调用 2 个工具（在限制内）
+        let second_round = vec![
+            ("c2_0", "read_selection", json!({ "index": 8 })),
+            ("c2_1", "read_selection", json!({ "index": 9 })),
+        ];
+
+        let llm = ScriptedLlm::new(vec![
+            calls(&first_round),
+            calls(&second_round),
+            content("完整回答"),
+        ]);
+
+        match run_agent(
+            &llm,
+            &db,
+            &settings,
+            "问题",
+            Some("p1"),
+            &[],
+            &selections,
+            &[],
+            None,
+            &mut |_| {},
+        )
+        .await
+        .unwrap()
+        {
+            RunResult::Done { answer, trace, .. } => {
+                // 第一轮 10 个（8 个成功 + 2 个错误）+ 第二轮 2 个成功 = 12 个
+                assert_eq!(trace.len(), 12);
+
+                // 验证第二轮的工具都成功执行
+                assert!(trace[10].error.is_none());
+                assert!(trace[11].error.is_none());
+
+                assert_eq!(answer, "完整回答");
+            }
+            RunResult::NeedInput { .. } => panic!("不应请求澄清"),
         }
     }
 }

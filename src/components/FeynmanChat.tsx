@@ -3,6 +3,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { Reorder } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { ChatComposer } from "@/components/ChatComposer";
+import { useStickyScroll } from "@/hooks/useStickyScroll";
 import { Input } from "@/components/ui/input";
 import { MarkdownView } from "@/components/MarkdownView";
 import { LiveClock } from "@/components/LiveClock";
@@ -145,7 +146,7 @@ export function FeynmanChat({ paperId }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editObjective, setEditObjective] = useState("");
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const { scrollRef, atBottom, onScroll, scrollToBottom, stick } = useStickyScroll([conceptMessages, activeIndex, sending, review, starting, judging, quizzing, nexting, planning, liveText, liveThinking, fs, legacyMessages]);
 
   // 恢复该论文最近的费曼会话（主行 + 状态 + 当前概念消息）
   useEffect(() => {
@@ -211,11 +212,6 @@ export function FeynmanChat({ paperId }: Props) {
     }
   }, [fs]);
 
-  // 新消息 / 状态变化滚动到底部
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [conceptMessages, activeIndex, sending, review, starting, judging, quizzing, nexting, planning, liveText, liveThinking, fs, legacyMessages]);
-
   // 派生状态
   const isPlanning = fs?.status === "planning" && !legacy;
   const activeIdx = activeIndex ?? (fs ? fs.current_index : null);
@@ -246,6 +242,7 @@ export function FeynmanChat({ paperId }: Props) {
   const switchConcept = useCallback(
     async (i: number) => {
       if (!fs || legacy) return;
+      stick();
       setActiveIndex(i);
       setReview(null);
       if (conceptMessages[i]) return;
@@ -362,6 +359,7 @@ export function FeynmanChat({ paperId }: Props) {
   }
 
   async function handleSend() {
+    stick();
     const content = input.trim();
     if (!content || sending || !activeSessionId || activeIdx === null) return;
     const idx = activeIdx; // 捕获，防异步竞态
@@ -876,7 +874,7 @@ export function FeynmanChat({ paperId }: Props) {
       )}
 
       {/* 消息区 */}
-      <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto py-2">
+      <div ref={scrollRef} onScroll={onScroll} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto py-2">
         {loadingHistory ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -992,6 +990,7 @@ export function FeynmanChat({ paperId }: Props) {
           </div>
         )}
       </div>
+      {!atBottom && <button type="button" onClick={scrollToBottom} className="mx-auto rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground shadow-sm">回到底部</button>}
 
       {error && (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">

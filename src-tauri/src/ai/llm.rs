@@ -176,56 +176,41 @@ pub async fn stream_plain_chat<L: LlmChat>(
     let resp = llm
         .stream_chat_with_tools_abortable(&agent_msgs, &[], cancel, on_event)
         .await?;
-    resp.content.ok_or_else(|| anyhow::anyhow!("LLM 响应缺少 content"))
+    resp.content
+        .ok_or_else(|| anyhow::anyhow!("LLM 响应缺少 content"))
 }
 
 impl Llm {
-    /// 按 settings 的 `llm_provider` 选择 provider 并取对应 API Key（为空则报错）。
-    pub fn from_settings(s: &Settings) -> Result<Llm> {
-        let model = s.llm_model.clone();
-        match s.llm_provider.to_lowercase().as_str() {
-            "openai" => {
-                let key = s.api_keys.openai.clone();
-                if key.is_empty() {
-                    anyhow::bail!("未配置 OpenAI API Key，请先在设置页填写");
-                }
-                Ok(Llm::OpenAiCompat {
-                    base_url: "https://api.openai.com/v1".into(),
-                    api_key: key,
-                    model,
-                })
-            }
-            "deepseek" => {
-                let key = s.api_keys.deepseek.clone();
-                if key.is_empty() {
-                    anyhow::bail!("未配置 DeepSeek API Key，请先在设置页填写");
-                }
-                Ok(Llm::OpenAiCompat {
-                    base_url: "https://api.deepseek.com".into(),
-                    api_key: key,
-                    model,
-                })
-            }
-            "gemini" => {
-                let key = s.api_keys.gemini.clone();
-                if key.is_empty() {
-                    anyhow::bail!("未配置 Gemini API Key，请先在设置页填写");
-                }
-                Ok(Llm::OpenAiCompat {
-                    base_url: "https://generativelanguage.googleapis.com/v1beta/openai".into(),
-                    api_key: key,
-                    model,
-                })
-            }
-            "anthropic" => {
-                let key = s.api_keys.anthropic.clone();
-                if key.is_empty() {
-                    anyhow::bail!("未配置 Anthropic API Key，请先在设置页填写");
-                }
-                Ok(Llm::Anthropic { api_key: key, model })
-            }
-            other => anyhow::bail!("未知 LLM provider: {other}"),
+    /// 从 ProviderConfig 构造 Llm 实例
+    pub fn from_provider(config: &crate::settings::ProviderConfig) -> Result<Llm> {
+        if config.api_key.is_empty() {
+            anyhow::bail!("Provider {} 未配置 API Key，请先在设置页填写", config.name);
         }
+
+        match config.provider_type.as_str() {
+            "openai-compat" => {
+                let base_url = config
+                    .base_url
+                    .as_ref()
+                    .context("OpenAI 兼容 provider 需要配置 base_url")?;
+                Ok(Llm::OpenAiCompat {
+                    base_url: base_url.clone(),
+                    api_key: config.api_key.clone(),
+                    model: config.default_model.clone(),
+                })
+            }
+            "anthropic" => Ok(Llm::Anthropic {
+                api_key: config.api_key.clone(),
+                model: config.default_model.clone(),
+            }),
+            _ => anyhow::bail!("不支持的 provider 类型: {}", config.provider_type),
+        }
+    }
+
+    /// 按 settings 的激活 provider 构造 Llm 实例（新版）
+    pub fn from_settings(s: &Settings) -> Result<Llm> {
+        let config = s.active_provider()?;
+        Self::from_provider(config)
     }
 
     /// 发送多轮对话，返回助手回复文本。
@@ -384,13 +369,18 @@ fn drain_lines(buf: &mut Vec<u8>, on_line: &mut dyn FnMut(String)) {
 }
 
 /// Poll cancellation even when the server stops sending bytes.
-async fn wait_for_io<F: std::future::Future>(future: F, cancel: Option<&AtomicBool>) -> Result<Option<F::Output>> {
+async fn wait_for_io<F: std::future::Future>(
+    future: F,
+    cancel: Option<&AtomicBool>,
+) -> Result<Option<F::Output>> {
     tokio::pin!(future);
     let deadline = tokio::time::sleep(std::time::Duration::from_secs(120));
     tokio::pin!(deadline);
     let mut poll = tokio::time::interval(std::time::Duration::from_millis(50));
     loop {
-        if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) { return Ok(None); }
+        if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
+            return Ok(None);
+        }
         tokio::select! {
             result = &mut future => return Ok(Some(result)),
             _ = poll.tick() => {},
@@ -443,7 +433,9 @@ async fn stream_openai_compat(
                 on_event(evt);
             }
         });
-        if parser.done { break; }
+        if parser.done {
+            break;
+        }
     }
     parser.finish()
 }
@@ -490,7 +482,9 @@ async fn stream_anthropic(
                 on_event(evt);
             }
         });
-        if parser.done { break; }
+        if parser.done {
+            break;
+        }
     }
     parser.finish()
 }
@@ -507,7 +501,10 @@ fn parse_openai_response(body: &serde_json::Value) -> Result<ChatResponse> {
     if let Some(arr) = msg["tool_calls"].as_array() {
         for tc in arr {
             let id = tc["id"].as_str().unwrap_or_default().to_string();
-            let name = tc["function"]["name"].as_str().unwrap_or_default().to_string();
+            let name = tc["function"]["name"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
             if name.is_empty() {
                 continue;
             }
@@ -516,7 +513,11 @@ fn parse_openai_response(body: &serde_json::Value) -> Result<ChatResponse> {
                 .as_str()
                 .and_then(|s| serde_json::from_str(s).ok())
                 .unwrap_or(serde_json::Value::Null);
-            tool_calls.push(ToolCallRef { id, name, arguments });
+            tool_calls.push(ToolCallRef {
+                id,
+                name,
+                arguments,
+            });
         }
     }
     Ok(ChatResponse {
@@ -703,7 +704,9 @@ impl AnthropicStreamParser {
                 }
                 _ => {}
             },
-            Some("message_stop") => { self.done = true; },
+            Some("message_stop") => {
+                self.done = true;
+            }
             Some("content_block_delta") => match v["delta"]["type"].as_str() {
                 Some("text_delta") => {
                     let t = v["delta"]["text"].as_str().unwrap_or_default();
@@ -794,12 +797,20 @@ fn anthropic_body(model: &str, messages: &[ChatMessage]) -> serde_json::Value {
 }
 
 /// 构造带工具的 OpenAI 兼容请求体（`chat/completions` + `tools`）。
-fn openai_body_with_tools(model: &str, messages: &[AgentMsg], tools: &[ToolDef]) -> serde_json::Value {
+fn openai_body_with_tools(
+    model: &str,
+    messages: &[AgentMsg],
+    tools: &[ToolDef],
+) -> serde_json::Value {
     let msgs: Vec<serde_json::Value> = messages
         .iter()
         .map(|m| match m {
             AgentMsg::Plain(cm) => json!({ "role": cm.role, "content": cm.content }),
-            AgentMsg::ToolCalls { content, reasoning, calls } => {
+            AgentMsg::ToolCalls {
+                content,
+                reasoning,
+                calls,
+            } => {
                 let mut message = json!({
                     // OpenAI 兼容格式要求 content 字段存在；纯工具轮次用空串
                     "role": "assistant",
@@ -820,7 +831,9 @@ fn openai_body_with_tools(model: &str, messages: &[AgentMsg], tools: &[ToolDef])
                 }
                 message
             }
-            AgentMsg::ToolResult { call_id, content, .. } => json!({
+            AgentMsg::ToolResult {
+                call_id, content, ..
+            } => json!({
                 "role": "tool",
                 "tool_call_id": call_id,
                 "content": content,
@@ -896,7 +909,9 @@ fn anthropic_body_with_tools(
                 }
                 json!({ "role": "assistant", "content": blocks })
             }
-            AgentMsg::ToolResult { call_id, content, .. } => json!({
+            AgentMsg::ToolResult {
+                call_id, content, ..
+            } => json!({
                 "role": "user",
                 "content": [{ "type": "tool_result", "tool_use_id": call_id, "content": content }],
             }),
@@ -931,7 +946,11 @@ mod tests {
             cancel.store(true, std::sync::atomic::Ordering::Relaxed);
         };
         let wait = super::wait_for_io(std::future::pending::<()>(), Some(&cancel));
-        let (result, _) = tokio::time::timeout(std::time::Duration::from_secs(1), async { tokio::join!(wait, task) }).await.unwrap();
+        let (result, _) = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            tokio::join!(wait, task)
+        })
+        .await
+        .unwrap();
         assert!(result.unwrap().is_none());
     }
 
@@ -988,10 +1007,22 @@ mod tests {
     #[test]
     fn from_settings_requires_key_and_picks_base_url() {
         let mut s = Settings::default();
-        s.llm_provider = "openai".to_string();
-        assert!(Llm::from_settings(&s).is_err()); // 空 key 应报错
+        // 没有 provider 时应报错
+        assert!(Llm::from_settings(&s).is_err());
 
-        s.api_keys.openai = "sk-test".into();
+        // 添加 openai provider
+        s.providers.push(crate::settings::ProviderConfig {
+            id: "openai".to_string(),
+            name: "OpenAI".to_string(),
+            provider_type: "openai-compat".to_string(),
+            api_key: "sk-test".to_string(),
+            base_url: Some("https://api.openai.com/v1".to_string()),
+            default_model: "gpt-4o-mini".to_string(),
+            models: vec![],
+            enabled: true,
+        });
+        s.active_provider_id = "openai".to_string();
+
         match Llm::from_settings(&s).unwrap() {
             Llm::OpenAiCompat {
                 base_url, api_key, ..
@@ -1006,7 +1037,17 @@ mod tests {
     #[test]
     fn from_settings_unknown_provider_errors() {
         let mut s = Settings::default();
-        s.llm_provider = "nope".into();
+        s.providers.push(crate::settings::ProviderConfig {
+            id: "unknown".to_string(),
+            name: "Unknown".to_string(),
+            provider_type: "unknown-type".to_string(),
+            api_key: "key".to_string(),
+            base_url: None,
+            default_model: "model".to_string(),
+            models: vec![],
+            enabled: true,
+        });
+        s.active_provider_id = "unknown".to_string();
         assert!(Llm::from_settings(&s).is_err());
     }
 
@@ -1057,7 +1098,10 @@ mod tests {
         assert_eq!(arr[2]["reasoning_content"], "检索前思考");
         assert_eq!(arr[2]["tool_calls"][0]["function"]["name"], "search_papers");
         // arguments 序列化为 JSON 字符串
-        assert_eq!(arr[2]["tool_calls"][0]["function"]["arguments"], r#"{"q":"注意力"}"#);
+        assert_eq!(
+            arr[2]["tool_calls"][0]["function"]["arguments"],
+            r#"{"q":"注意力"}"#
+        );
         // 工具结果
         assert_eq!(arr[3]["role"], "tool");
         assert_eq!(arr[3]["tool_call_id"], "call_1");
@@ -1068,23 +1112,18 @@ mod tests {
     fn deepseek_tool_requests_disable_thinking_for_replayable_history() {
         let msgs = vec![
             AgentMsg::Plain(msg(Role::User, "question")),
-            AgentMsg::Plain(msg(Role::Assistant, "an older answer without saved reasoning")),
+            AgentMsg::Plain(msg(
+                Role::Assistant,
+                "an older answer without saved reasoning",
+            )),
         ];
         let tools = [tool_def("search_papers")];
-        let deepseek = openai_tools_request_body(
-            "https://api.deepseek.com",
-            "deepseek-chat",
-            &msgs,
-            &tools,
-        );
+        let deepseek =
+            openai_tools_request_body("https://api.deepseek.com", "deepseek-chat", &msgs, &tools);
         assert_eq!(deepseek["thinking"]["type"], "disabled");
 
-        let openai = openai_tools_request_body(
-            "https://api.openai.com/v1",
-            "gpt-4o-mini",
-            &msgs,
-            &tools,
-        );
+        let openai =
+            openai_tools_request_body("https://api.openai.com/v1", "gpt-4o-mini", &msgs, &tools);
         assert!(openai.get("thinking").is_none());
     }
 
@@ -1104,13 +1143,14 @@ mod tests {
                 content: "目录".into(),
             },
         ];
-        let body = anthropic_body_with_tools("claude-sonnet-4-6", &msgs, &[tool_def("get_outline")]);
+        let body =
+            anthropic_body_with_tools("claude-sonnet-4-6", &msgs, &[tool_def("get_outline")]);
         assert_eq!(body["system"], "sys prompt");
         assert_eq!(body["tools"][0]["name"], "get_outline");
         assert_eq!(body["tools"][0]["input_schema"]["type"], "object");
         let arr = body["messages"].as_array().unwrap();
         assert_eq!(arr.len(), 3); // system 已拆出
-        // assistant：text + tool_use 两个块
+                                  // assistant：text + tool_use 两个块
         assert_eq!(arr[1]["content"][0]["type"], "text");
         assert_eq!(arr[1]["content"][0]["text"], "我先查一下");
         assert_eq!(arr[1]["content"][1]["type"], "tool_use");
@@ -1201,7 +1241,11 @@ mod tests {
             _ => panic!("应为 Plain"),
         }
         match &back[1] {
-            AgentMsg::ToolCalls { content, reasoning, calls } => {
+            AgentMsg::ToolCalls {
+                content,
+                reasoning,
+                calls,
+            } => {
                 assert!(content.is_none());
                 assert_eq!(reasoning.as_deref(), Some("先检索"));
                 assert_eq!(calls[0].name, "search_papers");
@@ -1210,7 +1254,9 @@ mod tests {
             _ => panic!("应为 ToolCalls"),
         }
         match &back[2] {
-            AgentMsg::ToolResult { call_id, content, .. } => {
+            AgentMsg::ToolResult {
+                call_id, content, ..
+            } => {
                 assert_eq!(call_id, "c1");
                 assert_eq!(content, "[1] 结果");
             }
@@ -1298,7 +1344,11 @@ mod tests {
         let mut lines = Vec::new();
         drain_lines(&mut buf, &mut |l| lines.push(l));
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].contains("正确"), "跨 chunk 的中文字符不应损坏: {:?}", lines[0]);
+        assert!(
+            lines[0].contains("正确"),
+            "跨 chunk 的中文字符不应损坏: {:?}",
+            lines[0]
+        );
         assert!(!lines[0].contains('\u{fffd}'), "不应出现 U+FFFD 替换符");
         assert!(buf.is_empty(), "缓冲应被清空");
     }
