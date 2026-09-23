@@ -68,8 +68,8 @@ export function AskPage({ onOpenPaper }: Props) {
   }
 
   return (
-    <section className="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-[#fbfbfa] dark:bg-[#191919]">
-      <header className="flex h-12 shrink-0 items-center justify-between px-4">
+    <section className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-white dark:bg-[#191919]">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-zp-border px-7">
         <h1 className="text-sm font-medium">知识库问答</h1>
         <div className="flex items-center gap-0.5">
           <IconTooltip label={sending ? "回复中，暂时无法新建对话" : "新对话"} side="bottom"><button type="button" onClick={startNew} disabled={sending} aria-label="新对话" className="pressable rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50">
@@ -106,8 +106,8 @@ export function AskPage({ onOpenPaper }: Props) {
         </div>
       </header>
 
-      {error && <div className="mx-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>}
-      <div className="flex min-h-0 flex-1 px-4 pb-4">
+      {error && <div className="mx-auto mt-3 w-full max-w-5xl rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>}
+      <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 px-6 pb-6">
         <QaChat key={chatRevision} onSendingChange={setSending} conversationId={activeId} onOpenPaper={onOpenPaper} onConversationCreated={(id) => { setActiveId(id); void refresh(); }} />
       </div>
 

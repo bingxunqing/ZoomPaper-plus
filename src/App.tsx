@@ -115,7 +115,7 @@ function App() {
         <Library onOpenPaper={openPaper} refreshSignal={libraryRefreshSignal} />
       ) : (
         /* 其余页面：主内容区自行控制滚动 */
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col p-6">
+        <main className={`flex min-h-0 min-w-0 flex-1 flex-col ${view.name === "ask" ? "bg-white dark:bg-[#191919]" : "p-6"}`}>
           <motion.div
             key={view.name + ("paperId" in view ? view.paperId : "")}
             initial={{ opacity: 0 }}
