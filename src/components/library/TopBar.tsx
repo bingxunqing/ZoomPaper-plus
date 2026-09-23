@@ -4,7 +4,7 @@
  * 搜索为标题/作者/摘要即时过滤（纯客户端）；按 `/` 或 ⌘/Ctrl F 可聚焦搜索框。
  */
 import { useEffect, useRef } from "react";
-import { LayoutGrid, List, Loader2, Search as SearchIcon, Upload, X } from "lucide-react";
+import { LayoutGrid, List, ListChecks, Loader2, Search as SearchIcon, Upload, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
 import {
@@ -38,6 +38,8 @@ interface Props {
   onFilterChange: (filter: PaperFilter) => void;
   layout: LibraryLayout;
   onLayoutChange: (layout: LibraryLayout) => void;
+  selectionMode: boolean;
+  onToggleSelectionMode: () => void;
 }
 
 const FILTER_LABELS: Record<PaperFilter, string> = {
@@ -61,6 +63,8 @@ export function TopBar({
   onFilterChange,
   layout,
   onLayoutChange,
+  selectionMode,
+  onToggleSelectionMode,
 }: Props) {
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -99,7 +103,7 @@ export function TopBar({
             onChange={(e) => onQueryChange(e.target.value)}
             placeholder=""
             aria-label="搜索论文"
-            className="h-8 w-64 rounded-md border-zp-border bg-zp-surface pl-8 pr-8 shadow-none"
+            className="h-8 w-36 rounded-md border-zp-border bg-zp-surface pl-8 pr-8 shadow-none min-[1100px]:w-64"
           />
           {query && (
             <IconTooltip label="清空搜索" className="absolute top-1/2 right-2 -translate-y-1/2">
@@ -139,6 +143,9 @@ export function TopBar({
           <IconTooltip label="列表视图"><button type="button" aria-label="列表视图" onClick={() => onLayoutChange("list")} className={`flex h-6 w-7 items-center justify-center rounded ${layout === "list" ? "bg-white text-zp-primary shadow-sm dark:bg-zp-surface-active" : "text-zp-quaternary"}`}><List className="h-3.5 w-3.5" /></button></IconTooltip>
           <IconTooltip label="卡片视图"><button type="button" aria-label="卡片视图" onClick={() => onLayoutChange("grid")} className={`flex h-6 w-7 items-center justify-center rounded ${layout === "grid" ? "bg-white text-zp-primary shadow-sm dark:bg-zp-surface-active" : "text-zp-quaternary"}`}><LayoutGrid className="h-3.5 w-3.5" /></button></IconTooltip>
         </div>
+        <IconTooltip label={selectionMode ? "退出多选（Esc）" : "多选论文（也可长按论文）"}>
+          <button type="button" aria-label={selectionMode ? "退出多选" : "多选论文"} aria-pressed={selectionMode} onClick={onToggleSelectionMode} className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${selectionMode ? "bg-zp-primary text-white" : "text-zp-quaternary hover:bg-zp-surface-hover hover:text-zp-primary"}`}><ListChecks className="h-4 w-4" /></button>
+        </IconTooltip>
         <IconTooltip label={importing ? "正在导入论文" : "导入论文"}><button type="button" onClick={onImport} disabled={importing} aria-label="导入论文" className="flex h-8 w-8 items-center justify-center rounded-md bg-zp-primary text-white transition-opacity hover:opacity-90 disabled:opacity-50">
           {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
         </button></IconTooltip>

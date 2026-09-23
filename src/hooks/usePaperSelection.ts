@@ -1,5 +1,5 @@
 /**
- * 论文库选择模式状态管理：单击切换（追加/取消），清空后自动退出选择模式。
+ * 论文库已选论文集合；选择模式本身由 Library 管理。
  */
 import { useCallback, useMemo, useState } from "react";
 

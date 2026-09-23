@@ -18,3 +18,12 @@ it("keeps the next draft when the first response creates a server conversation a
   fireEvent.click(screen.getByLabelText("新对话"));
   expect((screen.getByLabelText("draft") as HTMLInputElement).value).toBe("");
 });
+
+it("shows the expand icon only while the assistant is collapsed", () => {
+  render(<QaPanel paperId="paper" />);
+  expect(screen.queryByLabelText("展开对话")).toBeNull();
+  fireEvent.click(screen.getByLabelText("收起对话"));
+  expect(screen.getByLabelText("展开对话")).toBeTruthy();
+  fireEvent.click(screen.getByLabelText("展开对话"));
+  expect(screen.queryByLabelText("展开对话")).toBeNull();
+});

@@ -84,6 +84,9 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
   );
   const [focusedPaperId, setFocusedPaperId] = useState<string | null>(null);
   const { selected, toggle, clear, selectAll, isSelected, size: selectedSize } = usePaperSelection();
+  const [selectionMode, setSelectionMode] = useState(false);
+  const exitSelection = () => { clear(); setSelectionMode(false); };
+  const enterSelection = (id: string) => { setSelectionMode(true); if (!selected.has(id)) toggle(id); };
   const [notice, setNotice] = useState<string | null>(null);
 
   const [renaming, setRenaming] = useState<Renaming | null>(null);
@@ -203,12 +206,12 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
 
   function handleSelectView(v: LibraryView) {
     setView(v);
-    clear();
+    exitSelection();
   }
 
   function handleFilterChange(v: PaperFilter) {
     setFilter(v);
-    clear();
+    exitSelection();
   }
 
   // ---------- 阅读状态 / 星标（乐观更新） ----------
@@ -387,7 +390,7 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
       for (const p of deleteTargets) {
         await deletePaper(p.id);
       }
-      clear();
+      exitSelection();
       setDeleteTargets(null);
       await refresh();
     } catch (e) {
@@ -501,7 +504,7 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
     if (!currentFolderId) return;
     try {
       await removePapersFromFolder([paper.id], currentFolderId);
-      clear();
+      exitSelection();
       await refresh();
     } catch (e) {
       setError(String(e));
@@ -518,16 +521,17 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
       if (e.key === "Delete" && selectedSize > 0) {
         e.preventDefault();
         setDeleteTargets(selectedPapers);
-      } else if (e.key === "Escape" && selectedSize > 0) {
-        clear();
+      } else if (e.key === "Escape" && selectionMode) {
+        exitSelection();
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
         e.preventDefault();
+        setSelectionMode(true);
         selectAll(visiblePapers.map((paper) => paper.id));
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [renaming, folderDialog, deleteTargets, pickerOpen, selectedSize, selectedPapers, clear, selectAll, visiblePapers]);
+  }, [renaming, folderDialog, deleteTargets, pickerOpen, selectedSize, selectedPapers, selectionMode, clear, selectAll, visiblePapers]);
 
   // ---------- 渲染 ----------
 
@@ -571,6 +575,8 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
           onFilterChange={handleFilterChange}
           layout={layout}
           onLayoutChange={setLayout}
+          selectionMode={selectionMode}
+          onToggleSelectionMode={() => selectionMode ? exitSelection() : setSelectionMode(true)}
         />
 
         <div className="flex min-h-0 flex-1">
@@ -599,7 +605,7 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
               onPickFolder={handleBulkPickFolder}
               onExport={() => void handleExportNotes()}
               onDelete={() => setDeleteTargets(selectedPapers)}
-              onClose={clear}
+              onClose={exitSelection}
             />
           )}
         </AnimatePresence>
@@ -643,6 +649,8 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
               folders={folders}
               plans={plans}
               selectedIds={selected}
+              selectionMode={selectionMode}
+              onLongPress={enterSelection}
               focusedId={focusedPaperId}
               currentFolderId={currentFolderId}
               parsingId={parsingId}
@@ -669,7 +677,8 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
                   folders={folders}
                   selected={isSelected(paper.id)}
                   selectedIds={selected}
-                  selectionMode={selectedSize > 0}
+                  selectionMode={selectionMode}
+                  onLongPress={enterSelection}
                   isRenaming={renaming?.kind === "paper" && renaming.id === paper.id}
                   parsing={parsingId === paper.id}
                   progress={parseProgress[paper.id] ?? null}
@@ -688,7 +697,7 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
                   onToggleStar={(p) => void handleToggleStar(p)}
                   onJumpToFolder={(folderId) => {
                     setView({ type: "folder", folderId });
-                    clear();
+                    exitSelection();
                   }}
                   onParse={handleParse}
                   onDelete={(p) => setDeleteTargets([p])}
@@ -699,7 +708,7 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
           )}
         </div>
           </div>
-          {layout === "list" && focusedPaper && (
+          {layout === "list" && focusedPaper && !selectionMode && (
             <PaperInspector
               paper={focusedPaper}
               folders={folders}

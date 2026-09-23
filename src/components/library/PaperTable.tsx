@@ -8,12 +8,15 @@ import type { Folder, Paper, ReadingPlan, ReadingStatus } from "@/lib/api";
 import { PaperMenuItems, type PaperMenuActions } from "./paperMenu";
 import { PlanSubmenu, type PlanMenuPrimitives } from "./planMenu";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
+import { useLongPressSelection } from "@/hooks/useLongPressSelection";
 
 export interface PaperTableProps {
   papers: Paper[];
   folders: Folder[];
   plans: ReadingPlan[];
   selectedIds: ReadonlySet<string>;
+  selectionMode: boolean;
+  onLongPress: (paperId: string) => void;
   focusedId: string | null;
   currentFolderId: string | null;
   parsingId: string | null;
@@ -48,11 +51,15 @@ function ParseIcon({ status, parsing }: { status: string; parsing: boolean }) {
 export function PaperTable(props: PaperTableProps) {
   const folderById = new Map(props.folders.map((folder) => [folder.id, folder]));
   const [targetPlans, setTargetPlans] = useState<Record<string, string>>({});
+  const longPress = useLongPressSelection(props.onLongPress);
+  const columns = props.selectionMode
+    ? "grid-cols-[36px_minmax(280px,1fr)_minmax(140px,0.55fr)_120px_118px_38px]"
+    : "grid-cols-[minmax(280px,1fr)_minmax(140px,0.55fr)_120px_118px_38px]";
 
   return (
     <div className="min-w-[760px] text-[13px]">
-      <div className="grid h-9 grid-cols-[36px_minmax(280px,1fr)_minmax(140px,0.55fr)_120px_118px_38px] items-center border-b border-zp-border px-2 text-xs text-zp-quaternary">
-        <span />
+      <div className={cn("grid h-9 items-center border-b border-zp-border px-2 text-xs text-zp-quaternary", columns)}>
+        {props.selectionMode && <span />}
         <span>标题</span>
         <span>期刊 / 会议</span>
         <span>文件夹</span>
@@ -82,22 +89,33 @@ export function PaperTable(props: PaperTableProps) {
               <ContextMenuPrimitive.Trigger render={<div
               role="row"
               tabIndex={0}
-              aria-selected={focused}
-              onClick={() => props.onFocus(paper)}
-              onDoubleClick={() => props.onOpen(paper.id)}
+              aria-selected={props.selectionMode ? selected : focused}
+              {...longPress.bind(paper.id)}
+              onContextMenu={(event) => { if (longPress.suppressContextMenu(paper.id)) event.preventDefault(); }}
+              onClick={(event) => {
+                if (longPress.consumeClick(paper.id)) { event.preventDefault(); return; }
+                if (props.selectionMode) props.onToggle(paper.id);
+                else props.onFocus(paper);
+              }}
+              onDoubleClick={() => { if (!props.selectionMode) props.onOpen(paper.id); }}
               onKeyDown={(event) => {
-                if (event.key === "Enter") props.onOpen(paper.id);
+                if (event.key === "Enter") {
+                  if (props.selectionMode) props.onToggle(paper.id);
+                  else props.onOpen(paper.id);
+                }
                 if (event.key === " " && !event.repeat) {
                   event.preventDefault();
-                  props.onToggle(paper.id);
+                  if (props.selectionMode) props.onToggle(paper.id);
+                  else props.onLongPress(paper.id);
                 }
               }}
               className={cn(
-                "group grid min-h-11 cursor-default grid-cols-[36px_minmax(280px,1fr)_minmax(140px,0.55fr)_120px_118px_38px] items-center border-b border-zp-border/70 px-2 outline-none transition-colors",
-                focused ? "bg-[#eceeeb] dark:bg-zp-surface-active" : "hover:bg-zp-surface-hover",
+                "group grid min-h-11 cursor-default select-none items-center border-b border-zp-border/70 px-2 outline-none transition-colors",
+                columns,
+                (props.selectionMode ? selected : focused) ? "bg-[#eceeeb] dark:bg-zp-surface-active" : "hover:bg-zp-surface-hover",
               )}
             />}>
-              <div className="flex items-center justify-center">
+              {props.selectionMode && <div className="flex items-center justify-center">
                 <button
                   type="button"
                   aria-label={selected ? "取消选择" : "选择论文"}
@@ -109,7 +127,7 @@ export function PaperTable(props: PaperTableProps) {
                 >
                   {selected && <Check className="h-3 w-3" strokeWidth={3} />}
                 </button>
-              </div>
+              </div>}
 
               <div className="flex min-w-0 items-center gap-2 pr-4">
                 <span className={cn("h-2 w-2 shrink-0 rounded-full", statusDot[paper.reading_status] ?? statusDot.unread)} />

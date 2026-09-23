@@ -293,13 +293,13 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
         }}
       >
         {/* 收纳态：整根竖条可点击展开 */}
-        <IconTooltip label="展开对话" side="left" className={collapsed ? "flex flex-1" : "hidden"}><button
+        {collapsed && <IconTooltip label="展开对话" side="left" className="flex flex-1"><button
           onClick={() => toggleCollapsed(false)}
           aria-label="展开对话"
           className="flex flex-1 items-start px-2 py-3 text-muted-foreground transition-colors hover:text-foreground"
         >
           <PanelRightOpen className="h-4 w-4" />
-        </button></IconTooltip>
+        </button></IconTooltip>}
 
         {/* 展开态：display:none 保持挂载，不丢会话状态 */}
         <div className={`min-h-0 flex-1 flex-col ${collapsed ? "hidden" : "flex"}`}>

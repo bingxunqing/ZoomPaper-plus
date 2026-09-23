@@ -1,8 +1,7 @@
 /**
  * 论文卡片（PaperCard）：状态驱动极简卡片。
- * 结构：复选框 + 状态圆点 + 标题(2行截断) + 期刊/会议 + 解析状态 + 星标 + 更多。
- * 交互：单击主体无操作（不进入选择）；复选框为选择唯一入口（toggle）；
- * 双击主体打开；星标独立响应不触发选择；拖拽未选中卡片时自动并入选择。
+ * 结构：状态圆点 + 标题(2行截断) + 期刊/会议 + 解析状态 + 星标 + 更多。
+ * 长按进入多选模式后显示复选框；双击打开论文。
  */
 import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
@@ -21,6 +20,7 @@ import {
 } from "./planMenu";
 import { RenameInput } from "./RenameInput";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
+import { useLongPressSelection } from "@/hooks/useLongPressSelection";
 
 /** 解析状态作为次要元信息显示；失败时保留警示色。 */
 const PARSE_STYLE: Record<string, { label: string; className: string }> = {
@@ -47,8 +47,9 @@ export interface PaperCardProps {
   folders: Folder[];
   selected: boolean;
   selectedIds: ReadonlySet<string>;
-  /** 选择模式：任意卡片被选中时，所有复选框常驻可见 */
+  /** 选择模式中显示复选框 */
   selectionMode: boolean;
+  onLongPress: (paperId: string) => void;
   isRenaming: boolean;
   parsing: boolean;
   progress?: ParseProgress | null;
@@ -84,6 +85,7 @@ export function PaperCard(props: PaperCardProps) {
     selected,
     selectedIds,
     selectionMode,
+    onLongPress,
     isRenaming,
     parsing,
     progress,
@@ -112,6 +114,7 @@ export function PaperCard(props: PaperCardProps) {
   else percentRef.current = Math.max(percentRef.current, parseProgressPercent(progress));
   const status = readingStatusOf(paper.reading_status);
   const reduceMotion = useReducedMotion();
+  const longPress = useLongPressSelection(onLongPress);
   // 归属文件夹（多归属；按 id 解析，脏数据过滤）
   const folderById = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders]);
   const paperFolders = paper.folder_ids
@@ -166,8 +169,9 @@ export function PaperCard(props: PaperCardProps) {
     status !== "read" && currentDue != null ? dueBadge(currentDue, false) : null;
 
   function handleDragStart(e: React.DragEvent) {
+    longPress.cancel();
     const ids = selected ? [...selectedIds] : [paper.id];
-    if (!selected) onToggle(paper.id);
+    if (!selected) onLongPress(paper.id);
     e.dataTransfer.setData(PAPER_DRAG_MIME, JSON.stringify(ids));
     e.dataTransfer.effectAllowed = "copy";
   }
@@ -183,16 +187,26 @@ export function PaperCard(props: PaperCardProps) {
           >
             <div
               draggable
+              {...longPress.bind(paper.id)}
+              onContextMenu={(event) => { if (longPress.suppressContextMenu(paper.id)) event.preventDefault(); }}
               onDragStart={handleDragStart}
               tabIndex={0}
               role="button"
               aria-label={paper.title}
-              // 单击主体无操作：选择只通过复选框进入，打开只通过双击 / Enter
-              onDoubleClick={() => onOpen(paper.id)}
+              onClick={(event) => {
+                if (longPress.consumeClick(paper.id)) { event.preventDefault(); return; }
+                if (selectionMode) onToggle(paper.id);
+              }}
+              onDoubleClick={() => { if (!selectionMode) onOpen(paper.id); }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  onOpen(paper.id);
+                  if (selectionMode) onToggle(paper.id);
+                  else onOpen(paper.id);
+                } else if (e.key === " " && !e.repeat) {
+                  e.preventDefault();
+                  if (selectionMode) onToggle(paper.id);
+                  else onLongPress(paper.id);
                 }
               }}
               className={cn(
@@ -205,7 +219,7 @@ export function PaperCard(props: PaperCardProps) {
             >
               {/* header：复选框 + 状态圆点 + 标题 + 星标/更多 */}
               <div className="flex items-start gap-2">
-                <button
+                {selectionMode && <button
                   type="button"
                   aria-label={selected ? "取消选择" : "选择"}
                   onClick={(e) => {
@@ -217,11 +231,11 @@ export function PaperCard(props: PaperCardProps) {
                     selected
                       ? "border-zp-primary bg-zp-primary text-white opacity-100"
                       : "border-zp-border bg-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100 dark:bg-zp-surface",
-                    selectionMode && "opacity-100"
+                    "opacity-100"
                   )}
                 >
                   {selected && <Check className="h-3 w-3" strokeWidth={3} />}
-                </button>
+                </button>}
 
                 <span
                   className={cn("mt-[7px] h-2 w-2 shrink-0 rounded-full", STATUS_DOT[status])}

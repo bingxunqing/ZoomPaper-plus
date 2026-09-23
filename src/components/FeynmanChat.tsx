@@ -893,10 +893,6 @@ export function FeynmanChat({ paperId }: Props) {
         ) : !fs ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 py-8 text-center text-muted-foreground">
             <GraduationCap className="h-10 w-10" />
-            <p className="max-w-md text-sm">
-              用费曼学习法把这篇论文讲明白：AI 先生成一份概念教学计划，每个概念一个独立会话，
-              逐个讲解，学生追问并用测验检验你是否真的讲透了。
-            </p>
             <Button
               onClick={() => void handleStart()}
               disabled={starting}
