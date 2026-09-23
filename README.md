@@ -46,7 +46,7 @@
 - **更完整的论文库**：支持文件夹、筛选、排序、继续阅读、阅读计划和笔记导出。
 - **可靠性修复**：修复中文输入、DeepSeek 工具调用、标注覆盖、数据库阻塞和本地密钥权限问题。
 
-浏览器扩展安装方法见 [ZoomPaper Plus Connector](browser-extension/README.md)，网站覆盖范围见[兼容性说明](docs/BROWSER-SUPPORT.md)。原项目的完整功能和配置方式请查看[上游 README](https://github.com/Flutter-Misdreavus/ZoomPaper#readme)。
+原项目的完整功能和配置方式请查看[上游 README](https://github.com/Flutter-Misdreavus/ZoomPaper#readme)。
 
 ## 下载
 
@@ -71,6 +71,14 @@ xattr -dr com.apple.quarantine "/Applications/ZoomPaper Plus.app"
 Windows 如显示 SmartScreen 提示，请确认下载来源为本仓库后选择“更多信息 → 仍要运行”。Linux 使用 AppImage 时，可能需要先执行 `chmod +x ZoomPaper.Plus_*.AppImage`。
 
 PDF 解析需要配置 MinerU；翻译和 AI 功能需要配置 OpenAI、Anthropic、Gemini 或 DeepSeek 中至少一个服务。
+
+## 浏览器扩展
+
+1. 安装并启动一次 ZoomPaper Plus。在 [Releases](https://github.com/bingxunqing/ZoomPaper-plus/releases/latest) 下载 `ZoomPaper-Plus-Connector_<版本>.zip` 并解压。
+2. 打开 Chrome 的 `chrome://extensions` 或 Edge 的 `edge://extensions`，开启**开发者模式**，点击**加载已解压的扩展程序**，选择解压后包含 `manifest.json` 的文件夹。
+3. 在论文页面右键选择**加入 ZoomPaper Plus**，或点击扩展图标；首次使用时允许浏览器打开桌面应用。
+
+更新扩展时，替换解压文件后到扩展管理页点击**重新加载**。也可以直接安装仓库中的 [`browser-extension`](browser-extension/README.md) 文件夹；支持的网站见[兼容性说明](docs/BROWSER-SUPPORT.md)。
 
 <details>
   <summary>开发与构建</summary>
