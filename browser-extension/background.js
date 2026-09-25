@@ -71,6 +71,7 @@ function scrapePaperPage() {
       href: anchor.href,
       text: anchor.textContent || "",
       title: anchor.title || "",
+      context: anchor.parentElement?.textContent || "",
       rel: anchor.rel || "",
       type: anchor.type || "",
     })),
