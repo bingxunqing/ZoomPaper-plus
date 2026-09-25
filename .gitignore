@@ -52,6 +52,7 @@ AGENTS.md
 test-paper.pdf
 ZoomPaper-Plus-Connector_*.zip
 ZoomPaper-Plus-Connector_*/
+/ZoomPaper-Plus-Connector/
 
 # fastembed 运行时缓存（可能出现在项目目录）
 .fastembed_cache/
