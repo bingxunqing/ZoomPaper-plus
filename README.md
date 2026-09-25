@@ -80,7 +80,7 @@ PDF 解析需要配置 MinerU；翻译和 AI 功能需要配置 OpenAI、Anthrop
 2. 打开 Chrome 的 `chrome://extensions` 或 Edge 的 `edge://extensions`，开启**开发者模式**，点击**加载已解压的扩展程序**，选择解压后包含 `manifest.json` 的文件夹。
 3. 在论文页面右键选择**加入 ZoomPaper Plus**，或点击扩展图标；首次使用时允许浏览器打开桌面应用。
 
-更新扩展时，替换解压文件后到扩展管理页点击**重新加载**。也可以直接安装仓库中的 [`browser-extension`](browser-extension/README.md) 文件夹；支持的网站见[兼容性说明](docs/BROWSER-SUPPORT.md)。
+从 Connector `v0.2.8` 起扩展 ID 固定。更新时解压新版并在扩展管理页重新加载即可覆盖升级；从更早版本升级需要最后一次移除旧扩展。也可以直接安装仓库中的 [`browser-extension`](browser-extension/README.md) 文件夹；支持的网站见[兼容性说明](docs/BROWSER-SUPPORT.md)。
 
 <details>
   <summary>开发与构建</summary>

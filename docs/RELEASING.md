@@ -62,9 +62,10 @@ npm run tauri build -- --bundles deb,appimage
 在项目根目录执行：
 
 ```sh
-VERSION=$(node -p "require('./package.json').version")
-(cd browser-extension && zip -r "../ZoomPaper-Plus-Connector_${VERSION}.zip" . -x "*.DS_Store")
+npm run package:extension
 ```
+
+脚本读取扩展自身版本，压缩包内始终使用 `ZoomPaper-Plus-Connector` 目录，并排除系统隐藏文件。不要修改 `manifest.json` 的 `key`；它负责让新版覆盖旧版并保持扩展 ID 稳定。
 
 ## 文件命名
 
