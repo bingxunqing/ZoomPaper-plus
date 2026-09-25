@@ -1,6 +1,6 @@
 //! Tauri 命令层：前端通过 invoke 调用。
 
-use crate::ai::llm::{Llm, Role};
+use crate::ai::llm::{ChatMessage, Llm, Role};
 use crate::ai::mineru::MineruClient;
 use crate::db::models::{
     Conversation, Folder, Paper, QuizRow, ReadingPlan, ReadingPlanItem, SearchHit,
@@ -34,6 +34,19 @@ fn user_selections(
     } else {
         Some(selections.to_vec())
     }
+}
+
+#[tauri::command]
+pub async fn ask_app_help(question: String) -> Result<String, String> {
+    let question = question.trim();
+    if question.is_empty() { return Err("请输入问题".into()); }
+    let settings = Settings::load().map_err(|e| e.to_string())?;
+    let llm = Llm::from_settings(&settings).map_err(|e| e.to_string())?;
+    let guide = include_str!("../../docs/USER_GUIDE.md");
+    llm.chat(&[
+        ChatMessage { role: Role::System, content: format!("你是 ZoomPaper Plus 的软件帮助助手。只根据下面的功能文档回答操作问题；没有记录的功能要明确说当前文档未提供。回答简洁、直接，优先给具体操作步骤。\n\n{guide}") },
+        ChatMessage { role: Role::User, content: question.to_string() },
+    ]).await.map_err(|e| e.to_string())
 }
 
 // ---------- 生成取消（「暂停」按钮） ----------
@@ -226,14 +239,14 @@ const PAPER_SELECT: &str = "
            p.created_at, p.last_read_at, p.reading_status, p.parse_status, p.starred,
            p.finished_at,
            (SELECT COALESCE(SUM(rs.seconds), 0) FROM reading_sessions rs WHERE rs.paper_id = p.id),
-           p.source_url, p.github_url, p.venue,
+           p.source_url, p.github_url, p.venue, p.deleted_at,
            GROUP_CONCAT(pf.folder_id)
     FROM papers p
     LEFT JOIN paper_folders pf ON pf.paper_id = p.id
 ";
 
 fn row_to_paper(row: &rusqlite::Row) -> rusqlite::Result<Paper> {
-    let folder_ids: Option<String> = row.get(17)?;
+    let folder_ids: Option<String> = row.get(18)?;
     let folder_ids = folder_ids
         .map(|s| {
             s.split(',')
@@ -260,6 +273,7 @@ fn row_to_paper(row: &rusqlite::Row) -> rusqlite::Result<Paper> {
         source_url: row.get(14)?,
         github_url: row.get(15)?,
         venue: row.get(16)?,
+        deleted_at: row.get(17)?,
         folder_ids,
     })
 }
@@ -508,6 +522,7 @@ fn import_pdf_inner_with_metadata(
         venue: venue
             .and_then(normalize_venue)
             .or_else(|| source_url.and_then(infer_venue_from_source)),
+        deleted_at: None,
         total_read_seconds: 0,
         folder_ids: vec![],
     };
@@ -948,10 +963,46 @@ pub async fn parse_pdf(
     get_paper(db, paper_id)
 }
 
-/// 删除论文：级联清库（向量/分块/会话/论文行），再删磁盘目录。
-/// 库删除成功后文件删除失败仅记日志，避免半态报错。
+/// Move a paper to trash. Its files, conversations, and folder membership stay intact.
 #[tauri::command]
 pub fn delete_paper(db: State<'_, Db>, paper_id: String) -> Result<(), String> {
+    move_paper_to_trash_inner(&db, &paper_id)
+}
+
+fn move_paper_to_trash_inner(db: &Db, paper_id: &str) -> Result<(), String> {
+    let conn = db.conn();
+    let changed = conn
+        .execute(
+            "UPDATE papers SET deleted_at = ?2 WHERE id = ?1",
+            params![paper_id, chrono::Utc::now().timestamp()],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("论文不存在".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn restore_paper(db: State<'_, Db>, paper_id: String) -> Result<(), String> {
+    restore_paper_inner(&db, &paper_id)
+}
+
+fn restore_paper_inner(db: &Db, paper_id: &str) -> Result<(), String> {
+    let conn = db.conn();
+    let changed = conn
+        .execute(
+            "UPDATE papers SET deleted_at = NULL WHERE id = ?1",
+            [paper_id],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("论文不存在".into());
+    }
+    Ok(())
+}
+
+fn permanently_delete_paper_inner(db: &Db, paper_id: &str) -> Result<(), String> {
     {
         let conn = db.conn();
         for sql in [
@@ -961,7 +1012,7 @@ pub fn delete_paper(db: State<'_, Db>, paper_id: String) -> Result<(), String> {
             "DELETE FROM conversations WHERE paper_id = ?1",
             "DELETE FROM papers WHERE id = ?1",
         ] {
-            conn.execute(sql, [&paper_id]).map_err(|e| e.to_string())?;
+            conn.execute(sql, [paper_id]).map_err(|e| e.to_string())?;
         }
     }
 
@@ -973,6 +1024,30 @@ pub fn delete_paper(db: State<'_, Db>, paper_id: String) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn permanently_delete_paper(db: State<'_, Db>, paper_id: String) -> Result<(), String> {
+    permanently_delete_paper_inner(&db, &paper_id)
+}
+
+#[tauri::command]
+pub fn empty_trash(db: State<'_, Db>) -> Result<usize, String> {
+    let ids: Vec<String> = {
+        let conn = db.conn();
+        let mut stmt = conn
+            .prepare("SELECT id FROM papers WHERE deleted_at IS NOT NULL")
+            .map_err(|e| e.to_string())?;
+        let ids = stmt.query_map([], |row| row.get(0))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        ids
+    };
+    for id in &ids {
+        permanently_delete_paper_inner(&db, id)?;
+    }
+    Ok(ids.len())
 }
 
 // ---------- 论文整理（虚拟文件夹，多归属） ----------
@@ -1780,7 +1855,7 @@ fn timeline_stats_inner(db: &Db, days: i64) -> Result<TimelineStats, String> {
                     p.id, p.title, p.reading_status, SUM(rs.seconds)
              FROM reading_sessions rs
              JOIN papers p ON p.id = rs.paper_id
-             WHERE rs.started_at >= ?1
+             WHERE rs.started_at >= ?1 AND p.deleted_at IS NULL
              GROUP BY d, p.id",
         )
         .map_err(|e| e.to_string())?;
@@ -1806,7 +1881,7 @@ fn timeline_stats_inner(db: &Db, days: i64) -> Result<TimelineStats, String> {
         .prepare(
             "SELECT date(finished_at, 'unixepoch', 'localtime') AS d, COUNT(*)
              FROM papers
-             WHERE finished_at IS NOT NULL AND finished_at >= ?1
+             WHERE finished_at IS NOT NULL AND finished_at >= ?1 AND deleted_at IS NULL
              GROUP BY d",
         )
         .map_err(|e| e.to_string())?;
@@ -1895,7 +1970,7 @@ pub fn reindex_all_papers(db: State<'_, Db>) -> Result<(usize, usize), String> {
     let conn = db.conn();
     let ids: Vec<String> = {
         let mut stmt = conn
-            .prepare("SELECT id FROM papers WHERE parse_status = 'ready'")
+            .prepare("SELECT id FROM papers WHERE parse_status = 'ready' AND deleted_at IS NULL")
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map([], |r| r.get(0))
@@ -1947,6 +2022,9 @@ pub fn keyword_search(
     }
     let mut hits = Vec::new();
     for paper in papers {
+        if paper.deleted_at.is_some() {
+            continue;
+        }
         if paper_id.as_ref().is_some_and(|id| id != &paper.id) {
             continue;
         }
@@ -5261,6 +5339,16 @@ mod tests {
                 params![id, format!("Paper {id}")],
             )
             .unwrap();
+    }
+
+    #[test]
+    fn trash_preserves_and_restores_paper_data() {
+        let db = timeline_test_db();
+        insert_test_paper(&db, "p1");
+        move_paper_to_trash_inner(&db, "p1").unwrap();
+        assert!(get_paper_inner(&db, "p1").unwrap().deleted_at.is_some());
+        restore_paper_inner(&db, "p1").unwrap();
+        assert!(get_paper_inner(&db, "p1").unwrap().deleted_at.is_none());
     }
 
     #[test]

@@ -358,8 +358,10 @@ export function FolderSidebar(props: FolderSidebarProps) {
   } = props;
 
   const tree = buildFolderTree(folders);
-  const uncategorizedCount = papers.filter((p) => p.folder_ids.length === 0).length;
-  const starredCount = papers.filter((p) => p.starred).length;
+  const activePapers = papers.filter((paper) => paper.deleted_at == null);
+  const trashCount = papers.length - activePapers.length;
+  const uncategorizedCount = activePapers.filter((p) => p.folder_ids.length === 0).length;
+  const starredCount = activePapers.filter((p) => p.starred).length;
   const allDrop = useDropHighlight((ids) => onDropPapers(ids, null));
 
   return (
@@ -369,7 +371,7 @@ export function FolderSidebar(props: FolderSidebarProps) {
           <SidebarEntry
             icon={<LibraryIcon className="h-4 w-4" />}
             label="全部论文"
-            count={papers.length}
+            count={activePapers.length}
             active={view.type === "all"}
             onClick={() => onSelectView({ type: "all" })}
             onCreateFolder={() => onCreateSubfolder("__root__")}
@@ -382,15 +384,31 @@ export function FolderSidebar(props: FolderSidebarProps) {
             onClick={() => onSelectView({ type: "starred" })}
             onCreateFolder={() => onCreateSubfolder("__root__")}
           />
+          <SidebarEntry
+            icon={<FileText className="h-4 w-4" />}
+            label="未分类"
+            count={uncategorizedCount}
+            active={view.type === "uncategorized"}
+            dropActive={allDrop.active}
+            onClick={() => onSelectView({ type: "uncategorized" })}
+            handlers={allDrop.handlers}
+          />
+          <SidebarEntry
+            icon={<Trash2 className="h-4 w-4" />}
+            label="回收站"
+            count={trashCount}
+            active={view.type === "trash"}
+            onClick={() => onSelectView({ type: "trash" })}
+          />
 
-          {/* 文件夹树 */}
-          <div className="mt-1 flex flex-col">
+          <div className="mb-1 mt-4 px-2.5 text-[11px] font-medium text-zp-quaternary">文件夹</div>
+          <div className="flex flex-col">
             {tree.map((node) => (
               <FolderRow
                 key={node.folder.id}
                 node={node}
                 depth={0}
-                papers={papers}
+                papers={activePapers}
                 view={view}
                 onSelectView={onSelectView}
                 expanded={expanded}
@@ -407,15 +425,6 @@ export function FolderSidebar(props: FolderSidebarProps) {
             ))}
           </div>
 
-          <SidebarEntry
-            icon={<FileText className="h-4 w-4" />}
-            label="未分类"
-            count={uncategorizedCount}
-            active={view.type === "uncategorized"}
-            dropActive={allDrop.active}
-            onClick={() => onSelectView({ type: "uncategorized" })}
-            handlers={allDrop.handlers}
-          />
         </div>
       </div>
 

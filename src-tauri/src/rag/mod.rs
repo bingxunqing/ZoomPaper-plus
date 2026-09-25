@@ -295,9 +295,10 @@ pub fn search_with_embedding(
     // 第二步：JOIN papers 拿内容与标题
     let mut out = Vec::with_capacity(rowids.len());
     for (rowid, distance) in rowids.iter().zip(distances) {
-        let chunk = conn.query_row(
+        let chunk = match conn.query_row(
             "SELECT c.paper_id, p.title, c.section, c.content, c.page_idx \
-             FROM paper_chunks c JOIN papers p ON p.id = c.paper_id WHERE c.id = ?1",
+             FROM paper_chunks c JOIN papers p ON p.id = c.paper_id \
+             WHERE c.id = ?1 AND p.deleted_at IS NULL",
             [rowid],
             |r| {
                 Ok((
@@ -308,7 +309,11 @@ pub fn search_with_embedding(
                     r.get::<_, Option<i64>>(4)?,
                 ))
             },
-        )?;
+        ) {
+            Ok(chunk) => chunk,
+            Err(rusqlite::Error::QueryReturnedNoRows) => continue,
+            Err(error) => return Err(error.into()),
+        };
         out.push(SearchHit {
             chunk_id: *rowid,
             paper_id: chunk.0,

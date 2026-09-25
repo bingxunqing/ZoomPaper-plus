@@ -32,7 +32,7 @@ export function SearchPage({ onOpenPaper }: Props) {
 
   useEffect(() => {
     listPapers()
-      .then((ps) => setPapers(ps.filter((p) => p.parse_status === "ready")))
+      .then((ps) => setPapers(ps.filter((p) => p.deleted_at == null && p.parse_status === "ready")))
       .catch((e) => setError(`读取论文列表失败：${e}`));
   }, []);
 

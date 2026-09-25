@@ -7,6 +7,7 @@ import { SettingsPage } from "@/pages/Settings";
 import { SearchPage } from "@/pages/SearchPage";
 import { AskPage } from "@/pages/AskPage";
 import { TimelinePage } from "@/pages/TimelinePage";
+import { HelpPage } from "@/pages/HelpPage";
 import { NavRail, type NavItem } from "@/components/NavRail";
 import { BrowserImportNotice, type BrowserImportPhase } from "@/components/BrowserImportNotice";
 import { importPdfUrl, parsePdf } from "@/lib/api";
@@ -17,7 +18,8 @@ type View =
   | { name: "search" }
   | { name: "ask" }
   | { name: "reader"; paperId: string; pageIdx?: number }
-  | { name: "settings" };
+  | { name: "settings" }
+  | { name: "help" };
 
 function App() {
   const [view, setView] = useState<View>({ name: "library" });
@@ -134,6 +136,7 @@ function App() {
               />
             )}
             {view.name === "settings" && <SettingsPage />}
+            {view.name === "help" && <HelpPage />}
           </motion.div>
         </main>
       )}

@@ -216,6 +216,21 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         tx.pragma_update(None, "user_version", 14)?;
         tx.commit()?;
     }
+    // v15: soft delete. Papers stay recoverable until the trash is emptied.
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 15 {
+        let columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(papers)")?
+            .query_map([], |row| row.get(1))?
+            .collect::<rusqlite::Result<_>>()?;
+        if !columns.iter().any(|column| column == "deleted_at") {
+            conn.execute_batch("ALTER TABLE papers ADD COLUMN deleted_at INTEGER;")?;
+        }
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_papers_deleted_at ON papers(deleted_at);",
+        )?;
+        conn.pragma_update(None, "user_version", 15)?;
+    }
     Ok(())
 }
 
@@ -249,7 +264,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            14
+            15
         );
 
         // 论文数据无损
@@ -288,6 +303,7 @@ mod tests {
         assert!(cols.contains(&"source_url".to_string()));
         assert!(cols.contains(&"github_url".to_string()));
         assert!(cols.contains(&"venue".to_string()));
+        assert!(cols.contains(&"deleted_at".to_string()));
         conn.execute(
             "INSERT INTO reading_sessions (paper_id, started_at, seconds) VALUES ('paper-1', 1700000003, 120)",
             [],
@@ -410,7 +426,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            14
+            15
         );
 
         let items: Vec<(String, Option<i64>)> = conn
@@ -449,7 +465,7 @@ mod tests {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 14);
+        assert_eq!(v, 15);
     }
 
     #[test]
@@ -467,7 +483,7 @@ mod tests {
                 .unwrap(),
             1
         );
-        for column in ["source_url", "github_url", "venue"] {
+        for column in ["source_url", "github_url", "venue", "deleted_at"] {
             let cols: Vec<String> = conn
                 .prepare("PRAGMA table_info(papers)")
                 .unwrap()
@@ -480,7 +496,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            14
+            15
         );
     }
 

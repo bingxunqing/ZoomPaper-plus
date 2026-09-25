@@ -21,6 +21,7 @@ import {
 import { RenameInput } from "./RenameInput";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { useLongPressSelection } from "@/hooks/useLongPressSelection";
+import { VenueBadge } from "./VenueBadge";
 
 /** 解析状态作为次要元信息显示；失败时保留警示色。 */
 const PARSE_STYLE: Record<string, { label: string; className: string }> = {
@@ -28,13 +29,6 @@ const PARSE_STYLE: Record<string, { label: string; className: string }> = {
   parsing: { label: "解析中…", className: "text-zp-secondary" },
   unparsed: { label: "未解析", className: "text-zp-quaternary" },
   failed: { label: "解析失败", className: "text-red-600 dark:text-red-400" },
-};
-
-/** 阅读状态圆点：未读=实心黑 / 在读=实心灰 / 已读=浅灰描边 */
-const STATUS_DOT: Record<ReadingStatus, string> = {
-  unread: "bg-zp-primary",
-  reading: "bg-zp-tertiary",
-  read: "border border-zp-border",
 };
 
 function readingStatusOf(s: string): ReadingStatus {
@@ -249,10 +243,7 @@ export function PaperCard(props: PaperCardProps) {
                   {selected && <Check className="h-3 w-3" strokeWidth={3} />}
                 </button>}
 
-                <span
-                  className={cn("mt-[7px] h-2 w-2 shrink-0 rounded-full", STATUS_DOT[status])}
-                  title={{ unread: "未读", reading: "在读", read: "已读" }[status]}
-                />
+                <VenueBadge venue={paper.venue} />
 
                 <div className="min-w-0 flex-1">
                   {isRenaming ? (

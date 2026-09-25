@@ -1,7 +1,7 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu";
 import { useState } from "react";
-import { Check, FileCheck2, FileClock, FileQuestion, MoreHorizontal, Star } from "lucide-react";
+import { Check, MoreHorizontal, Star } from "lucide-react";
 import { cn, displayPaperTitle, formatTime } from "@/lib/utils";
 import { folderColor } from "@/lib/folderColors";
 import type { Folder, Paper, ReadingPlan, ReadingStatus } from "@/lib/api";
@@ -9,6 +9,7 @@ import { PaperMenuItems, type PaperMenuActions } from "./paperMenu";
 import { PlanSubmenu, type PlanMenuPrimitives } from "./planMenu";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { useLongPressSelection } from "@/hooks/useLongPressSelection";
+import { VenueBadge } from "./VenueBadge";
 
 export interface PaperTableProps {
   papers: Paper[];
@@ -42,13 +43,6 @@ const statusDot: Record<string, string> = {
   reading: "bg-amber-500",
   read: "border border-zp-border bg-transparent",
 };
-
-function ParseIcon({ status, parsing }: { status: string; parsing: boolean }) {
-  const cls = "h-4 w-4";
-  if (parsing || status === "parsing") return <FileClock className={cn(cls, "animate-pulse text-amber-600")} />;
-  if (status === "ready") return <FileCheck2 className={cn(cls, "text-emerald-600")} />;
-  return <FileQuestion className={cn(cls, status === "failed" ? "text-red-500" : "text-zp-tertiary")} />;
-}
 
 export function PaperTable(props: PaperTableProps) {
   const folderById = new Map(props.folders.map((folder) => [folder.id, folder]));
@@ -145,7 +139,7 @@ export function PaperTable(props: PaperTableProps) {
 
               <div className="flex min-w-0 items-center gap-2 pr-4">
                 <span className={cn("h-2 w-2 shrink-0 rounded-full", statusDot[paper.reading_status] ?? statusDot.unread)} />
-                <ParseIcon status={paper.parse_status} parsing={props.parsingId === paper.id} />
+                <VenueBadge venue={paper.venue} compact />
                 <span className="truncate font-medium text-zp-primary">{displayPaperTitle(paper.title)}</span>
                 <IconTooltip label={paper.starred ? "取消收藏" : "收藏论文"}>
                   <button

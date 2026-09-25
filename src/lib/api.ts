@@ -57,6 +57,8 @@ export interface Paper {
   github_url: string | null;
   /** 发表期刊或会议 */
   venue: string | null;
+  /** 删除时间；非空表示位于回收站 */
+  deleted_at: number | null;
   /** 累计阅读时长（秒），由阅读会话聚合 */
   total_read_seconds: number;
   /** 所属文件夹 id 列表（多归属；空数组 = 未分类） */
@@ -288,6 +290,10 @@ export const parsePdf = (
 };
 
 export const deletePaper = (paperId: string) => invoke<void>("delete_paper", { paperId });
+export const restorePaper = (paperId: string) => invoke<void>("restore_paper", { paperId });
+export const permanentlyDeletePaper = (paperId: string) => invoke<void>("permanently_delete_paper", { paperId });
+export const emptyTrash = () => invoke<number>("empty_trash");
+export const askAppHelp = (question: string) => invoke<string>("ask_app_help", { question });
 
 // ---------- 论文整理（虚拟文件夹） ----------
 

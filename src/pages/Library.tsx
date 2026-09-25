@@ -20,15 +20,18 @@ import {
   createReadingPlan,
   deleteFolder,
   deletePaper,
+  emptyTrash,
   exportNotes,
   importPdf,
   listFolders,
   listPapers,
   listReadingPlans,
   parsePdf,
+  permanentlyDeletePaper,
   removePaperFromPlan,
   removePapersFromFolder,
   renamePaper,
+  restorePaper,
   setPaperStarred,
   setPaperStatus,
   updateFolder,
@@ -52,6 +55,7 @@ import { FolderDialog, type FolderDialogState } from "@/components/library/Folde
 import { PaperFolderPicker } from "@/components/library/PaperFolderPicker";
 import { PaperTable } from "@/components/library/PaperTable";
 import { PaperInspector } from "@/components/library/PaperInspector";
+import { TrashList } from "@/components/library/TrashList";
 
 type Renaming = { kind: "folder"; id: string } | { kind: "paper"; id: string };
 
@@ -71,6 +75,8 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
   const [customDate, setCustomDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<Paper | null>(null);
+  const [emptyTrashConfirm, setEmptyTrashConfirm] = useState(false);
 
   const [view, setView] = useState<LibraryView>({ type: "all" });
   const [filter, setFilter] = useState<PaperFilter>("all");
@@ -137,18 +143,23 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
   // ---------- 视图内论文（文件夹 × 状态过滤 × 关键词 交集 + 排序，星标置顶） ----------
 
   const visiblePapers = useMemo(() => {
-    let list = papers;
+    const activePapers = papers.filter((paper) => paper.deleted_at == null);
+    let list = view.type === "trash"
+      ? papers.filter((paper) => paper.deleted_at != null)
+      : activePapers;
     if (view.type === "folder") {
-      list = papers.filter((p) => p.folder_ids.includes(view.folderId));
+      list = activePapers.filter((p) => p.folder_ids.includes(view.folderId));
     } else if (view.type === "starred") {
-      list = papers.filter((p) => p.starred);
+      list = activePapers.filter((p) => p.starred);
     } else if (view.type === "uncategorized") {
-      list = papers.filter((p) => p.folder_ids.length === 0);
+      list = activePapers.filter((p) => p.folder_ids.length === 0);
     }
-    if (filter === "unread") list = list.filter((p) => p.reading_status === "unread");
-    else if (filter === "reading") list = list.filter((p) => p.reading_status === "reading");
-    else if (filter === "read") list = list.filter((p) => p.reading_status === "read");
-    else if (filter === "starred") list = list.filter((p) => p.starred);
+    if (view.type !== "trash") {
+      if (filter === "unread") list = list.filter((p) => p.reading_status === "unread");
+      else if (filter === "reading") list = list.filter((p) => p.reading_status === "reading");
+      else if (filter === "read") list = list.filter((p) => p.reading_status === "read");
+      else if (filter === "starred") list = list.filter((p) => p.starred);
+    }
 
     // 多关键词过滤：标题、期刊/会议、作者与摘要均可检索，关键词取交集。
     const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
@@ -168,6 +179,7 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
       sorted.sort((a, b) => b.created_at - a.created_at);
     }
     // 星标置顶：稳定分区（sort 稳定，分区后星标组内保持当前排序键的相对顺序）
+    if (view.type === "trash") return sorted;
     const starred = sorted.filter((p) => p.starred);
     const rest = sorted.filter((p) => !p.starred);
     return [...starred, ...rest];
@@ -200,10 +212,12 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
       ? "收藏"
     : view.type === "uncategorized"
       ? "未分类"
+    : view.type === "trash"
+      ? "回收站"
       : "论文库";
   const continuePaper = useMemo(
     () => [...papers]
-      .filter((paper) => paper.last_read_at != null)
+      .filter((paper) => paper.deleted_at == null && paper.last_read_at != null)
       .sort((a, b) => (b.last_read_at ?? 0) - (a.last_read_at ?? 0))[0] ?? null,
     [papers]
   );
@@ -408,6 +422,42 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
     }
   }
 
+  async function handleRestorePaper(paper: Paper) {
+    try {
+      await restorePaper(paper.id);
+      await refresh();
+    } catch (e) {
+      setError(`恢复失败：${e}`);
+    }
+  }
+
+  async function handlePermanentDelete() {
+    if (!permanentDeleteTarget) return;
+    setDeleting(true);
+    try {
+      await permanentlyDeletePaper(permanentDeleteTarget.id);
+      setPermanentDeleteTarget(null);
+      await refresh();
+    } catch (e) {
+      setError(`永久删除失败：${e}`);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleEmptyTrash() {
+    setDeleting(true);
+    try {
+      await emptyTrash();
+      setEmptyTrashConfirm(false);
+      await refresh();
+    } catch (e) {
+      setError(`清空回收站失败：${e}`);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   // ---------- 文件夹操作 ----------
 
   function handleCreateFolder(parentId: string) {
@@ -586,6 +636,8 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
           onLayoutChange={setLayout}
           selectionMode={selectionMode}
           onToggleSelectionMode={() => selectionMode ? exitSelection() : setSelectionMode(true)}
+          trashMode={view.type === "trash"}
+          onEmptyTrash={papers.some((paper) => paper.deleted_at != null) ? () => setEmptyTrashConfirm(true) : undefined}
         />
 
         <div className="flex min-h-0 flex-1">
@@ -660,6 +712,8 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
                   <p>还没有论文，点击「导入论文」开始</p>
                 )}
             </div>
+          ) : view.type === "trash" ? (
+            <TrashList papers={visiblePapers} onRestore={(paper) => void handleRestorePaper(paper)} onDelete={setPermanentDeleteTarget} />
           ) : layout === "list" ? (
             <PaperTable
               papers={visiblePapers}
@@ -775,11 +829,11 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除论文</AlertDialogTitle>
+            <AlertDialogTitle>移到回收站</AlertDialogTitle>
             <AlertDialogDescription>
               {deleteTargets && deleteTargets.length > 1
-                ? `确定删除选中的 ${deleteTargets.length} 篇论文吗？将同时删除本地 PDF、解析结果、AI 博客、向量索引和相关问答会话，此操作不可恢复。`
-                : `确定删除《${deleteTargets?.[0]?.title ?? ""}》吗？将同时删除本地 PDF、解析结果、AI 博客、向量索引和相关问答会话，此操作不可恢复。`}
+                ? `将选中的 ${deleteTargets.length} 篇论文移到回收站？`
+                : `将《${deleteTargets?.[0]?.title ?? ""}》移到回收站？`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -790,9 +844,23 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
               onClick={() => void handleDeletePapers()}
             >
               {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              删除
+              移到回收站
             </AlertDialogAction>
           </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={permanentDeleteTarget !== null} onOpenChange={(open) => { if (!open && !deleting) setPermanentDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>永久删除论文</AlertDialogTitle><AlertDialogDescription>将永久删除《{permanentDeleteTarget?.title ?? ""}》及其本地文件和相关数据。此操作无法撤销。</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={deleting} onClick={() => void handlePermanentDelete()}>{deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}永久删除</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={emptyTrashConfirm} onOpenChange={(open) => { if (!deleting) setEmptyTrashConfirm(open); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>清空回收站</AlertDialogTitle><AlertDialogDescription>回收站中的论文、本地文件、解析结果和相关会话将被永久删除。此操作无法撤销。</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={deleting} onClick={() => void handleEmptyTrash()}>{deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}清空</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 

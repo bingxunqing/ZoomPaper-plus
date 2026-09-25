@@ -11,6 +11,7 @@ const paper: Paper = {
   created_at: 1, last_read_at: null, reading_status: "unread",
   parse_status: "ready", starred: false, finished_at: null,
   source_url: null, github_url: null, venue: null,
+  deleted_at: null,
   total_read_seconds: 0, folder_ids: [],
 };
 

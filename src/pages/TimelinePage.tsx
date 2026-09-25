@@ -91,7 +91,7 @@ export function TimelinePage({ onOpenPaper }: Props) {
       .then(([s, pl, ps]) => {
         setStats(s);
         setPlans(pl);
-        setPapers(ps);
+        setPapers(ps.filter((paper) => paper.deleted_at == null));
       })
       .catch((e) => setError(String(e)));
   }, []);

@@ -48,6 +48,8 @@
 
 原项目的完整功能和配置方式请查看[上游 README](https://github.com/Flutter-Misdreavus/ZoomPaper#readme)。
 
+软件内的“帮助”页面提供操作说明和功能问答；完整功能索引见[使用指南](docs/USER_GUIDE.md)。
+
 ## 下载
 
 支持 macOS、Windows 和 Linux 桌面系统。
