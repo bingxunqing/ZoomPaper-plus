@@ -196,6 +196,7 @@ export function PaperCard(props: PaperCardProps) {
               onDragStart={handleDragStart}
               tabIndex={0}
               role="button"
+              data-paper-item
               aria-label={paper.title}
               onClick={(event) => {
                 if (longPress.consumeClick(paper.id)) { event.preventDefault(); return; }

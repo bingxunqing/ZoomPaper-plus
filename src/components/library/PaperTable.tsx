@@ -90,6 +90,7 @@ export function PaperTable(props: PaperTableProps) {
             <ContextMenuPrimitive.Root key={paper.id}>
               <ContextMenuPrimitive.Trigger render={<div
               role="row"
+              data-paper-item
               tabIndex={0}
               aria-selected={props.selectionMode ? selected : focused}
               {...longPress.bind(paper.id)}

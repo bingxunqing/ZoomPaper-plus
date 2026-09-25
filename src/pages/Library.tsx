@@ -615,7 +615,15 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
           )}
         </AnimatePresence>
 
-        <div className={`min-h-0 flex-1 overflow-auto ${layout === "grid" ? "px-4 py-4" : "bg-white dark:bg-zp-surface"}`}>
+        <div
+          className={`min-h-0 flex-1 overflow-auto ${layout === "grid" ? "px-4 py-4" : "bg-white dark:bg-zp-surface"}`}
+          onClick={(event) => {
+            if (!selectionMode) return;
+            const target = event.target as HTMLElement;
+            if (target.closest("[data-paper-item], button, a, input, textarea, select, [role='menuitem']")) return;
+            exitSelection();
+          }}
+        >
           {error && (
             <div className="m-3 whitespace-pre-wrap rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
               {error}
