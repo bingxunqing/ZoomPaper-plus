@@ -67,11 +67,13 @@ it("paints selection across rows while a checkbox is held", () => {
 it("enters selection when a paper row is held", () => {
   vi.useFakeTimers();
   const onLongPress = vi.fn();
+  const onSelectionDragStart = vi.fn();
   const onFocus = vi.fn();
-  render(<PaperTable {...props} onLongPress={onLongPress} onFocus={onFocus} />);
+  render(<PaperTable {...props} onLongPress={onLongPress} onSelectionDragStart={onSelectionDragStart} onFocus={onFocus} />);
   const row = screen.getByRole("row");
   fireEvent.pointerDown(row, { button: 0, isPrimary: true, clientX: 20, clientY: 20 });
   act(() => vi.advanceTimersByTime(500));
+  expect(onSelectionDragStart).toHaveBeenCalledWith("paper-1", false);
   fireEvent.pointerUp(row);
   fireEvent.click(row);
   expect(onLongPress).toHaveBeenCalledWith("paper-1");

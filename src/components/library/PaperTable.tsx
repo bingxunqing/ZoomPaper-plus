@@ -41,7 +41,10 @@ export interface PaperTableProps {
 export function PaperTable(props: PaperTableProps) {
   const folderById = new Map(props.folders.map((folder) => [folder.id, folder]));
   const [targetPlans, setTargetPlans] = useState<Record<string, string>>({});
-  const longPress = useLongPressSelection(props.onLongPress);
+  const longPress = useLongPressSelection((paperId) => {
+    props.onLongPress(paperId);
+    props.onSelectionDragStart(paperId, props.selectedIds.has(paperId));
+  });
   const columns = props.selectionMode
     ? "grid-cols-[36px_minmax(280px,1fr)_minmax(140px,0.55fr)_120px_118px_38px]"
     : "grid-cols-[minmax(280px,1fr)_minmax(140px,0.55fr)_120px_118px_38px]";

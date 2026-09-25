@@ -37,7 +37,7 @@ const guideSections: GuideSection[] = [
       { id: "folder", title: "添加到文件夹", icon: FolderPlus, summary: "一篇论文可以属于多个文件夹。", steps: ["右键论文，或长按论文进入多选。", "点击文件夹图标。", "勾选目标文件夹。", "点击“完成”应用更改。"] },
       { id: "status", title: "阅读状态", icon: CircleDot, summary: "标记未读、在读或已读。", steps: ["右键论文，或在多选工具栏点击状态图标。", "选择未读、在读或已读。", "可用论文库顶部筛选器查看对应状态。"] },
       { id: "plan", title: "加入阅读计划", icon: ListPlus, summary: "为论文安排阅读日期。", steps: ["右键论文并打开阅读计划菜单。", "选择计划或新建计划。", "选择今天、明天或自定义日期。"] },
-      { id: "multi", title: "快速多选", icon: ListChecks, summary: "批量整理多篇论文。", steps: ["长按任意论文进入多选。", "按住复选框向上或向下拖动，连续选择论文。", "执行操作后自动退出；点击空白处或按 Esc 也可退出。"] },
+      { id: "multi", title: "快速多选", icon: ListChecks, summary: "批量整理多篇论文。", steps: ["长按任意论文，保持按住并向上或向下滑动，即可连续选择。", "也可以进入多选后按住复选框拖动。", "执行操作后自动退出；点击空白处或按 Esc 也可退出。"] },
       { id: "rename", title: "重命名", icon: Pencil, summary: "修改论文在库中的标题。", steps: ["右键论文。", "点击重命名。", "输入标题并确认。"] },
       { id: "notes", title: "导出笔记", icon: Download, summary: "导出论文的高亮和批注。", steps: ["右键论文或选中多篇论文。", "点击下载图标。", "选择保存位置。"] },
       { id: "delete", title: "删除与恢复", icon: Trash2, summary: "删除的论文先进入回收站。", steps: ["右键论文并点击删除。", "在左侧打开回收站可恢复或永久删除。", "点击回收站顶部按钮可清空回收站。"] },

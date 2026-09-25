@@ -4,7 +4,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 const HOLD_MS = 500;
 const MOVE_LIMIT = 9;
 
-/** 论文行/卡片长按进入多选；移动、拖拽和交互控件均不会触发。 */
+/** 论文行/卡片长按进入多选；触发后指针可继续划过其他论文完成连续选择。 */
 export function useLongPressSelection(onLongPress: (id: string) => void) {
   const callbackRef = useRef(onLongPress);
   callbackRef.current = onLongPress;

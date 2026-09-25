@@ -112,7 +112,10 @@ export function PaperCard(props: PaperCardProps) {
   else percentRef.current = Math.max(percentRef.current, parseProgressPercent(progress));
   const status = readingStatusOf(paper.reading_status);
   const reduceMotion = useReducedMotion();
-  const longPress = useLongPressSelection(onLongPress);
+  const longPress = useLongPressSelection((paperId) => {
+    onLongPress(paperId);
+    onSelectionDragStart(paperId, selected);
+  });
   // 归属文件夹（多归属；按 id 解析，脏数据过滤）
   const folderById = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders]);
   const paperFolders = paper.folder_ids
