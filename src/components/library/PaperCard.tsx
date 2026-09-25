@@ -243,7 +243,7 @@ export function PaperCard(props: PaperCardProps) {
                   {selected && <Check className="h-3 w-3" strokeWidth={3} />}
                 </button>}
 
-                <VenueBadge venue={paper.venue} />
+                <VenueBadge venue={paper.venue} status={status} />
 
                 <div className="min-w-0 flex-1">
                   {isRenaming ? (
@@ -254,7 +254,7 @@ export function PaperCard(props: PaperCardProps) {
                       onCancel={onCancelRename}
                     />
                   ) : (
-                    <h3 className="line-clamp-2 text-[15px] leading-[1.4] font-medium text-zp-primary">
+                    <h3 className={cn("line-clamp-2 text-[15px] leading-[1.4]", status === "unread" ? "font-semibold text-zp-primary" : status === "read" ? "font-normal text-zp-tertiary" : "font-medium text-zp-primary")}>
                       {displayPaperTitle(paper.title)}
                     </h3>
                   )}

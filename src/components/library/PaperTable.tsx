@@ -38,12 +38,6 @@ export interface PaperTableProps {
   onRemoveFromCurrentFolder: (paper: Paper) => void;
 }
 
-const statusDot: Record<string, string> = {
-  unread: "bg-zp-primary",
-  reading: "bg-amber-500",
-  read: "border border-zp-border bg-transparent",
-};
-
 export function PaperTable(props: PaperTableProps) {
   const folderById = new Map(props.folders.map((folder) => [folder.id, folder]));
   const [targetPlans, setTargetPlans] = useState<Record<string, string>>({});
@@ -138,9 +132,8 @@ export function PaperTable(props: PaperTableProps) {
               </div>}
 
               <div className="flex min-w-0 items-center gap-2 pr-4">
-                <span className={cn("h-2 w-2 shrink-0 rounded-full", statusDot[paper.reading_status] ?? statusDot.unread)} />
-                <VenueBadge venue={paper.venue} compact />
-                <span className="truncate font-medium text-zp-primary">{displayPaperTitle(paper.title)}</span>
+                <VenueBadge venue={paper.venue} compact status={paper.reading_status as ReadingStatus} />
+                <span className={cn("truncate", paper.reading_status === "unread" ? "font-semibold text-zp-primary" : paper.reading_status === "read" ? "font-normal text-zp-tertiary" : "font-medium text-zp-primary")}>{displayPaperTitle(paper.title)}</span>
                 <IconTooltip label={paper.starred ? "取消收藏" : "收藏论文"}>
                   <button
                     type="button"
