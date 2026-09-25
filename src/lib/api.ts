@@ -59,6 +59,8 @@ export interface Paper {
   venue: string | null;
   /** 删除时间；非空表示位于回收站 */
   deleted_at: number | null;
+  /** 来源网站图标 */
+  source_icon_url: string | null;
   /** 累计阅读时长（秒），由阅读会话聚合 */
   total_read_seconds: number;
   /** 所属文件夹 id 列表（多归属；空数组 = 未分类） */
@@ -264,12 +266,14 @@ export const importPdfUrl = (
   sourceUrl?: string | null,
   githubUrl?: string | null,
   venue?: string | null,
+  sourceIconUrl?: string | null,
 ) => invoke<Paper>("import_pdf_url", {
   url,
   suggestedTitle: suggestedTitle ?? null,
   sourceUrl: sourceUrl ?? null,
   githubUrl: githubUrl ?? null,
   venue: venue ?? null,
+  sourceIconUrl: sourceIconUrl ?? null,
 });
 export interface ParseProgress {
   /** uploading / pending / converting / running / downloading / indexing */

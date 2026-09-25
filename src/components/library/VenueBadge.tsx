@@ -1,37 +1,28 @@
+import { useEffect, useMemo, useState } from "react";
 import { Check, FileText } from "lucide-react";
 import type { ReadingStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const KNOWN_VENUES = [
-  "ACL", "EMNLP", "NAACL", "COLING", "ICML", "NeurIPS", "NIPS", "ICLR",
-  "CVPR", "ICCV", "ECCV", "AAAI", "IJCAI", "KDD", "WWW", "SIGIR", "CHI",
-  "OSDI", "SOSP", "USENIX", "IEEE", "ACM", "Nature", "Science", "arXiv",
-];
-
-export function venueShortName(venue: string | null): string | null {
-  if (!venue?.trim()) return null;
-  const exact = KNOWN_VENUES.find((name) =>
-    new RegExp(`(^|[^a-z])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z]|$)`, "i").test(venue),
-  );
-  if (exact) return exact === "NIPS" ? "NeurIPS" : exact;
-  const words = venue.match(/[A-Za-z][A-Za-z-]*/g) ?? [];
-  const initials = words.filter((word) => !/^(of|the|and|on|for|in)$/i.test(word)).map((word) => word[0]).join("");
-  return (initials || venue).slice(0, 5).toUpperCase();
+function fallbackFavicon(sourceUrl: string | null): string | null {
+  if (!sourceUrl) return null;
+  try {
+    const url = new URL(sourceUrl);
+    return url.protocol === "https:" ? `${url.origin}/favicon.ico` : null;
+  } catch {
+    return null;
+  }
 }
 
-export function VenueBadge({ venue, compact = false, status }: { venue: string | null; compact?: boolean; status?: ReadingStatus }) {
-  const short = venueShortName(venue);
-  if (!short) {
-    return (
-      <span title="未识别期刊或会议" className="relative flex h-6 w-8 shrink-0 items-center justify-center rounded-md bg-zp-surface-hover text-zp-quaternary">
-        <FileText className="h-3.5 w-3.5" />
-        <StatusMark status={status} />
-      </span>
-    );
-  }
+export function VenueBadge({ venue, sourceUrl, iconUrl, compact = false, status }: { venue: string | null; sourceUrl?: string | null; iconUrl?: string | null; compact?: boolean; status?: ReadingStatus }) {
+  const candidates = useMemo(() => [...new Set([iconUrl, fallbackFavicon(sourceUrl ?? null)].filter((url): url is string => Boolean(url)))], [iconUrl, sourceUrl]);
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  useEffect(() => setCandidateIndex(0), [candidates.join("|")]);
+  const src = candidates[candidateIndex] ?? null;
+  let sourceHost: string | null = null;
+  try { sourceHost = sourceUrl ? new URL(sourceUrl).hostname : null; } catch { /* fall through */ }
   return (
-    <span title={venue ?? short} className={cn(`${compact ? "h-6 min-w-8 px-1" : "h-7 min-w-9 px-1.5"} relative flex shrink-0 items-center justify-center rounded-md border bg-zp-surface text-[9px] font-semibold tracking-tight`, status === "unread" ? "border-zp-tertiary text-zp-primary" : status === "read" ? "border-zp-border text-zp-quaternary" : "border-zp-border text-zp-secondary")}>
-      {short}
+    <span title={venue || sourceHost || "未识别来源网站"} className={cn(compact ? "h-7 w-7" : "h-8 w-8", "relative flex shrink-0 items-center justify-center rounded-lg border bg-white dark:bg-zp-surface", status === "unread" ? "border-zp-tertiary" : "border-zp-border")}>
+      {src ? <img src={src} alt="" className={cn(compact ? "h-4 w-4" : "h-[18px] w-[18px]", "object-contain")} onError={() => setCandidateIndex((index) => index + 1)} /> : <FileText className={cn(compact ? "h-3.5 w-3.5" : "h-4 w-4", "text-zp-quaternary")} />}
       <StatusMark status={status} />
     </span>
   );

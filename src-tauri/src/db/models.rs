@@ -31,6 +31,8 @@ pub struct Paper {
     pub venue: Option<String>,
     /// Moved to trash at this epoch second; None means visible in the library.
     pub deleted_at: Option<i64>,
+    /// Source website favicon captured by the browser connector.
+    pub source_icon_url: Option<String>,
     /// 累计阅读时长（秒），由 reading_sessions 聚合填充。
     pub total_read_seconds: i64,
     /// 所属文件夹 id 列表（多归属；空数组 = 未分类）。由 list/get 聚合填充。

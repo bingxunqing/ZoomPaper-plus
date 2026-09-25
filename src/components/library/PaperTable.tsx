@@ -84,7 +84,7 @@ export function PaperTable(props: PaperTableProps) {
               {...longPress.bind(paper.id)}
               onContextMenu={(event) => { if (longPress.suppressContextMenu(paper.id)) event.preventDefault(); }}
               onClick={(event) => {
-                if (longPress.consumeClick(paper.id)) { event.preventDefault(); return; }
+                if (longPress.consumeClick(paper.id)) { event.preventDefault(); event.stopPropagation(); return; }
                 if (props.selectionMode) props.onToggle(paper.id);
                 else props.onFocus(paper);
               }}
@@ -132,7 +132,7 @@ export function PaperTable(props: PaperTableProps) {
               </div>}
 
               <div className="flex min-w-0 items-center gap-2 pr-4">
-                <VenueBadge venue={paper.venue} compact status={paper.reading_status as ReadingStatus} />
+                <VenueBadge venue={paper.venue} sourceUrl={paper.source_url} iconUrl={paper.source_icon_url} compact status={paper.reading_status as ReadingStatus} />
                 <span className={cn("truncate", paper.reading_status === "unread" ? "font-semibold text-zp-primary" : paper.reading_status === "read" ? "font-normal text-zp-tertiary" : "font-medium text-zp-primary")}>{displayPaperTitle(paper.title)}</span>
                 <IconTooltip label={paper.starred ? "取消收藏" : "收藏论文"}>
                   <button

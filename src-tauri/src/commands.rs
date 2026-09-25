@@ -239,14 +239,14 @@ const PAPER_SELECT: &str = "
            p.created_at, p.last_read_at, p.reading_status, p.parse_status, p.starred,
            p.finished_at,
            (SELECT COALESCE(SUM(rs.seconds), 0) FROM reading_sessions rs WHERE rs.paper_id = p.id),
-           p.source_url, p.github_url, p.venue, p.deleted_at,
+           p.source_url, p.github_url, p.venue, p.deleted_at, p.source_icon_url,
            GROUP_CONCAT(pf.folder_id)
     FROM papers p
     LEFT JOIN paper_folders pf ON pf.paper_id = p.id
 ";
 
 fn row_to_paper(row: &rusqlite::Row) -> rusqlite::Result<Paper> {
-    let folder_ids: Option<String> = row.get(18)?;
+    let folder_ids: Option<String> = row.get(19)?;
     let folder_ids = folder_ids
         .map(|s| {
             s.split(',')
@@ -274,6 +274,7 @@ fn row_to_paper(row: &rusqlite::Row) -> rusqlite::Result<Paper> {
         github_url: row.get(15)?,
         venue: row.get(16)?,
         deleted_at: row.get(17)?,
+        source_icon_url: row.get(18)?,
         folder_ids,
     })
 }
@@ -472,7 +473,7 @@ fn import_pdf_inner_with_title(
     source_path: &str,
     suggested_title: Option<&str>,
 ) -> Result<Paper, String> {
-    import_pdf_inner_with_metadata(db, library, source_path, suggested_title, None, None, None)
+    import_pdf_inner_with_metadata(db, library, source_path, suggested_title, None, None, None, None)
 }
 
 fn import_pdf_inner_with_metadata(
@@ -483,6 +484,7 @@ fn import_pdf_inner_with_metadata(
     source_url: Option<&str>,
     github_url: Option<&str>,
     venue: Option<&str>,
+    source_icon_url: Option<&str>,
 ) -> Result<Paper, String> {
     let id = Uuid::new_v4().to_string();
     let src = Path::new(source_path);
@@ -523,6 +525,9 @@ fn import_pdf_inner_with_metadata(
             .and_then(normalize_venue)
             .or_else(|| source_url.and_then(infer_venue_from_source)),
         deleted_at: None,
+        source_icon_url: source_icon_url.and_then(|raw| {
+            reqwest::Url::parse(raw.trim()).ok().filter(|url| url.scheme() == "https").map(|url| url.to_string())
+        }),
         total_read_seconds: 0,
         folder_ids: vec![],
     };
@@ -530,8 +535,8 @@ fn import_pdf_inner_with_metadata(
     let conn = db.conn();
     conn.execute(
         "INSERT INTO papers (id, title, authors, abstract, pdf_path, md_path, \
-         blog_md_path, created_at, last_read_at, reading_status, parse_status, starred, source_url, github_url, venue) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+         blog_md_path, created_at, last_read_at, reading_status, parse_status, starred, source_url, github_url, venue, source_icon_url) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
         params![
             &paper.id,
             &paper.title,
@@ -548,6 +553,7 @@ fn import_pdf_inner_with_metadata(
             paper.source_url,
             paper.github_url,
             paper.venue,
+            paper.source_icon_url,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -778,6 +784,7 @@ pub async fn import_pdf_url(
     source_url: Option<String>,
     github_url: Option<String>,
     venue: Option<String>,
+    source_icon_url: Option<String>,
 ) -> Result<Paper, String> {
     let url = validate_remote_pdf_url(&url)?;
     let settings = Settings::load().map_err(|e| e.to_string())?;
@@ -856,6 +863,7 @@ pub async fn import_pdf_url(
         source_url.as_deref(),
         github_url.as_deref(),
         venue.as_deref(),
+        source_icon_url.as_deref(),
     );
     let _ = tokio::fs::remove_file(&temp_path).await;
     result

@@ -12,6 +12,7 @@ const paper: Paper = {
   parse_status: "ready", starred: false, finished_at: null,
   source_url: null, github_url: null, venue: null,
   deleted_at: null,
+  source_icon_url: null,
   total_read_seconds: 0, folder_ids: [],
 };
 
@@ -66,10 +67,14 @@ it("paints selection across rows while a checkbox is held", () => {
 it("enters selection when a paper row is held", () => {
   vi.useFakeTimers();
   const onLongPress = vi.fn();
-  render(<PaperTable {...props} onLongPress={onLongPress} />);
+  const onFocus = vi.fn();
+  render(<PaperTable {...props} onLongPress={onLongPress} onFocus={onFocus} />);
   const row = screen.getByRole("row");
   fireEvent.pointerDown(row, { button: 0, isPrimary: true, clientX: 20, clientY: 20 });
   act(() => vi.advanceTimersByTime(500));
+  fireEvent.pointerUp(row);
+  fireEvent.click(row);
   expect(onLongPress).toHaveBeenCalledWith("paper-1");
+  expect(onFocus).not.toHaveBeenCalled();
   vi.useRealTimers();
 });

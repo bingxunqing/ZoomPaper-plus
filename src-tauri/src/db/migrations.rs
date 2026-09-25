@@ -231,6 +231,18 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         )?;
         conn.pragma_update(None, "user_version", 15)?;
     }
+    // v16: exact source-site favicon captured by the browser connector.
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 16 {
+        let columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(papers)")?
+            .query_map([], |row| row.get(1))?
+            .collect::<rusqlite::Result<_>>()?;
+        if !columns.iter().any(|column| column == "source_icon_url") {
+            conn.execute_batch("ALTER TABLE papers ADD COLUMN source_icon_url TEXT;")?;
+        }
+        conn.pragma_update(None, "user_version", 16)?;
+    }
     Ok(())
 }
 
@@ -264,7 +276,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            15
+            16
         );
 
         // 论文数据无损
@@ -304,6 +316,7 @@ mod tests {
         assert!(cols.contains(&"github_url".to_string()));
         assert!(cols.contains(&"venue".to_string()));
         assert!(cols.contains(&"deleted_at".to_string()));
+        assert!(cols.contains(&"source_icon_url".to_string()));
         conn.execute(
             "INSERT INTO reading_sessions (paper_id, started_at, seconds) VALUES ('paper-1', 1700000003, 120)",
             [],
@@ -426,7 +439,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            15
+            16
         );
 
         let items: Vec<(String, Option<i64>)> = conn
@@ -465,7 +478,7 @@ mod tests {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 15);
+        assert_eq!(v, 16);
     }
 
     #[test]
@@ -483,7 +496,7 @@ mod tests {
                 .unwrap(),
             1
         );
-        for column in ["source_url", "github_url", "venue", "deleted_at"] {
+        for column in ["source_url", "github_url", "venue", "deleted_at", "source_icon_url"] {
             let cols: Vec<String> = conn
                 .prepare("PRAGMA table_info(papers)")
                 .unwrap()
@@ -496,7 +509,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            15
+            16
         );
     }
 

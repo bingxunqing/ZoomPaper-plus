@@ -57,6 +57,7 @@ function App() {
         const sourceUrl = link.searchParams.get("source");
         const githubUrl = link.searchParams.get("github");
         const venue = link.searchParams.get("venue");
+        const sourceIconUrl = link.searchParams.get("icon");
         const requestId = link.searchParams.get("request") || rawLink;
         if (handledLinks.current.has(requestId)) continue;
         handledLinks.current.add(requestId);
@@ -66,7 +67,7 @@ function App() {
           setView({ name: "library" });
           setBrowserImport({ phase: "downloading", title, message: "正在安全下载 PDF…" });
           try {
-            const paper = await importPdfUrl(pdfUrl, title, sourceUrl, githubUrl, venue);
+            const paper = await importPdfUrl(pdfUrl, title, sourceUrl, githubUrl, venue, sourceIconUrl);
             if (disposed) return;
             setLibraryRefreshSignal((value) => value + 1);
             setBrowserImport({ phase: "parsing", title: paper.title, message: "已保存，正在提取正文与元数据…" });

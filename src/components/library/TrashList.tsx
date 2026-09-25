@@ -17,7 +17,7 @@ export function TrashList({ papers, onRestore, onDelete }: {
       {papers.map((paper) => (
         <div key={paper.id} className="group grid min-h-12 grid-cols-[minmax(320px,1fr)_180px_84px] items-center border-b border-zp-border/70 px-4 hover:bg-zp-surface-hover">
           <div className="flex min-w-0 items-center gap-2.5 pr-4">
-            <VenueBadge venue={paper.venue} compact />
+            <VenueBadge venue={paper.venue} sourceUrl={paper.source_url} iconUrl={paper.source_icon_url} compact />
             <span className="truncate font-medium text-zp-primary">{displayPaperTitle(paper.title)}</span>
           </div>
           <span className="text-xs text-zp-quaternary">{paper.deleted_at ? formatTime(paper.deleted_at) : "—"}</span>

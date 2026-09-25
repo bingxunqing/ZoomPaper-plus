@@ -84,6 +84,7 @@ async function openInZoomPaper(paper, tabId) {
   if (paper.sourceUrl) deepLink.searchParams.set("source", paper.sourceUrl);
   if (paper.githubUrl) deepLink.searchParams.set("github", paper.githubUrl);
   if (paper.venue) deepLink.searchParams.set("venue", paper.venue);
+  if (paper.iconUrl) deepLink.searchParams.set("icon", paper.iconUrl);
   deepLink.searchParams.set("request", crypto.randomUUID());
   await chrome.tabs.update(tabId, { url: deepLink.href });
 }
@@ -97,13 +98,15 @@ async function detectFromTab(tab, linkUrl) {
     }
   });
   if (directUrl) {
-    return detectPaper({ pageUrl: tab.url, linkUrl: directUrl, title: tab.title });
+    const paper = detectPaper({ pageUrl: tab.url, linkUrl: directUrl, title: tab.title });
+    return paper ? { ...paper, iconUrl: tab.favIconUrl || null } : null;
   }
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     func: scrapePaperPage,
   });
-  return detectPaper({ ...result, linkUrl });
+  const paper = detectPaper({ ...result, linkUrl });
+  return paper ? { ...paper, iconUrl: tab.favIconUrl || null } : null;
 }
 
 chrome.runtime.onInstalled.addListener(setupMenu);

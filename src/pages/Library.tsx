@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { AnimatePresence } from "motion/react";
 import {
@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileText, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import {
   addPaperToPlan,
   addPapersToFolder,
@@ -93,8 +93,13 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
   const { selected, toggle, setSelectedState, clear, selectAll, isSelected, size: selectedSize } = usePaperSelection();
   const selectionDrag = useDragPaperSelection(setSelectedState);
   const [selectionMode, setSelectionMode] = useState(false);
+  const suppressBlankExitUntil = useRef(0);
   const exitSelection = () => { clear(); setSelectionMode(false); };
-  const enterSelection = (id: string) => { setSelectionMode(true); if (!selected.has(id)) toggle(id); };
+  const enterSelection = (id: string) => {
+    suppressBlankExitUntil.current = Date.now() + 900;
+    setSelectionMode(true);
+    if (!selected.has(id)) toggle(id);
+  };
   const [notice, setNotice] = useState<string | null>(null);
 
   const [renaming, setRenaming] = useState<Renaming | null>(null);
@@ -675,6 +680,7 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
           className={`min-h-0 flex-1 overflow-auto ${layout === "grid" ? "px-4 py-4" : "bg-white dark:bg-zp-surface"}`}
           onClick={(event) => {
             if (!selectionMode) return;
+            if (Date.now() < suppressBlankExitUntil.current) return;
             const target = event.target as HTMLElement;
             if (target.closest("[data-paper-item], button, a, input, textarea, select, [role='menuitem']")) return;
             exitSelection();
@@ -698,20 +704,9 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
               ))}
             </div>
           ) : visiblePapers.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-24 text-zp-quaternary">
-                <FileText className="h-8 w-8" strokeWidth={1.5} />
-                {query.trim() ? (
-                  <p>没有匹配「{query.trim()}」的论文</p>
-                ) : filter !== "all" ? (
-                  <p>没有符合条件的论文</p>
-                ) : view.type === "uncategorized" ? (
-                  <p>没有未分类的论文，拖拽论文到侧栏文件夹完成归类</p>
-                ) : isFolderView ? (
-                  <p>这个文件夹还是空的，把论文拖进来或右键添加</p>
-                ) : (
-                  <p>还没有论文，点击「导入论文」开始</p>
-                )}
-            </div>
+            query.trim() || filter !== "all"
+              ? <div className="py-24 text-center text-sm text-zp-quaternary">没有匹配的论文</div>
+              : <div className="h-full" aria-label="空论文列表" />
           ) : view.type === "trash" ? (
             <TrashList papers={visiblePapers} onRestore={(paper) => void handleRestorePaper(paper)} onDelete={setPermanentDeleteTarget} />
           ) : layout === "list" ? (

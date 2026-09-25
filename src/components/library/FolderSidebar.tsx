@@ -318,7 +318,7 @@ function SidebarEntry({
         {icon}
       </span>
       <span className="flex-1 text-left">{label}</span>
-      <span className="text-xs tabular-nums text-zp-quaternary">{count}</span>
+      {count > 0 && <span className="text-xs tabular-nums text-zp-quaternary">{count}</span>}
     </button>
   );
   if (!onCreateFolder) return entry;

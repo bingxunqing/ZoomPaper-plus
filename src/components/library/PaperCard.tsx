@@ -193,7 +193,7 @@ export function PaperCard(props: PaperCardProps) {
               data-paper-item
               aria-label={paper.title}
               onClick={(event) => {
-                if (longPress.consumeClick(paper.id)) { event.preventDefault(); return; }
+                if (longPress.consumeClick(paper.id)) { event.preventDefault(); event.stopPropagation(); return; }
                 if (selectionMode) onToggle(paper.id);
               }}
               onDoubleClick={() => { if (!selectionMode) onOpen(paper.id); }}
@@ -243,7 +243,7 @@ export function PaperCard(props: PaperCardProps) {
                   {selected && <Check className="h-3 w-3" strokeWidth={3} />}
                 </button>}
 
-                <VenueBadge venue={paper.venue} status={status} />
+                <VenueBadge venue={paper.venue} sourceUrl={paper.source_url} iconUrl={paper.source_icon_url} status={status} />
 
                 <div className="min-w-0 flex-1">
                   {isRenaming ? (
