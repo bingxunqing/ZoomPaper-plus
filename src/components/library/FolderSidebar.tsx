@@ -199,11 +199,9 @@ function FolderRow({
                     )}
                   </span>
                   <span className="min-w-0 flex-1 truncate">{f.name}</span>
-                  {count > 0 && (
-                    <span className="shrink-0 text-xs tabular-nums text-zp-quaternary">
-                      {count}
-                    </span>
-                  )}
+                  <span className="shrink-0 text-xs tabular-nums text-zp-quaternary">
+                    {count}
+                  </span>
                 </>
               )}
             </div>
@@ -318,7 +316,7 @@ function SidebarEntry({
         {icon}
       </span>
       <span className="flex-1 text-left">{label}</span>
-      {count > 0 && <span className="text-xs tabular-nums text-zp-quaternary">{count}</span>}
+      <span className="text-xs tabular-nums text-zp-quaternary">{count}</span>
     </button>
   );
   if (!onCreateFolder) return entry;
