@@ -117,6 +117,9 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
     setParseProgress((prev) => ({ ...prev, [id]: progress }));
     setNotice(`解析中 · ${Math.round(parseProgressPercent(progress))}%`);
   };
+  const handleMetadataTranslated = useCallback((updated: Paper) => {
+    setPapers((current) => current.map((paper) => paper.id === updated.id ? updated : paper));
+  }, []);
   const clearParseProgress = (id: string) => setParseProgress((prev) => { const next = { ...prev }; delete next[id]; return next; });
 
   const refresh = useCallback(async () => {
@@ -680,6 +683,7 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
           className={`min-h-0 flex-1 overflow-auto ${layout === "grid" ? "px-4 py-4" : "bg-white dark:bg-zp-surface"}`}
           onClick={(event) => {
             if (!selectionMode) return;
+            if (selectionDrag.shouldSuppressClick()) return;
             if (Date.now() < suppressBlankExitUntil.current) return;
             const target = event.target as HTMLElement;
             if (target.closest("[data-paper-item], button, a, input, textarea, select, [role='menuitem']")) return;
@@ -787,6 +791,7 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
               onToggleStar={() => void handleToggleStar(focusedPaper)}
               onPickFolder={() => handlePickFolder(focusedPaper)}
               onParse={() => handleParse(focusedPaper.id)}
+              onTranslated={handleMetadataTranslated}
             />
           )}
         </div>

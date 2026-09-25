@@ -7,9 +7,13 @@ use serde::{Deserialize, Serialize};
 pub struct Paper {
     pub id: String,
     pub title: String,
+    /// Cached Simplified Chinese title generated after parsing.
+    pub title_zh: Option<String>,
     pub authors: Option<String>,
     #[serde(rename = "abstract")]
     pub abstract_text: Option<String>,
+    /// Cached Simplified Chinese abstract generated after parsing.
+    pub abstract_zh: Option<String>,
     pub pdf_path: String,
     pub md_path: String,
     pub blog_md_path: Option<String>,

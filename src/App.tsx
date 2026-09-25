@@ -75,7 +75,7 @@ function App() {
               await parsePdf(paper.id);
               if (disposed) return;
               setLibraryRefreshSignal((value) => value + 1);
-              setBrowserImport({ phase: "done", title: paper.title, message: "现在可以开始阅读、翻译和提问。" });
+              setBrowserImport({ phase: "done", title: paper.title, message: "" });
             } catch (error) {
               if (disposed) return;
               setLibraryRefreshSignal((value) => value + 1);

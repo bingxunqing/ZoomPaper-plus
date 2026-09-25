@@ -243,6 +243,21 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         }
         conn.pragma_update(None, "user_version", 16)?;
     }
+    // v17: cached Chinese title and abstract for fast library preview.
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 17 {
+        let columns: Vec<String> = conn
+            .prepare("PRAGMA table_info(papers)")?
+            .query_map([], |row| row.get(1))?
+            .collect::<rusqlite::Result<_>>()?;
+        if !columns.iter().any(|column| column == "title_zh") {
+            conn.execute_batch("ALTER TABLE papers ADD COLUMN title_zh TEXT;")?;
+        }
+        if !columns.iter().any(|column| column == "abstract_zh") {
+            conn.execute_batch("ALTER TABLE papers ADD COLUMN abstract_zh TEXT;")?;
+        }
+        conn.pragma_update(None, "user_version", 17)?;
+    }
     Ok(())
 }
 
@@ -276,7 +291,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            17
         );
 
         // 论文数据无损
@@ -317,6 +332,8 @@ mod tests {
         assert!(cols.contains(&"venue".to_string()));
         assert!(cols.contains(&"deleted_at".to_string()));
         assert!(cols.contains(&"source_icon_url".to_string()));
+        assert!(cols.contains(&"title_zh".to_string()));
+        assert!(cols.contains(&"abstract_zh".to_string()));
         conn.execute(
             "INSERT INTO reading_sessions (paper_id, started_at, seconds) VALUES ('paper-1', 1700000003, 120)",
             [],
@@ -439,7 +456,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            17
         );
 
         let items: Vec<(String, Option<i64>)> = conn
@@ -478,7 +495,7 @@ mod tests {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 16);
+        assert_eq!(v, 17);
     }
 
     #[test]
@@ -496,7 +513,7 @@ mod tests {
                 .unwrap(),
             1
         );
-        for column in ["source_url", "github_url", "venue", "deleted_at", "source_icon_url"] {
+        for column in ["source_url", "github_url", "venue", "deleted_at", "source_icon_url", "title_zh", "abstract_zh"] {
             let cols: Vec<String> = conn
                 .prepare("PRAGMA table_info(papers)")
                 .unwrap()
@@ -509,7 +526,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            16
+            17
         );
     }
 

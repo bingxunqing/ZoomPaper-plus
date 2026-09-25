@@ -73,6 +73,7 @@ pub fn run() {
             commands::import_pdf,
             commands::import_pdf_url,
             commands::parse_pdf,
+            commands::translate_paper_metadata,
             commands::delete_paper,
             commands::index_paper,
             commands::reindex_all_papers,

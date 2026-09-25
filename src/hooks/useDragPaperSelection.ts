@@ -8,8 +8,10 @@ export function useDragPaperSelection(
   setSelected: (id: string, selected: boolean) => void,
 ) {
   const dragRef = useRef<{ active: boolean; selected: boolean } | null>(null);
+  const suppressClickUntilRef = useRef(0);
 
   const stop = useCallback(() => {
+    if (dragRef.current?.active) suppressClickUntilRef.current = Date.now() + 400;
     dragRef.current = null;
   }, []);
 
@@ -26,6 +28,7 @@ export function useDragPaperSelection(
 
   const start = useCallback((id: string, currentlySelected: boolean) => {
     const selected = !currentlySelected;
+    suppressClickUntilRef.current = Number.POSITIVE_INFINITY;
     dragRef.current = { active: true, selected };
     setSelected(id, selected);
   }, [setSelected]);
@@ -35,5 +38,10 @@ export function useDragPaperSelection(
     if (drag?.active) setSelected(id, drag.selected);
   }, [setSelected]);
 
-  return { start, enter, stop };
+  const shouldSuppressClick = useCallback(
+    () => dragRef.current?.active === true || Date.now() < suppressClickUntilRef.current,
+    [],
+  );
+
+  return { start, enter, stop, shouldSuppressClick };
 }

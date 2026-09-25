@@ -37,8 +37,10 @@ export interface Settings {
 export interface Paper {
   id: string;
   title: string;
+  title_zh: string | null;
   authors: string | null;
   abstract: string | null;
+  abstract_zh: string | null;
   pdf_path: string;
   md_path: string;
   blog_md_path: string | null;
@@ -292,6 +294,10 @@ export const parsePdf = (
   ch.onmessage = (p) => onProgress?.(p);
   return invoke<Paper>("parse_pdf", { paperId, onProgress: ch });
 };
+
+/** Translate and cache the paper title and abstract for the library preview. */
+export const translatePaperMetadata = (paperId: string) =>
+  invoke<Paper>("translate_paper_metadata", { paperId });
 
 export const deletePaper = (paperId: string) => invoke<void>("delete_paper", { paperId });
 export const restorePaper = (paperId: string) => invoke<void>("restore_paper", { paperId });

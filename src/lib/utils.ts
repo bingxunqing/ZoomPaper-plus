@@ -82,6 +82,8 @@ export function parseProgressPercent(p: ParseProgress): number {
       return 90;
     case "indexing":
       return 95;
+    case "translating_metadata":
+      return 98;
     default:
       return 0;
   }
