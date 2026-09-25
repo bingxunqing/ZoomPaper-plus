@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { PaperMenuItems, type PaperMenuActions } from "@/components/library/paperMenu";
+import { PaperMenuItems, StatusDot, type PaperMenuActions } from "@/components/library/paperMenu";
 
 afterEach(cleanup);
 
@@ -32,4 +32,13 @@ it("keeps reading status available as a batch action", () => {
   render(<PaperMenuItems Item={Item} actions={menuActions} selectionMode />);
   fireEvent.click(screen.getByText("标记为已读"));
   expect(menuActions.onSetStatus).toHaveBeenCalledWith("read");
+});
+
+it("aligns every reading status icon in the same size slot", () => {
+  const { container } = render(<>{(["unread", "reading", "read"] as const).map((status) => <StatusDot key={status} status={status} />)}</>);
+  expect([...container.children].map((node) => node.className)).toEqual([
+    "flex h-3.5 w-3.5 shrink-0 items-center justify-center",
+    "flex h-3.5 w-3.5 shrink-0 items-center justify-center",
+    "flex h-3.5 w-3.5 shrink-0 items-center justify-center",
+  ]);
 });

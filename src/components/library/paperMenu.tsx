@@ -20,19 +20,23 @@ export const MENU_ITEM_CLASS =
 export function StatusDot({ status }: { status: ReadingStatus }) {
   if (status === "read") {
     return (
-      <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-zp-tertiary text-white">
-        <Check className="h-2.5 w-2.5" strokeWidth={3} />
+      <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-zp-tertiary text-white">
+          <Check className="h-2.5 w-2.5" strokeWidth={3} />
+        </span>
       </span>
     );
   }
   return (
-    <span
-      className={cn(
-        "h-2 w-2 shrink-0 rounded-full",
-        status === "unread" && "bg-zp-primary",
-        status === "reading" && "bg-amber-500",
-      )}
-    />
+    <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+      <span
+        className={cn(
+          "h-2 w-2 rounded-full",
+          status === "unread" && "bg-zp-primary",
+          status === "reading" && "bg-amber-500",
+        )}
+      />
+    </span>
   );
 }
 
