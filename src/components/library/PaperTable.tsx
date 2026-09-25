@@ -147,7 +147,24 @@ export function PaperTable(props: PaperTableProps) {
                 <span className={cn("h-2 w-2 shrink-0 rounded-full", statusDot[paper.reading_status] ?? statusDot.unread)} />
                 <ParseIcon status={paper.parse_status} parsing={props.parsingId === paper.id} />
                 <span className="truncate font-medium text-zp-primary">{displayPaperTitle(paper.title)}</span>
-                {paper.starred && <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-500" />}
+                <IconTooltip label={paper.starred ? "取消收藏" : "收藏论文"}>
+                  <button
+                    type="button"
+                    aria-label={paper.starred ? "取消收藏" : "收藏论文"}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      props.onToggleStar(paper);
+                    }}
+                    className={cn(
+                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-all hover:bg-white dark:hover:bg-zp-surface",
+                      paper.starred
+                        ? "text-amber-500"
+                        : "text-zp-quaternary opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                    )}
+                  >
+                    <Star className={cn("h-3.5 w-3.5", paper.starred && "fill-current")} />
+                  </button>
+                </IconTooltip>
               </div>
               <span className="truncate pr-4 text-zp-secondary">{paper.venue || "—"}</span>
               <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">

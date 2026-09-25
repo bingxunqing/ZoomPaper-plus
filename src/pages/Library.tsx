@@ -140,6 +140,8 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
     let list = papers;
     if (view.type === "folder") {
       list = papers.filter((p) => p.folder_ids.includes(view.folderId));
+    } else if (view.type === "starred") {
+      list = papers.filter((p) => p.starred);
     } else if (view.type === "uncategorized") {
       list = papers.filter((p) => p.folder_ids.length === 0);
     }
@@ -194,6 +196,8 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
   const currentFolderId = isFolderView ? view.folderId : null;
   const title = isFolderView
     ? (activeFolder?.name ?? "论文库")
+    : view.type === "starred"
+      ? "收藏"
     : view.type === "uncategorized"
       ? "未分类"
       : "论文库";

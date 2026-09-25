@@ -32,6 +32,14 @@ it("shows row checkboxes only after entering selection mode", () => {
   expect(screen.getByRole("button", { name: "选择论文" })).toBeTruthy();
 });
 
+it("toggles a paper star directly from the list row", () => {
+  const onToggleStar = vi.fn();
+  render(<PaperTable {...props} onToggleStar={onToggleStar} />);
+  fireEvent.click(screen.getByRole("button", { name: "收藏论文" }));
+  expect(onToggleStar).toHaveBeenCalledWith(paper);
+  expect(props.onFocus).not.toHaveBeenCalled();
+});
+
 it("paints selection across rows while a checkbox is held", () => {
   const second = { ...paper, id: "paper-2", title: "Second Paper" };
   const onSelectionDragStart = vi.fn();

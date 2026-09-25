@@ -3,9 +3,10 @@
  */
 import type { Folder, Paper } from "./api";
 
-/** 论文库内容区视图：全部 / 未分类 / 某文件夹 */
+/** 论文库内容区视图：全部 / 收藏 / 未分类 / 某文件夹 */
 export type LibraryView =
   | { type: "all" }
+  | { type: "starred" }
   | { type: "uncategorized" }
   | { type: "folder"; folderId: string };
 

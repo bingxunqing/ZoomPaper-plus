@@ -166,7 +166,8 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto min-h-0 w-full max-w-2xl flex-1 space-y-4 overflow-y-auto">
+    <div className="min-h-0 w-full flex-1 overflow-y-auto">
+      <div className="mx-auto w-full max-w-2xl space-y-4 pb-4">
       <div>
         <h1 className="text-2xl font-bold">设置</h1>
       </div>
@@ -349,6 +350,7 @@ export function SettingsPage() {
           onSave={handleUpdateProvider}
         />
       )}
+      </div>
     </div>
   );
 }

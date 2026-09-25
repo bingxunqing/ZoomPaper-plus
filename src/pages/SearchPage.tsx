@@ -66,7 +66,7 @@ export function SearchPage({ onOpenPaper }: Props) {
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.nativeEvent.isComposing) void handleSearch();
           }}
-          placeholder="输入检索内容，回车搜索…"
+          placeholder=""
           className="flex-1"
         />
         <Select

@@ -17,6 +17,7 @@ import {
   Pencil,
   Palette,
   Plus,
+  Star,
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -289,6 +290,7 @@ function SidebarEntry({
   dropActive,
   onClick,
   handlers,
+  onCreateFolder,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -297,8 +299,9 @@ function SidebarEntry({
   dropActive?: boolean;
   onClick: () => void;
   handlers?: DropHandlers;
+  onCreateFolder?: () => void;
 }) {
-  return (
+  const entry = (
     <button
       type="button"
       onClick={onClick}
@@ -317,6 +320,22 @@ function SidebarEntry({
       <span className="flex-1 text-left">{label}</span>
       <span className="text-xs tabular-nums text-zp-quaternary">{count}</span>
     </button>
+  );
+  if (!onCreateFolder) return entry;
+  return (
+    <ContextMenuPrimitive.Root>
+      <ContextMenuPrimitive.Trigger render={entry} />
+      <ContextMenuPrimitive.Portal>
+        <ContextMenuPrimitive.Positioner alignOffset={4} className="isolate z-50">
+          <ContextMenuPrimitive.Popup className="z-50 min-w-40 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-none">
+            <ContextMenuPrimitive.Item className={MENU_ITEM_CLASS} onClick={onCreateFolder}>
+              <FolderPlus className="h-4 w-4 text-muted-foreground" />
+              新建文件夹
+            </ContextMenuPrimitive.Item>
+          </ContextMenuPrimitive.Popup>
+        </ContextMenuPrimitive.Positioner>
+      </ContextMenuPrimitive.Portal>
+    </ContextMenuPrimitive.Root>
   );
 }
 
@@ -340,6 +359,7 @@ export function FolderSidebar(props: FolderSidebarProps) {
 
   const tree = buildFolderTree(folders);
   const uncategorizedCount = papers.filter((p) => p.folder_ids.length === 0).length;
+  const starredCount = papers.filter((p) => p.starred).length;
   const allDrop = useDropHighlight((ids) => onDropPapers(ids, null));
 
   return (
@@ -352,6 +372,15 @@ export function FolderSidebar(props: FolderSidebarProps) {
             count={papers.length}
             active={view.type === "all"}
             onClick={() => onSelectView({ type: "all" })}
+            onCreateFolder={() => onCreateSubfolder("__root__")}
+          />
+          <SidebarEntry
+            icon={<Star className="h-4 w-4" />}
+            label="收藏"
+            count={starredCount}
+            active={view.type === "starred"}
+            onClick={() => onSelectView({ type: "starred" })}
+            onCreateFolder={() => onCreateSubfolder("__root__")}
           />
 
           {/* 文件夹树 */}
