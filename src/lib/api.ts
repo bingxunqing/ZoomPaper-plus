@@ -277,6 +277,21 @@ export const importPdfUrl = (
   venue: venue ?? null,
   sourceIconUrl: sourceIconUrl ?? null,
 });
+export const importBrowserDownload = (
+  sourcePath: string,
+  suggestedTitle?: string | null,
+  sourceUrl?: string | null,
+  githubUrl?: string | null,
+  venue?: string | null,
+  sourceIconUrl?: string | null,
+) => invoke<Paper>("import_browser_download", {
+  sourcePath,
+  suggestedTitle: suggestedTitle ?? null,
+  sourceUrl: sourceUrl ?? null,
+  githubUrl: githubUrl ?? null,
+  venue: venue ?? null,
+  sourceIconUrl: sourceIconUrl ?? null,
+});
 export interface ParseProgress {
   /** uploading / pending / converting / running / downloading / indexing */
   stage: string;

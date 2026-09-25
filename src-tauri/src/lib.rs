@@ -71,6 +71,7 @@ pub fn run() {
             commands::export_notes,
             commands::get_paper_md,
             commands::import_pdf,
+            commands::import_browser_download,
             commands::import_pdf_url,
             commands::parse_pdf,
             commands::translate_paper_metadata,

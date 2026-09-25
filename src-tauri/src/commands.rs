@@ -18,6 +18,7 @@ use futures_util::StreamExt;
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::io::Read;
 use std::net::IpAddr;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -778,6 +779,66 @@ fn validate_remote_pdf_url(raw: &str) -> Result<reqwest::Url, String> {
         }
     }
     Ok(url)
+}
+
+fn is_browser_import_path(path: &Path) -> bool {
+    path.components()
+        .any(|component| component.as_os_str() == "ZoomPaper Plus Imports")
+}
+
+/// 导入由 Connector 通过浏览器会话下载的 PDF。
+/// 文件必须位于扩展专用下载目录，避免任意网页通过深链读取其他本地文件。
+#[tauri::command]
+pub fn import_browser_download(
+    db: State<'_, Db>,
+    source_path: String,
+    suggested_title: Option<String>,
+    source_url: Option<String>,
+    github_url: Option<String>,
+    venue: Option<String>,
+    source_icon_url: Option<String>,
+) -> Result<Paper, String> {
+    let source = Path::new(&source_path)
+        .canonicalize()
+        .map_err(|_| "找不到浏览器下载的 PDF，请重新导入".to_string())?;
+    if !is_browser_import_path(&source) {
+        return Err("浏览器下载文件不在 ZoomPaper Plus 专用目录中".to_string());
+    }
+    let metadata = std::fs::metadata(&source).map_err(|e| format!("读取下载文件失败：{e}"))?;
+    if !metadata.is_file() {
+        return Err("浏览器下载路径不是文件".to_string());
+    }
+    if metadata.len() > MAX_REMOTE_PDF_BYTES {
+        let _ = std::fs::remove_file(&source);
+        return Err("PDF 超过 100 MB，已停止导入".to_string());
+    }
+    let mut signature = [0_u8; 5];
+    let mut file = std::fs::File::open(&source).map_err(|e| format!("读取下载文件失败：{e}"))?;
+    let signature_result = file.read_exact(&mut signature);
+    drop(file);
+    if signature_result.is_err() {
+        let _ = std::fs::remove_file(&source);
+        return Err("下载的文件不是有效 PDF".to_string());
+    }
+    if !signature.starts_with(b"%PDF-") {
+        let _ = std::fs::remove_file(&source);
+        return Err("OpenReview 返回的仍是验证页面，请在浏览器完成验证后重试".to_string());
+    }
+
+    let settings = Settings::load().map_err(|e| e.to_string())?;
+    let library = settings.papers_dir().map_err(|e| e.to_string())?;
+    let result = import_pdf_inner_with_metadata(
+        &db,
+        &library,
+        &source.to_string_lossy(),
+        suggested_title.as_deref(),
+        source_url.as_deref(),
+        github_url.as_deref(),
+        venue.as_deref(),
+        source_icon_url.as_deref(),
+    );
+    let _ = std::fs::remove_file(&source);
+    result
 }
 
 /// 从浏览器扩展传入的 HTTPS 地址下载 PDF，再复用本地导入流程。
@@ -4899,6 +4960,12 @@ mod tests {
         assert!(validate_remote_pdf_url("https://localhost/paper.pdf").is_err());
         assert!(validate_remote_pdf_url("https://127.0.0.1/paper.pdf").is_err());
         assert!(validate_remote_pdf_url("https://192.168.1.2/paper.pdf").is_err());
+        assert!(is_browser_import_path(Path::new(
+            "/Users/example/Downloads/ZoomPaper Plus Imports/paper.pdf"
+        )));
+        assert!(!is_browser_import_path(Path::new(
+            "/Users/example/Downloads/paper.pdf"
+        )));
 
         fs::remove_dir_all(&tmp).ok();
     }

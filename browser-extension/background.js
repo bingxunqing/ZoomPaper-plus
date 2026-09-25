@@ -1,4 +1,5 @@
 import { detectPaper } from "./detector.js";
+import { browserDownloadFilename, requiresBrowserSessionDownload } from "./download.js";
 
 const MENU_ID = "add-to-zoompaper";
 
@@ -78,15 +79,64 @@ function scrapePaperPage() {
   };
 }
 
+function waitForDownload(downloadId) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => finish(new Error("下载超时，请完成网页验证后重试")), 120_000);
+    const listener = (delta) => {
+      if (delta.id !== downloadId || !delta.state) return;
+      if (delta.state.current === "complete") finish();
+      if (delta.state.current === "interrupted") {
+        finish(new Error(delta.error?.current || "浏览器下载被中断"));
+      }
+    };
+    const finish = (error) => {
+      clearTimeout(timeout);
+      chrome.downloads.onChanged.removeListener(listener);
+      if (error) {
+        reject(error);
+        return;
+      }
+      chrome.downloads.search({ id: downloadId }, ([item]) => {
+        if (chrome.runtime.lastError || !item?.filename) {
+          reject(new Error(chrome.runtime.lastError?.message || "找不到已下载的 PDF"));
+        } else {
+          resolve(item.filename);
+        }
+      });
+    };
+    chrome.downloads.onChanged.addListener(listener);
+    chrome.downloads.search({ id: downloadId }, ([item]) => {
+      if (item?.state === "complete") finish();
+      else if (item?.state === "interrupted") finish(new Error(item.error || "浏览器下载被中断"));
+    });
+  });
+}
+
+async function downloadWithBrowserSession(paper, requestId) {
+  const downloadId = await chrome.downloads.download({
+    url: paper.pdfUrl,
+    filename: browserDownloadFilename(paper.title, requestId),
+    conflictAction: "uniquify",
+    saveAs: false,
+  });
+  return waitForDownload(downloadId);
+}
+
 async function openInZoomPaper(paper, tabId) {
+  const requestId = crypto.randomUUID();
   const deepLink = new URL("zoompaper-plus://import");
-  deepLink.searchParams.set("pdf", paper.pdfUrl);
+  if (requiresBrowserSessionDownload(paper.pdfUrl)) {
+    const localPath = await downloadWithBrowserSession(paper, requestId);
+    deepLink.searchParams.set("file", localPath);
+  } else {
+    deepLink.searchParams.set("pdf", paper.pdfUrl);
+  }
   deepLink.searchParams.set("title", paper.title);
   if (paper.sourceUrl) deepLink.searchParams.set("source", paper.sourceUrl);
   if (paper.githubUrl) deepLink.searchParams.set("github", paper.githubUrl);
   if (paper.venue) deepLink.searchParams.set("venue", paper.venue);
   if (paper.iconUrl) deepLink.searchParams.set("icon", paper.iconUrl);
-  deepLink.searchParams.set("request", crypto.randomUUID());
+  deepLink.searchParams.set("request", requestId);
   await chrome.tabs.update(tabId, { url: deepLink.href });
 }
 
