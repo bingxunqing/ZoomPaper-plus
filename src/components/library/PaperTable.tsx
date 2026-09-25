@@ -10,6 +10,7 @@ import { PlanSubmenu, type PlanMenuPrimitives } from "./planMenu";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
 import { useLongPressSelection } from "@/hooks/useLongPressSelection";
 import { VenueBadge } from "./VenueBadge";
+import { RenameInput } from "./RenameInput";
 
 export interface PaperTableProps {
   papers: Paper[];
@@ -27,8 +28,13 @@ export interface PaperTableProps {
   onSelectionDragEnter: (paperId: string) => void;
   onOpen: (paperId: string) => void;
   onRename: (paper: Paper) => void;
+  renamingId: string | null;
+  onCommitRename: (paper: Paper, title: string) => void;
+  onCancelRename: () => void;
   onPickFolder: (paper: Paper) => void;
   onSetStatus: (paper: Paper, status: ReadingStatus) => void;
+  onBulkSetStatus: (status: ReadingStatus) => void;
+  onBulkDelete: () => void;
   onPlanQuickAdd: (paper: Paper, planId: string | null, dueTs: number | null) => void;
   onPlanRemove: (paper: Paper, planId: string) => void;
   onPlanCustomDate: (paper: Paper, planId: string | null) => void;
@@ -67,14 +73,15 @@ export function PaperTable(props: PaperTableProps) {
           const containingPlan = props.plans.find((p) => p.type === "papers" && p.items.some((item) => item.paper_id === paper.id)) ?? null;
           const activePlans = props.plans.filter((p) => p.type === "papers" && p.active);
           const effectivePlan = containingPlan ?? activePlans.find((plan) => plan.id === targetPlans[paper.id]) ?? activePlans[0] ?? null;
+          const useBulkActions = props.selectionMode && selected;
           const actions: PaperMenuActions = {
             onOpen: () => props.onOpen(paper.id),
             onRename: () => props.onRename(paper),
             onPickFolder: () => props.onPickFolder(paper),
             onRemoveFromCurrentFolder: props.currentFolderId ? () => props.onRemoveFromCurrentFolder(paper) : undefined,
-            onSetStatus: (status) => props.onSetStatus(paper, status),
+            onSetStatus: (status) => useBulkActions ? props.onBulkSetStatus(status) : props.onSetStatus(paper, status),
             currentStatus: paper.reading_status as ReadingStatus,
-            onDelete: () => props.onDelete(paper),
+            onDelete: () => useBulkActions ? props.onBulkDelete() : props.onDelete(paper),
           };
 
           return (
@@ -136,7 +143,16 @@ export function PaperTable(props: PaperTableProps) {
 
               <div className="flex min-w-0 items-center gap-2 pr-4">
                 <VenueBadge venue={paper.venue} sourceUrl={paper.source_url} iconUrl={paper.source_icon_url} compact status={paper.reading_status as ReadingStatus} />
-                <span className={cn("truncate", paper.reading_status === "unread" ? "font-semibold text-zp-primary" : paper.reading_status === "read" ? "font-normal text-zp-tertiary" : "font-medium text-zp-primary")}>{displayPaperTitle(paper.title)}</span>
+                {props.renamingId === paper.id ? (
+                  <RenameInput
+                    initialValue={paper.title}
+                    width={Math.min(420, Math.max(180, paper.title.length * 12))}
+                    onCommit={(title) => props.onCommitRename(paper, title)}
+                    onCancel={props.onCancelRename}
+                  />
+                ) : (
+                  <span className={cn("truncate", paper.reading_status === "unread" ? "font-semibold text-zp-primary" : paper.reading_status === "read" ? "font-normal text-zp-tertiary" : "font-medium text-zp-primary")}>{displayPaperTitle(paper.title)}</span>
+                )}
                 <IconTooltip label={paper.starred ? "取消收藏" : "收藏论文"}>
                   <button
                     type="button"
@@ -174,6 +190,7 @@ export function PaperTable(props: PaperTableProps) {
                       <PaperMenuItems
                         Item={MenuPrimitive.Item}
                         actions={actions}
+                        selectionMode={props.selectionMode}
                         planMenuSlot={<PlanSubmenu
                           P={MenuPrimitive as unknown as PlanMenuPrimitives}
                           activePlans={activePlans}
@@ -197,6 +214,7 @@ export function PaperTable(props: PaperTableProps) {
                     <PaperMenuItems
                       Item={ContextMenuPrimitive.Item}
                       actions={actions}
+                      selectionMode={props.selectionMode}
                       planMenuSlot={<PlanSubmenu
                         P={ContextMenuPrimitive as unknown as PlanMenuPrimitives}
                         activePlans={activePlans}

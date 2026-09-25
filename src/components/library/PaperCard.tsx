@@ -59,6 +59,8 @@ export interface PaperCardProps {
   /** 打开归属面板；未选中该论文时以它为目标 */
   onPickFolder: (paper: Paper) => void;
   onSetStatus: (paper: Paper, status: ReadingStatus) => void;
+  onBulkSetStatus: (status: ReadingStatus) => void;
+  onBulkDelete: () => void;
   /** 全部阅读计划（卡片据此计算所在计划与目标计划） */
   plans: ReadingPlan[];
   /** 快捷加入/更新日期：planId 为 null 时由 Library 自动新建计划 */
@@ -95,6 +97,8 @@ export function PaperCard(props: PaperCardProps) {
     onCancelRename,
     onPickFolder,
     onSetStatus,
+    onBulkSetStatus,
+    onBulkDelete,
     plans,
     onPlanQuickAdd,
     onPlanRemove,
@@ -122,6 +126,7 @@ export function PaperCard(props: PaperCardProps) {
     .map((id) => folderById.get(id))
     .filter((f): f is Folder => Boolean(f));
 
+  const useBulkActions = selectionMode && selected;
   const menuActions: PaperMenuActions = {
     onOpen: () => onOpen(paper.id),
     onRename: () => onStartRename(paper),
@@ -129,9 +134,9 @@ export function PaperCard(props: PaperCardProps) {
     onRemoveFromCurrentFolder: currentFolderId
       ? () => onRemoveFromCurrentFolder(paper)
       : undefined,
-    onSetStatus: (s) => onSetStatus(paper, s),
+    onSetStatus: (s) => useBulkActions ? onBulkSetStatus(s) : onSetStatus(paper, s),
     currentStatus: status,
-    onDelete: () => onDelete(paper),
+    onDelete: () => useBulkActions ? onBulkDelete() : onDelete(paper),
   };
 
   // ---------- 阅读计划子菜单（提醒事项式快捷定日期） ----------
@@ -311,6 +316,7 @@ export function PaperCard(props: PaperCardProps) {
                           <PaperMenuItems
                             Item={MenuPrimitive.Item}
                             actions={menuActions}
+                            selectionMode={selectionMode}
                             planMenuSlot={renderPlanSubmenu(
                               MenuPrimitive as unknown as PlanMenuPrimitives,
                             )}
@@ -412,6 +418,7 @@ export function PaperCard(props: PaperCardProps) {
             <PaperMenuItems
               Item={ContextMenuPrimitive.Item}
               actions={menuActions}
+              selectionMode={selectionMode}
               planMenuSlot={renderPlanSubmenu(
                 ContextMenuPrimitive as unknown as PlanMenuPrimitives,
               )}

@@ -22,7 +22,8 @@ const props: PaperTableProps = {
   currentFolderId: null, parsingId: null, onFocus: vi.fn(),
   onToggle: vi.fn(), onSelectionDragStart: vi.fn(), onSelectionDragEnter: vi.fn(),
   onOpen: vi.fn(), onRename: vi.fn(),
-  onPickFolder: vi.fn(), onSetStatus: vi.fn(), onPlanQuickAdd: vi.fn(),
+  renamingId: null, onCommitRename: vi.fn(), onCancelRename: vi.fn(),
+  onPickFolder: vi.fn(), onSetStatus: vi.fn(), onBulkSetStatus: vi.fn(), onBulkDelete: vi.fn(), onPlanQuickAdd: vi.fn(),
   onPlanRemove: vi.fn(), onPlanCustomDate: vi.fn(), onToggleStar: vi.fn(),
   onParse: vi.fn(), onDelete: vi.fn(), onRemoveFromCurrentFolder: vi.fn(),
 };
@@ -40,6 +41,11 @@ it("toggles a paper star directly from the list row", () => {
   fireEvent.click(screen.getByRole("button", { name: "收藏论文" }));
   expect(onToggleStar).toHaveBeenCalledWith(paper);
   expect(props.onFocus).not.toHaveBeenCalled();
+});
+
+it("shows an inline editor when rename is requested in list view", () => {
+  render(<PaperTable {...props} renamingId="paper-1" />);
+  expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("Test Paper");
 });
 
 it("paints selection across rows while a checkbox is held", () => {

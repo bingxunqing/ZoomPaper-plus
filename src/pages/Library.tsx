@@ -730,8 +730,13 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
               onSelectionDragEnter={selectionDrag.enter}
               onOpen={onOpenPaper}
               onRename={(paper) => setRenaming({ kind: "paper", id: paper.id })}
+              renamingId={renaming?.kind === "paper" ? renaming.id : null}
+              onCommitRename={handleCommitPaperRename}
+              onCancelRename={() => setRenaming(null)}
               onPickFolder={handlePickFolder}
               onSetStatus={(paper, status) => void handleSetStatus(paper, status)}
+              onBulkSetStatus={(status) => void handleBulkSetStatus(status)}
+              onBulkDelete={() => setDeleteTargets(selectedPapers)}
               onPlanQuickAdd={(paper, planId, due) => void handlePlanQuickAdd(paper, planId, due)}
               onPlanRemove={(paper, planId) => void handlePlanRemove(paper, planId)}
               onPlanCustomDate={handlePlanCustomDate}
@@ -764,6 +769,8 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
                   onCancelRename={() => setRenaming(null)}
                   onPickFolder={handlePickFolder}
                   onSetStatus={(p, s) => void handleSetStatus(p, s)}
+                  onBulkSetStatus={(status) => void handleBulkSetStatus(status)}
+                  onBulkDelete={() => setDeleteTargets(selectedPapers)}
                   plans={plans}
                   onPlanQuickAdd={(p, planId, due) => void handlePlanQuickAdd(p, planId, due)}
                   onPlanRemove={(p, planId) => void handlePlanRemove(p, planId)}
