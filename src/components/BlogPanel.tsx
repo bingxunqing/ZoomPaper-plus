@@ -25,7 +25,6 @@ import {
   type ParsedBlog,
 } from "@/lib/blog";
 import {
-  FileText,
   List,
   Loader2,
   RefreshCw,
@@ -300,11 +299,6 @@ export function BlogPanel({ paper, onBlogGenerated, onAskSelection }: Props) {
           )}
           {generating ? "生成中…" : blog ? "重新生成" : "生成博客"}
         </Button>
-        {generating && (
-          <span className="text-xs text-muted-foreground">
-            正在后台生成，可放心切换论文
-          </span>
-        )}
         {blog && (
           <Button
             variant={showList ? "secondary" : "ghost"}
@@ -461,14 +455,7 @@ export function BlogPanel({ paper, onBlogGenerated, onAskSelection }: Props) {
             <MarkdownView markdown={parsed?.body ?? blog} baseDir={baseDir} />
           </div>
         </>
-      ) : (
-        !error && (
-          <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-16 text-muted-foreground">
-            <FileText className="h-10 w-10" />
-            <p className="text-sm">还没有博客，点击「生成博客」即可获得科普版正文与深度剖析</p>
-          </div>
-        )
-      )}
+      ) : null}
 
       {/* 划选浮动工具条 */}
       {sel && (
