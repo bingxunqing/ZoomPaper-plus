@@ -41,6 +41,7 @@ import {
 import type { LibraryView } from "@/lib/folders";
 import { parseProgressPercent } from "@/lib/utils";
 import { usePaperSelection } from "@/hooks/usePaperSelection";
+import { useDragPaperSelection } from "@/hooks/useDragPaperSelection";
 import { FolderSidebar } from "@/components/library/FolderSidebar";
 import { TopBar, type LibraryLayout, type SortBy } from "@/components/library/TopBar";
 import type { PaperFilter } from "@/components/library/FilterBar";
@@ -83,7 +84,8 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
     localStorage.getItem("zoompaper.libraryLayout") === "grid" ? "grid" : "list",
   );
   const [focusedPaperId, setFocusedPaperId] = useState<string | null>(null);
-  const { selected, toggle, clear, selectAll, isSelected, size: selectedSize } = usePaperSelection();
+  const { selected, toggle, setSelectedState, clear, selectAll, isSelected, size: selectedSize } = usePaperSelection();
+  const selectionDrag = useDragPaperSelection(setSelectedState);
   const [selectionMode, setSelectionMode] = useState(false);
   const exitSelection = () => { clear(); setSelectionMode(false); };
   const enterSelection = (id: string) => { setSelectionMode(true); if (!selected.has(id)) toggle(id); };
@@ -238,6 +240,7 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
     );
     try {
       await Promise.all(targets.map((p) => setPaperStatus(p.id, status)));
+      exitSelection();
     } catch (e) {
       setError(String(e));
       await refresh();
@@ -363,6 +366,7 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
     try {
       await exportNotes(paper.id, destination);
       setNotice("阅读笔记已导出");
+      exitSelection();
     } catch (e) {
       setError(`导出失败：${e}`);
     }
@@ -455,6 +459,7 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
         await addPapersToFolder(paperIds, folderId);
       }
       await refresh();
+      exitSelection();
     } catch (e) {
       setPapers(prev);
       setError(String(e));
@@ -656,6 +661,8 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
               parsingId={parsingId}
               onFocus={(paper) => setFocusedPaperId(paper.id)}
               onToggle={toggle}
+              onSelectionDragStart={selectionDrag.start}
+              onSelectionDragEnter={selectionDrag.enter}
               onOpen={onOpenPaper}
               onRename={(paper) => setRenaming({ kind: "paper", id: paper.id })}
               onPickFolder={handlePickFolder}
@@ -684,6 +691,8 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
                   progress={parseProgress[paper.id] ?? null}
                   currentFolderId={currentFolderId}
                   onToggle={toggle}
+                  onSelectionDragStart={selectionDrag.start}
+                  onSelectionDragEnter={selectionDrag.enter}
                   onOpen={onOpenPaper}
                   onStartRename={(p) => setRenaming({ kind: "paper", id: p.id })}
                   onCommitRename={handleCommitPaperRename}
@@ -738,7 +747,10 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
         onOpenChange={setPickerOpen}
         papers={pickerPapers}
         folders={folders}
-        onChanged={refresh}
+        onChanged={async () => {
+          await refresh();
+          if (selectionMode) exitSelection();
+        }}
         onError={setError}
       />
 

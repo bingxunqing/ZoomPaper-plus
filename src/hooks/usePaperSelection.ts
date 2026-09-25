@@ -26,13 +26,24 @@ export function usePaperSelection() {
     });
   }, []);
 
+  /** 明确设置单篇的选择状态，供按住复选框拖动时连续“涂抹”使用。 */
+  const setSelectedState = useCallback((id: string, value: boolean) => {
+    setSelected((prev) => {
+      if (prev.has(id) === value) return prev;
+      const next = new Set(prev);
+      if (value) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
   const clear = useCallback(() => setSelected(new Set()), []);
   const selectAll = useCallback((ids: Iterable<string>) => setSelected(new Set(ids)), []);
   const isSelected = useCallback((id: string) => selected.has(id), [selected]);
   const size = selected.size;
 
   return useMemo(
-    () => ({ selected, toggle, add, clear, selectAll, isSelected, size }),
-    [selected, toggle, add, clear, selectAll, isSelected, size]
+    () => ({ selected, toggle, add, setSelectedState, clear, selectAll, isSelected, size }),
+    [selected, toggle, add, setSelectedState, clear, selectAll, isSelected, size]
   );
 }

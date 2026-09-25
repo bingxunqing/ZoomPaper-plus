@@ -22,6 +22,8 @@ export interface PaperTableProps {
   parsingId: string | null;
   onFocus: (paper: Paper) => void;
   onToggle: (paperId: string) => void;
+  onSelectionDragStart: (paperId: string, selected: boolean) => void;
+  onSelectionDragEnter: (paperId: string) => void;
   onOpen: (paperId: string) => void;
   onRename: (paper: Paper) => void;
   onPickFolder: (paper: Paper) => void;
@@ -98,6 +100,7 @@ export function PaperTable(props: PaperTableProps) {
                 else props.onFocus(paper);
               }}
               onDoubleClick={() => { if (!props.selectionMode) props.onOpen(paper.id); }}
+              onPointerEnter={() => { if (props.selectionMode) props.onSelectionDragEnter(paper.id); }}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   if (props.selectionMode) props.onToggle(paper.id);
@@ -119,9 +122,19 @@ export function PaperTable(props: PaperTableProps) {
                 <button
                   type="button"
                   aria-label={selected ? "取消选择" : "选择论文"}
-                  onClick={(event) => { event.stopPropagation(); props.onToggle(paper.id); }}
+                  onPointerDown={(event) => {
+                    if (event.button !== 0 || !event.isPrimary) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    props.onSelectionDragStart(paper.id, selected);
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    // 键盘触发的 click 没有 pointerdown，仍保留完整键盘可访问性。
+                    if (event.detail === 0) props.onToggle(paper.id);
+                  }}
                   className={cn(
-                    "flex h-4 w-4 items-center justify-center rounded-[4px] border transition-colors",
+                    "flex h-4 w-4 touch-none items-center justify-center rounded-[4px] border transition-colors",
                     selected ? "border-zp-primary bg-zp-primary text-white" : "border-zp-border bg-white dark:bg-zp-surface",
                   )}
                 >

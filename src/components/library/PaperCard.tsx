@@ -56,6 +56,8 @@ export interface PaperCardProps {
   /** 当前处于某文件夹视图时的 folderId；null = 全部/未分类视图 */
   currentFolderId: string | null;
   onToggle: (paperId: string) => void;
+  onSelectionDragStart: (paperId: string, selected: boolean) => void;
+  onSelectionDragEnter: (paperId: string) => void;
   onOpen: (paperId: string) => void;
   onStartRename: (paper: Paper) => void;
   onCommitRename: (paper: Paper, title: string) => void;
@@ -91,6 +93,8 @@ export function PaperCard(props: PaperCardProps) {
     progress,
     currentFolderId,
     onToggle,
+    onSelectionDragStart,
+    onSelectionDragEnter,
     onOpen,
     onStartRename,
     onCommitRename,
@@ -198,6 +202,7 @@ export function PaperCard(props: PaperCardProps) {
                 if (selectionMode) onToggle(paper.id);
               }}
               onDoubleClick={() => { if (!selectionMode) onOpen(paper.id); }}
+              onPointerEnter={() => { if (selectionMode) onSelectionDragEnter(paper.id); }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -222,12 +227,18 @@ export function PaperCard(props: PaperCardProps) {
                 {selectionMode && <button
                   type="button"
                   aria-label={selected ? "取消选择" : "选择"}
+                  onPointerDown={(e) => {
+                    if (e.button !== 0 || !e.isPrimary) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onSelectionDragStart(paper.id, selected);
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onToggle(paper.id);
+                    if (e.detail === 0) onToggle(paper.id);
                   }}
                   className={cn(
-                    "mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-all",
+                    "mt-0.5 flex h-[18px] w-[18px] touch-none shrink-0 items-center justify-center rounded-[5px] border transition-all",
                     selected
                       ? "border-zp-primary bg-zp-primary text-white opacity-100"
                       : "border-zp-border bg-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100 dark:bg-zp-surface",

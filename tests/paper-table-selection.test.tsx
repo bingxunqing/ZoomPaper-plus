@@ -18,7 +18,8 @@ const props: PaperTableProps = {
   papers: [paper], folders: [], plans: [], selectedIds: new Set(),
   selectionMode: false, onLongPress: vi.fn(), focusedId: null,
   currentFolderId: null, parsingId: null, onFocus: vi.fn(),
-  onToggle: vi.fn(), onOpen: vi.fn(), onRename: vi.fn(),
+  onToggle: vi.fn(), onSelectionDragStart: vi.fn(), onSelectionDragEnter: vi.fn(),
+  onOpen: vi.fn(), onRename: vi.fn(),
   onPickFolder: vi.fn(), onSetStatus: vi.fn(), onPlanQuickAdd: vi.fn(),
   onPlanRemove: vi.fn(), onPlanCustomDate: vi.fn(), onToggleStar: vi.fn(),
   onParse: vi.fn(), onDelete: vi.fn(), onRemoveFromCurrentFolder: vi.fn(),
@@ -29,6 +30,28 @@ it("shows row checkboxes only after entering selection mode", () => {
   expect(screen.queryByRole("button", { name: "选择论文" })).toBeNull();
   rerender(<PaperTable {...props} selectionMode />);
   expect(screen.getByRole("button", { name: "选择论文" })).toBeTruthy();
+});
+
+it("paints selection across rows while a checkbox is held", () => {
+  const second = { ...paper, id: "paper-2", title: "Second Paper" };
+  const onSelectionDragStart = vi.fn();
+  const onSelectionDragEnter = vi.fn();
+  render(<PaperTable
+    {...props}
+    papers={[paper, second]}
+    selectionMode
+    onSelectionDragStart={onSelectionDragStart}
+    onSelectionDragEnter={onSelectionDragEnter}
+  />);
+
+  fireEvent.pointerDown(screen.getAllByRole("button", { name: "选择论文" })[0], {
+    button: 0,
+    isPrimary: true,
+  });
+  fireEvent.pointerEnter(screen.getAllByRole("row")[1]);
+
+  expect(onSelectionDragStart).toHaveBeenCalledWith("paper-1", false);
+  expect(onSelectionDragEnter).toHaveBeenCalledWith("paper-2");
 });
 
 it("enters selection when a paper row is held", () => {
