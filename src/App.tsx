@@ -28,6 +28,7 @@ function App() {
     phase: BrowserImportPhase;
     title: string;
     message: string;
+    sourceUrl?: string;
   } | null>(null);
   const handledLinks = useRef(new Set<string>());
   const importQueue = useRef(Promise.resolve());
@@ -86,7 +87,7 @@ function App() {
             }
           } catch (error) {
             if (disposed) return;
-            setBrowserImport({ phase: "error", title, message: String(error) });
+            setBrowserImport({ phase: "error", title, message: String(error), sourceUrl: sourceUrl?.startsWith("https://") ? sourceUrl : undefined });
           }
         });
       }

@@ -1,8 +1,10 @@
-function absoluteUrl(value, base) {
+export function absoluteUrl(value, base) {
   if (!value) return null;
   try {
     const url = new URL(value, base);
-    return url.protocol === "https:" ? url.href : null;
+    const host = url.hostname.toLowerCase();
+    if (url.protocol !== "https:" || url.username || url.password || host === "localhost" || host.endsWith(".local") || host.endsWith(".localhost") || /^(127\.|10\.|192\.168\.|169\.254\.|0\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host) || host.includes(":")) return null;
+    return url.href;
   } catch {
     return null;
   }
@@ -42,7 +44,7 @@ function landingPagePdf(value) {
 const SITE_ADAPTERS = [
   {
     id: "acl-anthology",
-    match: (url) => url.hostname === "aclanthology.org" && !isPdfUrl(url.href),
+    match: (url) => url.hostname === "aclanthology.org" && /^\/\d{4}[^/]+\/$/.test(url.pathname),
     pdf: (url) => `${url.origin}${url.pathname.replace(/\/$/, "")}.pdf`,
   },
   {
@@ -62,13 +64,13 @@ const SITE_ADAPTERS = [
   },
   {
     id: "neurips",
-    match: (url) => /^(papers|proceedings)\.n(eur)?ips\.cc$/.test(url.hostname) && /-Abstract(?:-Conference)?\.html$/.test(url.pathname),
+    match: (url) => /^(papers|proceedings)\.(?:neurips|nips|iclr)\.cc$/.test(url.hostname) && /-Abstract(?:-Conference)?\.html$/.test(url.pathname),
     pdf: (url) => `${url.origin}${url.pathname.replace("/hash/", "/file/").replace("-Abstract", "-Paper").replace(/\.html$/, ".pdf")}`,
   },
 ];
 
 function candidateScore(link) {
-  const description = `${link.text || ""} ${link.title || ""} ${link.context || ""} ${link.rel || ""} ${link.type || ""}`;
+  const description = `${link.text || ""} ${link.title || ""} ${link.rel || ""} ${link.type || ""}`;
   const href = link.href || "";
   if (/checklist|supplement|appendix|attachment|slides|poster|code/i.test(`${description} ${href}`)) return -100;
   let score = 0;
@@ -78,7 +80,7 @@ function candidateScore(link) {
   if (isPdfUrl(href)) score += 5;
   if (looksLikePdfEndpoint(href)) score += 3;
   if (landingPagePdf(href)) score += 5;
-  if (/pre-?print|paper|full.?text/i.test(description)) score += 3;
+  if (/pre-?print|paper|full.?text|全文|下载|论文/i.test(description)) score += 3;
   return score;
 }
 
@@ -93,35 +95,7 @@ export function detectPaper({
   links = [],
 }) {
   const page = absoluteUrl(pageUrl, pageUrl);
-  const selectedLink = absoluteUrl(linkUrl, pageUrl);
-  const citation = absoluteUrl(citationPdfUrl, pageUrl);
-  let pdfUrl = isPdfUrl(selectedLink) ? selectedLink : landingPagePdf(selectedLink) || citation;
-
-  if (!pdfUrl) {
-    pdfUrl = metaPdfUrls
-      .map((value) => absoluteUrl(value, pageUrl))
-      .find((value) => value && looksLikePdfEndpoint(value)) || null;
-  }
-
-  if (!pdfUrl && page) {
-    const url = new URL(page);
-    const adapter = SITE_ADAPTERS.find((candidate) => candidate.match(url));
-    if (adapter) {
-      pdfUrl = adapter.pdf(url);
-    } else if (isPdfUrl(page)) {
-      pdfUrl = page;
-    }
-  }
-
-  if (!pdfUrl) {
-    const candidates = links
-      .map((link) => ({ ...link, href: absoluteUrl(link.href, pageUrl) }))
-      .filter((link) => link.href)
-      .map((link) => ({ ...link, score: candidateScore(link) }))
-      .filter((link) => link.score >= 5)
-      .sort((a, b) => b.score - a.score);
-    pdfUrl = candidates[0] ? landingPagePdf(candidates[0].href) || candidates[0].href : null;
-  }
+  const pdfUrl = detectPdfCandidates({ pageUrl, linkUrl, citationPdfUrl, metaPdfUrls, links })[0]?.url ?? null;
 
   const githubUrl = links
     .map((link) => absoluteUrl(link.href, pageUrl))
@@ -146,4 +120,36 @@ export function detectPaper({
     ...(githubUrl ? { githubUrl } : {}),
     ...(normalizedVenue ? { venue: normalizedVenue } : {}),
   } : null;
+}
+
+// Keep all credible full-text routes. An explicit right-click target takes precedence.
+export function detectPdfCandidates({ pageUrl, linkUrl, citationPdfUrl, metaPdfUrls = [], links = [] }) {
+  const ranked = [];
+  const add = (raw, score, label, automatic = false) => {
+    const safe = absoluteUrl(raw, pageUrl);
+    if (!safe) return;
+    const url = landingPagePdf(safe) || safe;
+    ranked.push({ url, score, label, automatic });
+  };
+  if (linkUrl) add(linkUrl, 100, "选中的链接", true);
+  if (citationPdfUrl) add(citationPdfUrl, 90, "论文全文", true);
+  for (const raw of metaPdfUrls) add(raw, 85, "页面全文元数据", true);
+  const page = absoluteUrl(pageUrl, pageUrl);
+  if (page) {
+    const url = new URL(page);
+    const adapter = SITE_ADAPTERS.find((candidate) => candidate.match(url));
+    if (adapter) add(adapter.pdf(url), 80, "官方全文", true);
+    else if (isPdfUrl(page) || looksLikePdfEndpoint(page)) add(page, 80, "当前 PDF", true);
+  }
+  for (const link of links) {
+    const href = absoluteUrl(link.href, pageUrl);
+    if (!href) continue;
+    const score = candidateScore({ ...link, href });
+    if (score >= 5) add(href, score, (link.text || "全文链接").trim().slice(0, 100));
+  }
+  const seen = new Set();
+  return ranked.sort((a, b) => b.score - a.score).filter(({ url }) => {
+    if (seen.has(url)) return false;
+    seen.add(url); return true;
+  }).slice(0, 12);
 }

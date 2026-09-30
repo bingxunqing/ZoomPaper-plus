@@ -826,7 +826,7 @@ fn backfill_paper_venue(conn: &rusqlite::Connection, paper: &mut Paper) -> Resul
     let should_update = match (&paper.venue, &detected) {
         (None, Some(_)) => true,
         (Some(current), Some(next)) => current != next && auto_label,
-        (Some(_), None) => auto_label,
+        (Some(_), None) => false,
         _ => false,
     };
     if should_update {
@@ -905,7 +905,7 @@ pub fn import_browser_download(
     }
     if !signature.starts_with(b"%PDF-") {
         let _ = std::fs::remove_file(&source);
-        return Err("OpenReview 返回的仍是验证页面，请在浏览器完成验证后重试".to_string());
+        return Err("下载内容不是有效 PDF，请在浏览器完成登录或验证，或改用其他全文链接".to_string());
     }
 
     let settings = Settings::load().map_err(|e| e.to_string())?;

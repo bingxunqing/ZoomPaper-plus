@@ -14,18 +14,18 @@ function fallbackFavicon(sourceUrl: string | null): string | null {
 }
 
 const VENUE_ICON_GROUPS = [
-  { icon: "/venue-icons/acl.png", aliases: ["ACL", "EMNLP", "NAACL", "EACL", "AACL", "COLING", "CONLL", "TACL"] },
-  { icon: "/venue-icons/neurips.png", aliases: ["NEURIPS", "NIPS"] },
-  { icon: "/venue-icons/icml.png", aliases: ["ICML"] },
-  { icon: "/venue-icons/iclr.png", aliases: ["ICLR"] },
-  { icon: "/venue-icons/cvf.png", aliases: ["CVPR", "ICCV", "ECCV", "WACV"] },
-  { icon: "/venue-icons/aaai.png", aliases: ["AAAI"] },
-  { icon: "/venue-icons/ijcai.png", aliases: ["IJCAI"] },
+  { icon: "/venue-icons/acl.png", aliases: ["ACL", "EMNLP", "NAACL", "EACL", "AACL", "COLING", "CONLL", "TACL", "Association for Computational Linguistics", "Empirical Methods in Natural Language Processing"] },
+  { icon: "/venue-icons/neurips.png", aliases: ["NEURIPS", "NIPS", "Neural Information Processing Systems"] },
+  { icon: "/venue-icons/icml.png", aliases: ["ICML", "International Conference on Machine Learning"] },
+  { icon: "/venue-icons/iclr.png", aliases: ["ICLR", "International Conference on Learning Representations"] },
+  { icon: "/venue-icons/cvf.png", aliases: ["CVPR", "ICCV", "ECCV", "WACV", "Computer Vision and Pattern Recognition", "International Conference on Computer Vision", "European Conference on Computer Vision"] },
+  { icon: "/venue-icons/aaai.png", aliases: ["AAAI", "Association for the Advancement of Artificial Intelligence"] },
+  { icon: "/venue-icons/ijcai.png", aliases: ["IJCAI", "International Joint Conference on Artificial Intelligence"] },
   { icon: "/venue-icons/vldb.png", aliases: ["VLDB", "PVLDB"] },
   { icon: "/venue-icons/usenix.png", aliases: ["OSDI", "NSDI", "FAST", "USENIX ATC", "USENIX SECURITY"] },
   {
     icon: "/venue-icons/acm.png",
-    aliases: ["KDD", "SIGIR", "SIGMOD", "SIGCOMM", "MOBICOM", "SOSP", "ASPLOS", "ISCA", "MICRO", "STOC", "CHI", "UIST", "CSCW", "ICSE", "FSE", "ASE", "CCS", "ACM MM", "SIGGRAPH", "TOG"],
+    aliases: ["KDD", "SIGIR", "SIGMOD", "SIGCOMM", "MOBICOM", "SOSP", "ASPLOS", "ISCA", "MICRO", "STOC", "CHI", "UIST", "CSCW", "ICSE", "FSE", "ASE", "CCS", "ACM MM", "SIGGRAPH", "TOG", "International Conference on Software Engineering", "Foundations of Software Engineering", "Automated Software Engineering", "Knowledge Discovery and Data Mining", "Management of Data", "Computer and Communications Security", "Human Factors in Computing Systems"],
   },
   {
     icon: "/venue-icons/ieee.jpg",
@@ -36,7 +36,7 @@ const VENUE_ICON_GROUPS = [
 const SOURCE_ICON_GROUPS: Array<[RegExp, string]> = [
   [/(^|\.)aclanthology\.org$/, "/venue-icons/acl.png"],
   [/(^|\.)neurips\.cc$|(^|\.)nips\.cc$/, "/venue-icons/neurips.png"],
-  [/(^|\.)icml\.cc$|(^|\.)mlr\.press$/, "/venue-icons/icml.png"],
+  [/(^|\.)icml\.cc$/, "/venue-icons/icml.png"],
   [/(^|\.)iclr\.cc$/, "/venue-icons/iclr.png"],
   [/(^|\.)thecvf\.com$|^openaccess\.thecvf\.com$/, "/venue-icons/cvf.png"],
   [/(^|\.)aaai\.org$/, "/venue-icons/aaai.png"],
@@ -66,11 +66,13 @@ export function conferenceIcon(venue: string | null, sourceUrl: string | null): 
 }
 
 export function VenueBadge({ venue, sourceUrl, iconUrl, compact = false, status }: { venue: string | null; sourceUrl?: string | null; iconUrl?: string | null; compact?: boolean; status?: ReadingStatus }) {
-  const candidates = useMemo(() => [...new Set([
-    conferenceIcon(venue, sourceUrl ?? null),
-    iconUrl,
-    fallbackFavicon(sourceUrl ?? null),
-  ].filter((url): url is string => Boolean(url)))], [venue, iconUrl, sourceUrl]);
+  const candidates = useMemo(() => {
+    const brand = conferenceIcon(venue, sourceUrl ?? null);
+    // A captured event logo is more specific than a generic publisher logo.
+    const publisher = brand && /\/(acm|ieee|usenix)\./.test(brand);
+    const urls = publisher ? [iconUrl, brand] : [brand, iconUrl];
+    return [...new Set([...urls, fallbackFavicon(sourceUrl ?? null)].filter((url): url is string => Boolean(url)))];
+  }, [venue, iconUrl, sourceUrl]);
   const [candidateIndex, setCandidateIndex] = useState(0);
   useEffect(() => setCandidateIndex(0), [candidates.join("|")]);
   const src = candidates[candidateIndex] ?? null;

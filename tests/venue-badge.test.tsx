@@ -24,3 +24,9 @@ describe("VenueBadge", () => {
     expect(conferenceIcon(venue, null)).toBe(icon);
   });
 });
+
+it('recognizes full venue names and does not identify the whole PMLR archive as ICML', () => {
+  expect(conferenceIcon('International Conference on Software Engineering 2026', null)).toBe('/venue-icons/acm.png');
+  expect(conferenceIcon('International Conference on Machine Learning', null)).toBe('/venue-icons/icml.png');
+  expect(conferenceIcon(null, 'https://proceedings.mlr.press/v123/paper.html')).toBeNull();
+});
