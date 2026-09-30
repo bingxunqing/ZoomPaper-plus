@@ -13,14 +13,56 @@ function fallbackFavicon(sourceUrl: string | null): string | null {
   }
 }
 
+const VENUE_ICON_GROUPS = [
+  { icon: "/venue-icons/acl.png", aliases: ["ACL", "EMNLP", "NAACL", "EACL", "AACL", "COLING", "CONLL", "TACL"] },
+  { icon: "/venue-icons/neurips.png", aliases: ["NEURIPS", "NIPS"] },
+  { icon: "/venue-icons/icml.png", aliases: ["ICML"] },
+  { icon: "/venue-icons/iclr.png", aliases: ["ICLR"] },
+  { icon: "/venue-icons/cvf.png", aliases: ["CVPR", "ICCV", "ECCV", "WACV"] },
+  { icon: "/venue-icons/aaai.png", aliases: ["AAAI"] },
+  { icon: "/venue-icons/ijcai.png", aliases: ["IJCAI"] },
+  { icon: "/venue-icons/vldb.png", aliases: ["VLDB", "PVLDB"] },
+  { icon: "/venue-icons/usenix.png", aliases: ["OSDI", "NSDI", "FAST", "USENIX ATC", "USENIX SECURITY"] },
+  {
+    icon: "/venue-icons/acm.png",
+    aliases: ["KDD", "SIGIR", "SIGMOD", "SIGCOMM", "MOBICOM", "SOSP", "ASPLOS", "ISCA", "MICRO", "STOC", "CHI", "UIST", "CSCW", "ICSE", "FSE", "ASE", "CCS", "ACM MM", "SIGGRAPH", "TOG"],
+  },
+  {
+    icon: "/venue-icons/ieee.jpg",
+    aliases: ["ICDE", "INFOCOM", "HPCA", "IEEE S&P", "IEEE SP", "S&P", "TSE", "TPAMI", "TKDE", "TVCG", "VIS", "VR", "RTSS", "ICDCS"],
+  },
+] as const;
+
+const SOURCE_ICON_GROUPS: Array<[RegExp, string]> = [
+  [/(^|\.)aclanthology\.org$/, "/venue-icons/acl.png"],
+  [/(^|\.)neurips\.cc$|(^|\.)nips\.cc$/, "/venue-icons/neurips.png"],
+  [/(^|\.)icml\.cc$|(^|\.)mlr\.press$/, "/venue-icons/icml.png"],
+  [/(^|\.)iclr\.cc$/, "/venue-icons/iclr.png"],
+  [/(^|\.)thecvf\.com$|^openaccess\.thecvf\.com$/, "/venue-icons/cvf.png"],
+  [/(^|\.)aaai\.org$/, "/venue-icons/aaai.png"],
+  [/(^|\.)ijcai\.org$/, "/venue-icons/ijcai.png"],
+  [/(^|\.)vldb\.org$/, "/venue-icons/vldb.png"],
+  [/(^|\.)usenix\.org$/, "/venue-icons/usenix.png"],
+  [/(^|\.)acm\.org$/, "/venue-icons/acm.png"],
+  [/(^|\.)ieee\.org$/, "/venue-icons/ieee.jpg"],
+];
+
+function normalizedVenue(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+}
+
+function containsVenueAlias(venue: string, alias: string): boolean {
+  return ` ${normalizedVenue(venue)} `.includes(` ${normalizedVenue(alias)} `);
+}
+
 export function conferenceIcon(venue: string | null, sourceUrl: string | null): string | null {
-  const normalizedVenue = venue?.trim().toUpperCase() ?? "";
+  if (venue) {
+    const group = VENUE_ICON_GROUPS.find(({ aliases }) => aliases.some((alias) => containsVenueAlias(venue, alias)));
+    if (group) return group.icon;
+  }
   let sourceHost = "";
   try { sourceHost = sourceUrl ? new URL(sourceUrl).hostname.toLowerCase() : ""; } catch { /* fall through */ }
-  if (normalizedVenue === "ICLR" || normalizedVenue.startsWith("ICLR ") || sourceHost === "proceedings.iclr.cc") {
-    return "/venue-icons/iclr.ico";
-  }
-  return null;
+  return SOURCE_ICON_GROUPS.find(([pattern]) => pattern.test(sourceHost))?.[1] ?? null;
 }
 
 export function VenueBadge({ venue, sourceUrl, iconUrl, compact = false, status }: { venue: string | null; sourceUrl?: string | null; iconUrl?: string | null; compact?: boolean; status?: ReadingStatus }) {

@@ -635,14 +635,40 @@ fn venue_from_text(text: &str) -> Option<String> {
         ("internationalconferenceonlearningrepresentations", "ICLR"),
         ("neuralinformationprocessingsystems", "NeurIPS"),
         ("computervisionandpatternrecognition", "CVPR"),
+        ("internationalconferenceoncomputervision", "ICCV"),
+        ("europeanconferenceoncomputervision", "ECCV"),
+        ("winterconferenceonapplicationsofcomputervision", "WACV"),
         (
             "associationfortheadvancementofartificialintelligence",
             "AAAI",
         ),
+        ("internationaljointconferenceonartificialintelligence", "IJCAI"),
+        ("internationalconferenceonsoftwareengineering", "ICSE"),
+        ("foundationsofsoftwareengineering", "FSE"),
+        ("internationalconferenceonautomatedsoftwareengineering", "ASE"),
+        ("knowledgediscoveryanddatamining", "KDD"),
+        ("researchanddevelopmentininformationretrieval", "SIGIR"),
+        ("internationalconferenceonmanagementofdata", "SIGMOD"),
+        ("verylargedatabases", "VLDB"),
+        ("internationalconferenceondataengineering", "ICDE"),
+        ("symposiumonoperatingssystemsprinciples", "SOSP"),
+        ("operatingsystemsdesignandimplementation", "OSDI"),
+        ("networkedsystemsdesignandimplementation", "NSDI"),
+        ("usenixsecuritysymposium", "USENIX Security"),
+        ("computerandcommunicationssecurity", "CCS"),
+        ("symposiumonsecurityandprivacy", "IEEE S&P"),
+        ("specialinterestgroupondatacommunication", "SIGCOMM"),
+        ("conferenceoncomputercommunications", "INFOCOM"),
+        ("highperformancecomputerarchitecture", "HPCA"),
+        ("architecturalsupportforprogramminglanguagesandoperatingsystems", "ASPLOS"),
+        ("internationalsymposiumoncomputerarchitecture", "ISCA"),
+        ("internationalsymposiumonmicroarchitecture", "MICRO"),
+        ("conferenceonhumanfactorsincomputingsystems", "CHI"),
     ];
     let (label, compact_index) = patterns
         .iter()
-        .find_map(|(pattern, label)| compact.find(pattern).map(|index| (*label, index)))?;
+        .filter_map(|(pattern, label)| compact.find(pattern).map(|index| (*label, index)))
+        .min_by_key(|(_, index)| *index)?;
     let source_index = *source_offsets.get(compact_index)?;
     let start = source_index;
     let mut end = (source_index + 700).min(text.len());
@@ -682,6 +708,56 @@ fn infer_venue_from_source(raw: &str) -> Option<String> {
         return Some(match year {
             Some(year) => format!("ICLR {year}"),
             None => "ICLR".to_string(),
+        });
+    }
+    if host == "proceedings.neurips.cc" || host == "papers.nips.cc" {
+        let year = year_from_text(url.path());
+        return Some(match year {
+            Some(year) => format!("NeurIPS {year}"),
+            None => "NeurIPS".to_string(),
+        });
+    }
+    if host == "icml.cc" || host == "www.icml.cc" {
+        let year = year_from_text(url.path());
+        return Some(match year {
+            Some(year) => format!("ICML {year}"),
+            None => "ICML".to_string(),
+        });
+    }
+    if host == "www.ijcai.org" || host == "ijcai.org" {
+        let year = year_from_text(url.path());
+        return Some(match year {
+            Some(year) => format!("IJCAI {year}"),
+            None => "IJCAI".to_string(),
+        });
+    }
+    if host == "aaai.org" || host == "www.aaai.org" {
+        return Some("AAAI".to_string());
+    }
+    if host == "usenix.org" || host == "www.usenix.org" {
+        let path = url.path().to_ascii_lowercase();
+        let label = [
+            ("usenixsecurity", "USENIX Security"),
+            ("/osdi", "OSDI"),
+            ("/nsdi", "NSDI"),
+            ("/fast", "FAST"),
+            ("/atc", "USENIX ATC"),
+        ]
+        .iter()
+        .find_map(|(needle, label)| path.contains(needle).then_some(*label));
+        if let Some(label) = label {
+            let year = year_from_text(&path);
+            return Some(match year {
+                Some(year) => format!("{label} {year}"),
+                None => label.to_string(),
+            });
+        }
+    }
+    if host == "www.vldb.org" || host == "vldb.org" {
+        let year = year_from_text(url.path());
+        return Some(match year {
+            Some(year) => format!("VLDB {year}"),
+            None => "VLDB".to_string(),
         });
     }
     if host == "openaccess.thecvf.com" {
@@ -5028,6 +5104,14 @@ mod tests {
         assert_eq!(
             infer_venue_from_source("https://proceedings.iclr.cc/paper_files/paper/2026/hash/example-Abstract-Conference.html"),
             Some("ICLR 2026".to_string())
+        );
+        assert_eq!(
+            infer_venue_from_source("https://proceedings.neurips.cc/paper_files/paper/2025/hash/example-Abstract-Conference.html"),
+            Some("NeurIPS 2025".to_string())
+        );
+        assert_eq!(
+            venue_from_text("Proceedings of the 48th International Conference on Software Engineering, April 2026"),
+            Some("ICSE 2026".to_string())
         );
         let blocks = serde_json::json!([
             {"page_idx": 0, "text": "An unpublished paper, 2026"},
