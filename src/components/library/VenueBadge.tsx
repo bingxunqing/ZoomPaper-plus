@@ -13,8 +13,22 @@ function fallbackFavicon(sourceUrl: string | null): string | null {
   }
 }
 
+export function conferenceIcon(venue: string | null, sourceUrl: string | null): string | null {
+  const normalizedVenue = venue?.trim().toUpperCase() ?? "";
+  let sourceHost = "";
+  try { sourceHost = sourceUrl ? new URL(sourceUrl).hostname.toLowerCase() : ""; } catch { /* fall through */ }
+  if (normalizedVenue === "ICLR" || normalizedVenue.startsWith("ICLR ") || sourceHost === "proceedings.iclr.cc") {
+    return "/venue-icons/iclr.ico";
+  }
+  return null;
+}
+
 export function VenueBadge({ venue, sourceUrl, iconUrl, compact = false, status }: { venue: string | null; sourceUrl?: string | null; iconUrl?: string | null; compact?: boolean; status?: ReadingStatus }) {
-  const candidates = useMemo(() => [...new Set([iconUrl, fallbackFavicon(sourceUrl ?? null)].filter((url): url is string => Boolean(url)))], [iconUrl, sourceUrl]);
+  const candidates = useMemo(() => [...new Set([
+    conferenceIcon(venue, sourceUrl ?? null),
+    iconUrl,
+    fallbackFavicon(sourceUrl ?? null),
+  ].filter((url): url is string => Boolean(url)))], [venue, iconUrl, sourceUrl]);
   const [candidateIndex, setCandidateIndex] = useState(0);
   useEffect(() => setCandidateIndex(0), [candidates.join("|")]);
   const src = candidates[candidateIndex] ?? null;

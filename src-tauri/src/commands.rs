@@ -677,6 +677,13 @@ fn infer_venue_from_source(raw: &str) -> Option<String> {
         let series = parts.next()?.split('-').next()?.to_ascii_uppercase();
         return Some(format!("{series} {year}"));
     }
+    if host == "proceedings.iclr.cc" {
+        let year = year_from_text(url.path());
+        return Some(match year {
+            Some(year) => format!("ICLR {year}"),
+            None => "ICLR".to_string(),
+        });
+    }
     if host == "openaccess.thecvf.com" {
         let path = url.path().to_ascii_uppercase();
         for series in ["CVPR", "ICCV", "ECCV", "WACV"] {
@@ -5017,6 +5024,10 @@ mod tests {
         assert_eq!(
             infer_venue_from_source("https://arxiv.org/abs/2601.01234"),
             Some("arXiv".to_string())
+        );
+        assert_eq!(
+            infer_venue_from_source("https://proceedings.iclr.cc/paper_files/paper/2026/hash/example-Abstract-Conference.html"),
+            Some("ICLR 2026".to_string())
         );
         let blocks = serde_json::json!([
             {"page_idx": 0, "text": "An unpublished paper, 2026"},

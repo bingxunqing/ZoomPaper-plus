@@ -51,6 +51,7 @@ function scrapePaperPage() {
   });
   return {
     pageUrl: location.href,
+    iconUrl: document.querySelector('link[rel~="icon"]')?.href || null,
     title: meta("citation_title") || meta("dc.title") || document.querySelector("h1")?.textContent || document.title,
     citationPdfUrl: meta("citation_pdf_url"),
     venue: meta("citation_conference_title") || meta("citation_journal_title") || meta("citation_inbook_title"),
@@ -157,7 +158,7 @@ async function detectFromTab(tab, linkUrl) {
     func: scrapePaperPage,
   });
   const paper = detectPaper({ ...result, linkUrl });
-  return paper ? { ...paper, iconUrl: tab.favIconUrl || null } : null;
+  return paper ? { ...paper, iconUrl: result.iconUrl || tab.favIconUrl || null } : null;
 }
 
 chrome.runtime.onInstalled.addListener(setupMenu);
