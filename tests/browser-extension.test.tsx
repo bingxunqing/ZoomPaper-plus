@@ -7,8 +7,11 @@ import { detectPaper } from "../browser-extension/detector.js";
 import { browserDownloadFilename, requiresBrowserSessionDownload } from "../browser-extension/download.js";
 
 describe("browser extension paper detection", () => {
-  it("uses the authenticated browser download for OpenReview only", () => {
+  it("uses the browser download for hosts that reject the native downloader", () => {
     expect(requiresBrowserSessionDownload("https://openreview.net/pdf?id=7X91AAKL5B")).toBe(true);
+    expect(requiresBrowserSessionDownload(
+      "https://proceedings.iclr.cc/paper_files/paper/2026/file/paper-Paper-Conference.pdf",
+    )).toBe(true);
     expect(requiresBrowserSessionDownload("https://arxiv.org/pdf/2601.12345")).toBe(false);
     expect(browserDownloadFilename("A / Paper: title?", "request-123")).toBe(
       "ZoomPaper Plus Imports/A Paper title-request-123.pdf",

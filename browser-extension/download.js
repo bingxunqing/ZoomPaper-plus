@@ -1,4 +1,9 @@
-const BROWSER_SESSION_HOSTS = new Set(["openreview.net", "www.openreview.net"]);
+const BROWSER_SESSION_HOSTS = new Set([
+  "openreview.net",
+  "www.openreview.net",
+  "proceedings.iclr.cc",
+  "www.proceedings.iclr.cc",
+]);
 
 export function requiresBrowserSessionDownload(rawUrl) {
   try {
