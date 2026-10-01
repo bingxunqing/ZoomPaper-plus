@@ -7,7 +7,7 @@
 1. 安装并至少启动一次 ZoomPaper Plus `v0.2.3` 或更高版本。
 2. 打开 Chrome 的 `chrome://extensions`，或 Edge 的 `edge://extensions`。
 3. 开启“开发者模式”，选择“加载已解压的扩展程序”。
-4. 选择本仓库的 `browser-extension` 文件夹。
+4. 选择本仓库的 `browser-extension` 文件夹；本地打包交付时，选择 `ZoomPaper-Plus-Connector` 文件夹（其中直接包含 `manifest.json`）。
 5. 首次使用时，浏览器会询问是否打开 ZoomPaper Plus，请允许。
 
 ## 更新
@@ -15,6 +15,12 @@
 从 `v0.2.8` 起扩展 ID 固定。解压新版压缩包后，在扩展管理页重新加载 `ZoomPaper Plus Connector` 即可覆盖升级，收藏栏位置会保留。升级到 `v0.2.9` 时需确认一次新增的下载权限，用于导入受浏览器验证保护的 OpenReview PDF。`v0.2.7` 及更早版本需完成一次迁移：移除旧扩展并加载新版目录；后续不再重复此步骤。
 
 `v0.3.0` 新增会话存储与定时任务权限，用于下载恢复和超时处理；升级时请确认权限。解压时覆盖原来加载的目录，再在扩展管理页点击重新加载。
+
+## 本地打包
+
+运行 `npm run package:extension`，生成固定路径的 `ZoomPaper-Plus-Connector` 文件夹，可直接加载。后续打包会更新同一文件夹，在扩展管理页点击“重新加载”即可；不要删除或移动已加载的文件夹。需要上传 GitHub Release 时，运行 `npm run package:extension -- --zip`，额外生成 ZIP；用户下载后仍须先解压。
+
+`v0.3.1` 同时传递页面 DOI，供 App 核对并补全出版信息；无需新增权限。
 
 ## 支持范围
 

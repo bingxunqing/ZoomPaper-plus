@@ -13,6 +13,7 @@ import {
   addReadingTime,
   markPaperRead,
   openPaperForReading,
+  refreshPaperPublication,
   setPaperStatus,
   type Paper,
 } from "@/lib/api";
@@ -36,7 +37,13 @@ export function Reader({ paperId, initialPageIdx, onBack }: Props) {
   useEffect(() => {
     let cancelled = false;
     openPaperForReading(paperId)
-      .then((p) => !cancelled && setPaper(p))
+      .then((p) => {
+        if (cancelled) return;
+        setPaper(p);
+        refreshPaperPublication(paperId).then((updated) => {
+          if (!cancelled) setPaper((current) => current?.id === updated.id ? { ...current, venue: updated.venue, authors: updated.authors } : current);
+        }).catch(() => {});
+      })
       .catch((e) => !cancelled && setError(String(e)))
       .finally(() => !cancelled && setLoading(false));
     return () => {

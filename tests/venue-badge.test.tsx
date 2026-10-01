@@ -20,6 +20,11 @@ describe("VenueBadge", () => {
     ["USENIX Security 2026", "/venue-icons/usenix.png"],
     ["IEEE S&P 2026", "/venue-icons/ieee.jpg"],
     ["PVLDB 2026", "/venue-icons/vldb.png"],
+    ["ACM Transactions on Software Engineering and Methodology", "/venue-icons/acm.png"],
+    ["IEEE Transactions on Neural Networks and Learning Systems", "/venue-icons/ieee.jpg"],
+    ["PLDI 2026", "/venue-icons/acm.png"],
+    ["MSR 2026", "/venue-icons/acm.png"],
+    ["ICSME 2026", "/venue-icons/ieee.jpg"],
   ])("maps %s to its conference family icon", (venue, icon) => {
     expect(conferenceIcon(venue, null)).toBe(icon);
   });

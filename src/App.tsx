@@ -60,6 +60,7 @@ function App() {
         const githubUrl = link.searchParams.get("github");
         const venue = link.searchParams.get("venue");
         const sourceIconUrl = link.searchParams.get("icon");
+        const doi = link.searchParams.get("doi");
         const requestId = link.searchParams.get("request") || rawLink;
         if (handledLinks.current.has(requestId)) continue;
         handledLinks.current.add(requestId);
@@ -70,8 +71,8 @@ function App() {
           setBrowserImport({ phase: "downloading", title, message: "正在安全下载 PDF…" });
           try {
             const paper = localFile
-              ? await importBrowserDownload(localFile, title, sourceUrl, githubUrl, venue, sourceIconUrl)
-              : await importPdfUrl(pdfUrl!, title, sourceUrl, githubUrl, venue, sourceIconUrl);
+              ? await importBrowserDownload(localFile, title, sourceUrl, githubUrl, venue, sourceIconUrl, doi)
+              : await importPdfUrl(pdfUrl!, title, sourceUrl, githubUrl, venue, sourceIconUrl, doi);
             if (disposed) return;
             setLibraryRefreshSignal((value) => value + 1);
             setBrowserImport({ phase: "parsing", title: paper.title, message: "已保存，正在提取正文与元数据…" });

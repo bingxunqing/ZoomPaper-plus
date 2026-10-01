@@ -22,14 +22,14 @@ const VENUE_ICON_GROUPS = [
   { icon: "/venue-icons/aaai.png", aliases: ["AAAI", "Association for the Advancement of Artificial Intelligence"] },
   { icon: "/venue-icons/ijcai.png", aliases: ["IJCAI", "International Joint Conference on Artificial Intelligence"] },
   { icon: "/venue-icons/vldb.png", aliases: ["VLDB", "PVLDB"] },
-  { icon: "/venue-icons/usenix.png", aliases: ["OSDI", "NSDI", "FAST", "USENIX ATC", "USENIX SECURITY"] },
+  { icon: "/venue-icons/usenix.png", aliases: ["OSDI", "NSDI", "FAST", "USENIX ATC", "USENIX SECURITY", "USENIX Symposium", "File and Storage Technologies", "USENIX Annual Technical Conference"] },
   {
     icon: "/venue-icons/acm.png",
-    aliases: ["KDD", "SIGIR", "SIGMOD", "SIGCOMM", "MOBICOM", "SOSP", "ASPLOS", "ISCA", "MICRO", "STOC", "CHI", "UIST", "CSCW", "ICSE", "FSE", "ASE", "CCS", "ACM MM", "SIGGRAPH", "TOG", "International Conference on Software Engineering", "Foundations of Software Engineering", "Automated Software Engineering", "Knowledge Discovery and Data Mining", "Management of Data", "Computer and Communications Security", "Human Factors in Computing Systems"],
+    aliases: ["KDD", "SIGIR", "SIGMOD", "SIGCOMM", "MOBICOM", "SOSP", "ASPLOS", "ISCA", "MICRO", "STOC", "CHI", "UIST", "CSCW", "ICSE", "FSE", "ASE", "CCS", "ACM MM", "SIGGRAPH", "TOG", "International Conference on Software Engineering", "Foundations of Software Engineering", "Automated Software Engineering", "Knowledge Discovery and Data Mining", "Management of Data", "Computer and Communications Security", "Human Factors in Computing Systems", "POPL", "PLDI", "OOPSLA", "ICFP", "LCTES", "PPoPP", "PACT", "CGO", "ISSTA", "MSR", "WWW", "WSDM", "CIKM", "ICMR", "RecSys", "PODS", "SoCC", "EuroSys", "MobiSys", "SenSys", "IPSN", "IMC", "SIGMETRICS", "SPAA", "PODC", "TODS", "TOIS", "TOPLAS", "TOSEM", "TOMM", "TOS", "TACO", "CSUR", "PACMPL", "PACMHCI", "PACMMOD", "Programming Language Design and Implementation", "Principles of Programming Languages", "Object-Oriented Programming Systems Languages and Applications", "ACM Computing Surveys", "ACM Transactions"],
   },
   {
     icon: "/venue-icons/ieee.jpg",
-    aliases: ["ICDE", "INFOCOM", "HPCA", "IEEE S&P", "IEEE SP", "S&P", "TSE", "TPAMI", "TKDE", "TVCG", "VIS", "VR", "RTSS", "ICDCS"],
+    aliases: ["ICDE", "INFOCOM", "HPCA", "IEEE S&P", "IEEE SP", "S&P", "TSE", "TPAMI", "TKDE", "TVCG", "VIS", "VR", "RTSS", "ICDCS", "ICSME", "SANER", "RE", "ESEM", "ISSRE", "ICST", "ICSA", "COMPSAC", "QRS", "ICDCS", "IPDPS", "SC", "CLUSTER", "CCGRID", "ICDM", "ICME", "ICASSP", "ICIP", "ICRA", "IROS", "CDC", "IJCNN", "WCCI", "TNNLS", "TCC", "TC", "TMC", "TDSC", "TSC", "TMM", "TIP", "TSP", "TIT", "TWC", "JSAC", "JSTSP", "RA-L", "IEEE Transactions", "Transactions on Software Engineering", "Transactions on Pattern Analysis and Machine Intelligence", "Transactions on Knowledge and Data Engineering", "Transactions on Visualization and Computer Graphics", "Transactions on Neural Networks and Learning Systems", "Proceedings of the IEEE"],
   },
 ] as const;
 

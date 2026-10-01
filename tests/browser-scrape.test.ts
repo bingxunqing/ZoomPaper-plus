@@ -12,10 +12,11 @@ describe('academic page metadata', () => {
     expect(result.metaPdfUrls).toContain('https://example.org/fulltext?id=42');
   });
   it('prefers citation metadata and reads mixed-case meta names', () => {
-    document.head.innerHTML = `<meta name="Citation_Title" content="Official title"><script type="application/ld+json">{"@type":"Article","name":"Other title"}</script><link rel="icon" sizes="32x32" href="https://example.org/icon.png">`;
+    document.head.innerHTML = `<meta name="Citation_Title" content="Official title"><meta name="citation_doi" content="10.1145/example"><script type="application/ld+json">{"@type":"Article","name":"Other title"}</script><link rel="icon" sizes="32x32" href="https://example.org/icon.png">`;
     const result = scrapePaperPage();
     expect(result.title).toBe('Official title');
     expect(result.iconUrl).toBe('https://example.org/icon.png');
+    expect(result.doi).toBe('10.1145/example');
   });
 });
 

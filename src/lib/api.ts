@@ -259,6 +259,7 @@ export const updateSettings = (newSettings: Settings) =>
 
 export const listPapers = () => invoke<Paper[]>("list_papers");
 export const getPaper = (paperId: string) => invoke<Paper>("get_paper", { paperId });
+export const refreshPaperPublication = (paperId: string) => invoke<Paper>("refresh_paper_publication", { paperId });
 export const getPaperMd = (paperId: string) => invoke<string>("get_paper_md", { paperId });
 export const importPdf = (sourcePath: string) =>
   invoke<Paper>("import_pdf", { sourcePath });
@@ -269,6 +270,7 @@ export const importPdfUrl = (
   githubUrl?: string | null,
   venue?: string | null,
   sourceIconUrl?: string | null,
+  doi?: string | null,
 ) => invoke<Paper>("import_pdf_url", {
   url,
   suggestedTitle: suggestedTitle ?? null,
@@ -276,6 +278,7 @@ export const importPdfUrl = (
   githubUrl: githubUrl ?? null,
   venue: venue ?? null,
   sourceIconUrl: sourceIconUrl ?? null,
+  doi: doi ?? null,
 });
 export const importBrowserDownload = (
   sourcePath: string,
@@ -284,6 +287,7 @@ export const importBrowserDownload = (
   githubUrl?: string | null,
   venue?: string | null,
   sourceIconUrl?: string | null,
+  doi?: string | null,
 ) => invoke<Paper>("import_browser_download", {
   sourcePath,
   suggestedTitle: suggestedTitle ?? null,
@@ -291,6 +295,7 @@ export const importBrowserDownload = (
   githubUrl: githubUrl ?? null,
   venue: venue ?? null,
   sourceIconUrl: sourceIconUrl ?? null,
+  doi: doi ?? null,
 });
 export interface ParseProgress {
   /** uploading / pending / converting / running / downloading / indexing */

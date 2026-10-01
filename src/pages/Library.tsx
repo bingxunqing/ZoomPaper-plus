@@ -31,6 +31,7 @@ import {
   removePaperFromPlan,
   removePapersFromFolder,
   renamePaper,
+  refreshPaperPublication,
   restorePaper,
   setPaperStarred,
   setPaperStatus,
@@ -198,6 +199,14 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
     [papers, selected]
   );
   const focusedPaper = papers.find((paper) => paper.id === focusedPaperId) ?? null;
+  useEffect(() => {
+    if (!focusedPaperId) return;
+    let cancelled = false;
+    refreshPaperPublication(focusedPaperId).then((updated) => {
+      if (!cancelled) setPapers((current) => current.map((paper) => paper.id === updated.id ? { ...paper, venue: updated.venue, authors: updated.authors } : paper));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [focusedPaperId]);
 
   useEffect(() => {
     if (focusedPaperId && !visiblePapers.some((paper) => paper.id === focusedPaperId)) {

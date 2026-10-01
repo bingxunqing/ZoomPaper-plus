@@ -44,6 +44,7 @@ export function scrapePaperPage() {
     iconUrl: pageIcon || null,
     title: meta("citation_title") || meta("dc.title") || article?.headline || article?.name || document.querySelector("h1")?.textContent || document.title,
     citationPdfUrl: meta("citation_pdf_url"),
+    doi: meta("citation_doi") || meta("dc.identifier.doi") || (typeof article?.identifier === 'string' ? article.identifier : article?.identifier?.value) || null,
     venue: meta("citation_conference_title") || meta("citation_journal_title") || meta("citation_inbook_title") || venueName,
     publicationDate: meta("citation_publication_date") || meta("citation_date") || article?.datePublished,
     metaPdfUrls: [
@@ -69,4 +70,3 @@ export function scrapePaperPage() {
     })),
   };
 }
-

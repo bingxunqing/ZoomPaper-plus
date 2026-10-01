@@ -28,7 +28,7 @@ export function buildImportLink(paper, filename, requestId) {
   url.searchParams.set('file', filename);
   url.searchParams.set('request', requestId);
   url.searchParams.set('title', paper.title);
-  for (const [key, value] of Object.entries({ source: paper.sourceUrl, github: paper.githubUrl, venue: paper.venue, icon: paper.iconUrl })) {
+  for (const [key, value] of Object.entries({ source: paper.sourceUrl, github: paper.githubUrl, venue: paper.venue, icon: paper.iconUrl, doi: paper.doi })) {
     if (value) url.searchParams.set(key, value);
   }
   return url.href;

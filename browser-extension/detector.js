@@ -91,6 +91,7 @@ export function detectPaper({
   citationPdfUrl,
   venue,
   publicationDate,
+  doi,
   metaPdfUrls = [],
   links = [],
 }) {
@@ -119,6 +120,7 @@ export function detectPaper({
     sourceUrl: page,
     ...(githubUrl ? { githubUrl } : {}),
     ...(normalizedVenue ? { venue: normalizedVenue } : {}),
+    ...(doi ? { doi } : {}),
   } : null;
 }
 
