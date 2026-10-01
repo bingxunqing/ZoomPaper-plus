@@ -65,7 +65,7 @@ npm run tauri build -- --bundles deb,appimage
 npm run package:extension
 ```
 
-脚本读取扩展自身版本，压缩包内始终使用 `ZoomPaper-Plus-Connector` 目录，并排除系统隐藏文件。不要修改 `manifest.json` 的 `key`；它负责让新版覆盖旧版并保持扩展 ID 稳定。
+默认生成可直接加载的 `ZoomPaper-Plus-Connector` 文件夹，并排除说明文档和系统隐藏文件；重复运行会原地更新。ZIP 仅在传入 `--zip` 时生成。不要修改 `manifest.json` 的 `key`，并保留原来加载的目录路径，以保持扩展 ID 和升级方式稳定。
 
 ## 文件命名
 
@@ -75,7 +75,8 @@ npm run package:extension
 - `ZoomPaper.Plus_<版本>_x64-setup.exe`
 - `ZoomPaper.Plus_<版本>_amd64.deb`
 - `ZoomPaper.Plus_<版本>_amd64.AppImage`
-- `ZoomPaper-Plus-Connector_<版本>.zip`
+- 本地安装：`ZoomPaper-Plus-Connector/`，在 Chrome / Edge 中直接加载该文件夹。
+- GitHub Release 附件：运行 `npm run package:extension -- --zip` 生成 `ZoomPaper-Plus-Connector_<版本>.zip`，下载后需先解压。
 
 ## 手动发布
 
