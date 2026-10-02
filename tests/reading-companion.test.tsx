@@ -28,3 +28,15 @@ it('distinguishes postprocessing from parsing', () => {
   expect(jobLabel({ ...job, status: 'canceling' })).toBe('正在停止');
   expect(jobLabel({ ...job, kind: 'doi', status: 'failed' })).toBe('补全出版信息失败');
 });
+
+it('shows task details on hover in an overlay without resizing the companion', () => {
+  render(<ReadingCompanion jobs={[{ ...job, status: 'failed', error: '服务暂不可用' }]} notice={null} readingTitle={null} onDismiss={vi.fn()} onOpenPaper={vi.fn()} />);
+  const companion = screen.getByLabelText('阅读伙伴').closest('.fixed')!;
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.mouseEnter(companion);
+  const details = screen.getByRole('dialog', { name: '后台任务' });
+  expect(details.className).toContain('absolute');
+  expect(screen.getByText('服务暂不可用')).toBeTruthy();
+  fireEvent.mouseLeave(companion);
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
