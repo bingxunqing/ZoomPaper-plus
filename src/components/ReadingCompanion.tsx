@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, useDragControls, useReducedMotion } from "motion/react";
-import { BookOpen, ChevronDown, ListTodo, RotateCcw, X } from "lucide-react";
+import { BookOpen, RotateCcw, X } from "lucide-react";
 import { cancelJob, retryJob, type BackgroundJob } from "@/lib/api";
 import type { BrowserImportPhase } from "./BrowserImportNotice";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
@@ -45,13 +45,23 @@ interface Props {
   onOpenPaper: (paperId: string) => void;
 }
 export function ReadingCompanion({ jobs, notice, readingTitle, onDismiss, onOpenPaper }: Props) {
-  const [panel, setPanel] = useState(false);
-  const [hovered, setHovered] = useState(false);
   const dragControls = useDragControls();
-  const dragged = useRef(false);
-  const [minimized, setMinimized] = useState(() => localStorage.getItem("zp-companion-minimized") === "true");
-  const [limit, setLimit] = useState(30);
+  const container = useRef<HTMLDivElement>(null);
+  const [bounds, setBounds] = useState({ left: 0, right: 0, top: 0, bottom: 0 });
+  const [minimized, setMinimized] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const update = () => {
+      const element = container.current;
+      if (!element) return;
+      setBounds({ left: -Math.max(0, window.innerWidth - element.offsetWidth - 40), right: 0,
+        top: 0, bottom: Math.max(0, window.innerHeight - element.offsetHeight - 40) });
+    };
+    const observer = new ResizeObserver(update);
+    if (container.current) observer.observe(container.current);
+    window.addEventListener("resize", update); update();
+    return () => { observer.disconnect(); window.removeEventListener("resize", update); };
+  }, []);
   const pending = jobs.filter(active);
   const current = pending.find((job) => job.status === "running" && job.kind === "parse") || pending.find((job) => job.status === "running") || pending[0];
   const busy = pending.length > 0 || notice?.phase === "downloading";
@@ -65,45 +75,37 @@ export function ReadingCompanion({ jobs, notice, readingTitle, onDismiss, onOpen
     if (notice?.phase !== "done") return;
     const timer = setTimeout(onDismiss, 5000); return () => clearTimeout(timer);
   }, [notice, onDismiss]);
-  const minimize = () => {
-    setMinimized(true); localStorage.setItem("zp-companion-minimized", "true"); onDismiss(); setPanel(false); setHovered(false);
-  };
-  const restore = () => { setMinimized(false); localStorage.setItem("zp-companion-minimized", "false"); };
+  const minimize = () => { setMinimized(true); onDismiss(); };
   const act = async (operation: () => Promise<void>) => {
     setError(null); try { await operation(); } catch (e) { setError(String(e)); }
   };
-  const togglePanel = () => { if (!dragged.current) setPanel(!panel); };
-  return <motion.div onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fixed bottom-5 right-5 z-[90] max-w-[calc(100vw-32px)] select-none"
-    drag dragControls={dragControls} dragListener={false} onDragStart={() => { dragged.current = true; }} onDragEnd={() => { setTimeout(() => { dragged.current = false; }, 0); }} dragMomentum={false} dragConstraints={{ left: -Math.max(0, window.innerWidth - 400), right: 0, top: -Math.max(0, window.innerHeight - 450), bottom: 0 }}>
-    {!minimized && (panel || (hovered && jobs.length > 0)) && <section role="dialog" aria-label="后台任务" className="absolute bottom-full right-0 mb-0 w-[350px] max-w-full rounded-2xl border border-zp-border bg-white p-3 shadow-lg dark:bg-zp-surface" onPointerDown={(e) => e.stopPropagation()}>
-      <div className="mb-2 flex items-center justify-between px-1 text-sm font-medium"><span>后台任务{count ? ` · ${count} 篇` : ""}</span><IconTooltip label="收起任务"><button aria-label="收起任务" onClick={() => { setPanel(false); setHovered(false); }} className="rounded-md p-1 hover:bg-zp-subtle"><ChevronDown size={16} /></button></IconTooltip></div>
-      {error && <p role="alert" className="mb-2 text-xs text-red-600">{error}</p>}
-      <div className="max-h-[320px] overflow-y-auto">
-        {jobs.slice(0, limit).map((job) => <div key={job.id} className="rounded-xl px-2 py-2 hover:bg-zp-subtle">
-          <div className="flex items-center gap-2">
-            <div className="min-w-0 flex-1 text-left">
-              <p className="truncate text-[13px]" title={job.title}>{job.title}</p>
-              <p className={`mt-0.5 text-xs ${job.status === "failed" ? "text-amber-600" : "text-zp-tertiary"}`}>{jobLabel(job)}{job.completed_pages != null && job.total_pages ? ` · ${job.completed_pages}/${job.total_pages} 页` : ""}</p>
-            </div>
-            <IconTooltip label="打开论文"><button aria-label={`打开 ${job.title}`} onClick={() => onOpenPaper(job.paper_id)} className="rounded-md p-1.5 hover:bg-zp-border"><BookOpen size={15} /></button></IconTooltip>
-            {active(job) && job.status !== "canceling" ? <IconTooltip label="取消任务"><button aria-label={`取消 ${kinds[job.kind]}`} onClick={() => void act(() => cancelJob(job.id))} className="rounded-md p-1.5 hover:bg-zp-border"><X size={15} /></button></IconTooltip>
-              : ["failed", "canceled"].includes(job.status) && <IconTooltip label="重试任务"><button aria-label={`重试 ${kinds[job.kind]}`} onClick={() => void act(() => retryJob(job.id))} className="rounded-md p-1.5 hover:bg-zp-border"><RotateCcw size={15} /></button></IconTooltip>}
+  const visibleJobs = [...pending, ...jobs.filter((job) => ["failed", "canceled"].includes(job.status)).slice(0, 3)];
+  return <motion.div ref={container} className="fixed top-5 right-5 z-[90] w-[320px] max-w-[calc(100vw-40px)] select-none"
+    drag dragControls={dragControls} dragListener={false} dragMomentum={false} dragConstraints={bounds}>
+    <div className="flex flex-col items-center gap-2">
+      <div aria-label="阅读伙伴" onPointerDown={(event) => dragControls.start(event, { distanceThreshold: 8 })}
+        className="touch-none cursor-grab active:cursor-grabbing"><PaperBird working={busy} /></div>
+      {minimized ? <IconTooltip label={title}><button aria-label="展开阅读伙伴" onClick={() => setMinimized(false)} className="flex h-8 items-center gap-2 rounded-full border border-zp-border bg-white px-3 shadow-sm dark:bg-zp-surface"><BookOpen size={16} />{count > 0 && <span className="text-xs">{count}</span>}</button></IconTooltip>
+        : <section aria-label="任务气泡" className="w-full rounded-3xl border border-zp-border bg-white/95 px-4 py-3 shadow-sm dark:bg-zp-surface">
+          <div className="flex items-start gap-2">
+            <p className="min-w-0 flex-1 text-[13px] leading-5 break-words" title={title}>{title}</p>
+            <IconTooltip label="收起气泡"><button aria-label="关闭提示" onClick={minimize} className="mt-0.5 rounded-md p-0.5 text-zp-tertiary hover:bg-zp-subtle"><X size={13} /></button></IconTooltip>
           </div>
-          {job.error && <p className="mt-2 break-words text-xs text-zp-secondary">{job.error}</p>}
-        </div>)}
-        {jobs.length > limit && <button className="w-full rounded-lg py-2 text-xs text-zp-tertiary hover:bg-zp-subtle" onClick={() => setLimit(limit + 30)}>显示更多</button>}
-        {notice?.phase === "error" && <p className="px-2 py-2 text-xs text-amber-700">{notice.message}</p>}
-      </div>
-    </section>}
-    {minimized ? <IconTooltip label={title}><button aria-label="展开阅读伙伴" onClick={restore} className="flex h-10 items-center gap-2 rounded-full border border-zp-border bg-white px-3 shadow-sm dark:bg-zp-surface"><BookOpen size={18} />{busy && <span className="h-2 w-2 rounded-full bg-emerald-500" />}{count > 0 && <span className="text-xs">{count}</span>}</button></IconTooltip>
-      : <div className="flex items-end gap-1">
-        <div className="max-w-[270px] rounded-2xl border border-zp-border bg-white/95 px-3 py-2 shadow-sm dark:bg-zp-surface">
-          <div className="flex items-center gap-2"><button aria-label="查看后台任务" onClick={togglePanel} className="min-w-0 flex-1 text-left text-xs leading-5 line-clamp-2" title={title}>{title}</button><IconTooltip label="收起阅读伙伴"><button aria-label="关闭提示" onClick={minimize} className="rounded-md p-0.5 text-zp-tertiary hover:bg-zp-subtle"><X size={13} /></button></IconTooltip></div>
-          {current?.completed_pages != null && !!current.total_pages && <p className="text-xs text-zp-tertiary">{current.completed_pages}/{current.total_pages} 页</p>}
           {notice?.phase === "error" && <p className="mt-1 break-words text-xs text-amber-700">{notice.message}</p>}
-          <div className="mt-1.5 flex items-center gap-2"><IconTooltip label="后台任务"><button aria-label="后台任务" onClick={togglePanel} className="flex items-center gap-1 rounded-md p-1 text-zp-tertiary hover:bg-zp-subtle"><ListTodo size={14} />{count > 0 && <span className="text-[10px]">{count}</span>}</button></IconTooltip>{busy && <span className="h-1 w-9 overflow-hidden rounded-full bg-zp-border"><span className="block h-full w-1/2 rounded-full bg-emerald-600 motion-safe:animate-pulse" /></span>}</div>
-        </div>
-        <button aria-label="阅读伙伴" onPointerDown={(event) => { dragged.current = false; dragControls.start(event, { distanceThreshold: 8 }); }} onClick={togglePanel} className="touch-none cursor-grab active:cursor-grabbing rounded-xl focus-visible:outline-2 focus-visible:outline-emerald-600"><PaperBird working={busy} /></button>
-      </div>}
+          {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
+          {visibleJobs.length > 0 && <div className="mt-2 max-h-[180px] space-y-2 overflow-y-auto">
+            {visibleJobs.map((job) => <div key={job.id} className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                {job.id !== current?.id && <p className="text-xs leading-5 break-words">{job.title}</p>}
+                <p className={`text-xs leading-5 ${job.status === "failed" ? "text-amber-600" : "text-zp-tertiary"}`}>{jobLabel(job)}{job.completed_pages != null && job.total_pages ? ` · ${job.completed_pages}/${job.total_pages} 页` : ""}</p>
+                {job.error && <p className="break-words text-xs leading-5 text-zp-secondary">{job.error}</p>}
+              </div>
+              <IconTooltip label="打开论文"><button aria-label={`打开 ${job.title}`} onClick={() => onOpenPaper(job.paper_id)} className="rounded-md p-1 text-zp-tertiary hover:bg-zp-subtle"><BookOpen size={14} /></button></IconTooltip>
+              {active(job) && job.status !== "canceling" ? <IconTooltip label="取消任务"><button aria-label={`取消 ${kinds[job.kind]}`} onClick={() => void act(() => cancelJob(job.id))} className="rounded-md p-1 text-zp-tertiary hover:bg-zp-subtle"><X size={14} /></button></IconTooltip>
+                : ["failed", "canceled"].includes(job.status) && <IconTooltip label="重试任务"><button aria-label={`重试 ${kinds[job.kind]}`} onClick={() => void act(() => retryJob(job.id))} className="rounded-md p-1 text-zp-tertiary hover:bg-zp-subtle"><RotateCcw size={14} /></button></IconTooltip>}
+            </div>)}
+          </div>}
+        </section>}
+    </div>
   </motion.div>;
 }
