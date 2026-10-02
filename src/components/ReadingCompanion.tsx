@@ -43,11 +43,16 @@ interface Props {
   readingTitle: string | null;
   onDismiss: () => void;
   onOpenPaper: (paperId: string) => void;
+  onNativeDrag?: () => void;
 }
-export function ReadingCompanion({ jobs, notice, readingTitle, onDismiss, onOpenPaper }: Props) {
+export function ReadingCompanion({ jobs, notice, readingTitle, onDismiss, onOpenPaper, onNativeDrag }: Props) {
+  const dismissRef = useRef(onDismiss); dismissRef.current = onDismiss;
   const dragControls = useDragControls();
   const container = useRef<HTMLDivElement>(null);
   const [bounds, setBounds] = useState({ left: 0, right: 0, top: 0, bottom: 0 });
+  const [finished, setFinished] = useState<BackgroundJob | null>(null);
+  const previousJobs = useRef(new Map<string, string>());
+  const [expanded, setExpanded] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -62,6 +67,16 @@ export function ReadingCompanion({ jobs, notice, readingTitle, onDismiss, onOpen
     window.addEventListener("resize", update); update();
     return () => { observer.disconnect(); window.removeEventListener("resize", update); };
   }, []);
+  useEffect(() => {
+    const terminal = jobs.find((job) => !active(job) && ["queued", "running", "canceling"].includes(previousJobs.current.get(job.id) || ""));
+    previousJobs.current = new Map(jobs.map((job) => [job.id, job.status]));
+    if (terminal) { setFinished(terminal); setMinimized(false); }
+  }, [jobs]);
+  useEffect(() => {
+    if (!finished || expanded) return;
+    const timer = setTimeout(() => setFinished(null), 5000);
+    return () => clearTimeout(timer);
+  }, [finished, expanded]);
   const pending = jobs.filter(active);
   const current = pending.find((job) => job.status === "running" && job.kind === "parse") || pending.find((job) => job.status === "running") || pending[0];
   const busy = pending.length > 0 || notice?.phase === "downloading";
@@ -70,30 +85,31 @@ export function ReadingCompanion({ jobs, notice, readingTitle, onDismiss, onOpen
     : current ? `${jobLabel(current)} ${current.title}`
     : notice?.phase === "error" ? `导入失败 ${notice.title}`
     : notice?.phase === "done" ? `已导入 ${notice.title}`
-    : readingTitle ? `正在阅读 ${readingTitle}` : "阅读伙伴";
+    : finished ? `${jobLabel(finished)} ${finished.title}` : readingTitle ? `正在阅读 ${readingTitle}` : "阅读伙伴";
   useEffect(() => {
     if (notice?.phase !== "done") return;
-    const timer = setTimeout(onDismiss, 5000); return () => clearTimeout(timer);
-  }, [notice, onDismiss]);
-  const minimize = () => { setMinimized(true); onDismiss(); };
+    const timer = setTimeout(() => dismissRef.current(), 5000); return () => clearTimeout(timer);
+  }, [notice?.phase, notice?.title]);
+  const minimize = () => { setMinimized(true); setExpanded(false); setFinished(null); onDismiss(); };
   const act = async (operation: () => Promise<void>) => {
     setError(null); try { await operation(); } catch (e) { setError(String(e)); }
   };
   const visibleJobs = [...pending, ...jobs.filter((job) => ["failed", "canceled"].includes(job.status)).slice(0, 3)];
-  return <motion.div ref={container} className="fixed top-5 right-5 z-[90] w-[320px] max-w-[calc(100vw-40px)] select-none"
-    drag dragControls={dragControls} dragListener={false} dragMomentum={false} dragConstraints={bounds}>
+  const showBubble = busy || notice != null || finished != null;
+  return <motion.div ref={container} className={onNativeDrag ? "w-[320px] max-w-full select-none" : "fixed top-5 right-5 z-[90] w-[320px] max-w-[calc(100vw-40px)] select-none"}
+    drag={!onNativeDrag} dragControls={dragControls} dragListener={false} dragMomentum={false} dragConstraints={bounds}>
     <div className="flex flex-col items-center gap-2">
-      <div aria-label="阅读伙伴" onPointerDown={(event) => dragControls.start(event, { distanceThreshold: 8 })}
+      <div aria-label="阅读伙伴" onPointerDown={(event) => { if (event.button !== 0) return; if (onNativeDrag) onNativeDrag(); else dragControls.start(event, { distanceThreshold: 8 }); }}
         className="touch-none cursor-grab active:cursor-grabbing"><PaperBird working={busy} /></div>
-      {minimized ? <IconTooltip label={title}><button aria-label="展开阅读伙伴" onClick={() => setMinimized(false)} className="flex h-8 items-center gap-2 rounded-full border border-zp-border bg-white px-3 shadow-sm dark:bg-zp-surface"><BookOpen size={16} />{count > 0 && <span className="text-xs">{count}</span>}</button></IconTooltip>
+      {showBubble && (minimized ? <IconTooltip label={title}><button aria-label="展开阅读伙伴" onClick={() => setMinimized(false)} className="flex h-8 items-center gap-2 rounded-full border border-zp-border bg-white px-3 shadow-sm dark:bg-zp-surface"><BookOpen size={16} />{count > 0 && <span className="text-xs">{count}</span>}</button></IconTooltip>
         : <section aria-label="任务气泡" className="w-full rounded-3xl border border-zp-border bg-white/95 px-4 py-3 shadow-sm dark:bg-zp-surface">
           <div className="flex items-start gap-2">
-            <p className="min-w-0 flex-1 text-[13px] leading-5 break-words" title={title}>{title}</p>
+            <button aria-label={expanded ? "收起任务内容" : "展开任务内容"} aria-expanded={expanded} onClick={() => setExpanded(!expanded)} className={`min-w-0 flex-1 text-left text-[13px] leading-5 break-words ${expanded ? "" : "line-clamp-2"}`} title={title}>{title}</button>
             <IconTooltip label="收起气泡"><button aria-label="关闭提示" onClick={minimize} className="mt-0.5 rounded-md p-0.5 text-zp-tertiary hover:bg-zp-subtle"><X size={13} /></button></IconTooltip>
           </div>
-          {notice?.phase === "error" && <p className="mt-1 break-words text-xs text-amber-700">{notice.message}</p>}
+          {expanded && notice?.phase === "error" && <p className="mt-1 break-words text-xs text-amber-700">{notice.message}</p>}
           {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
-          {visibleJobs.length > 0 && <div className="mt-2 max-h-[180px] space-y-2 overflow-y-auto">
+          {expanded && visibleJobs.length > 0 && <div className="mt-2 max-h-[180px] space-y-2 overflow-y-auto">
             {visibleJobs.map((job) => <div key={job.id} className="flex items-start gap-2">
               <div className="min-w-0 flex-1">
                 {job.id !== current?.id && <p className="text-xs leading-5 break-words">{job.title}</p>}
@@ -105,7 +121,7 @@ export function ReadingCompanion({ jobs, notice, readingTitle, onDismiss, onOpen
                 : ["failed", "canceled"].includes(job.status) && <IconTooltip label="重试任务"><button aria-label={`重试 ${kinds[job.kind]}`} onClick={() => void act(() => retryJob(job.id))} className="rounded-md p-1 text-zp-tertiary hover:bg-zp-subtle"><RotateCcw size={14} /></button></IconTooltip>}
             </div>)}
           </div>}
-        </section>}
+        </section>)}
     </div>
   </motion.div>;
 }

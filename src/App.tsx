@@ -11,7 +11,7 @@ import { HelpPage } from "@/pages/HelpPage";
 import { NavRail, type NavItem } from "@/components/NavRail";
 import { type BrowserImportPhase } from "@/components/BrowserImportNotice";
 import { importBrowserDownload, importPdfUrl, listJobs, type BackgroundJob } from "@/lib/api";
-import { ReadingCompanion } from "@/components/ReadingCompanion";
+import { CompanionBridge } from "@/components/CompanionWindow";
 
 type View =
   | { name: "library" }
@@ -160,7 +160,7 @@ function App() {
           </motion.div>
         </main>
       )}
-      <ReadingCompanion jobs={jobs} notice={browserImport} readingTitle={view.name === "reader" ? readingTitle : null}
+      <CompanionBridge jobs={jobs} notice={browserImport} readingTitle={view.name === "reader" ? readingTitle : null}
         onDismiss={() => setBrowserImport(null)} onOpenPaper={openPaper} />
     </div>
   );

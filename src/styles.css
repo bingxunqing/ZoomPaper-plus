@@ -470,3 +470,6 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--primary); outli
 .reading-prose h1 { font-size: 1.65rem; line-height: 1.35; margin-block: 0.5em 1em; }
 .reading-prose h2 { font-size: 1.25rem; line-height: 1.45; }
 .reading-prose h3 { font-size: 1.05rem; line-height: 1.5; }
+
+/* The detached companion is a transparent desktop window. */
+html.companion-window, html.companion-window body, html.companion-window #root { background: transparent !important; overflow: hidden; }

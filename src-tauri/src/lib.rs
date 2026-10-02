@@ -51,6 +51,11 @@ pub fn run() {
             // 初始化数据库（建目录 + 建表）并放入应用状态
             let db = db::Db::init()?;
             app.manage(db);
+            if let (Some(main), Some(companion)) = (app.get_webview_window("main"), app.get_webview_window("companion")) {
+                if let (Ok(position), Ok(size), Ok(scale)) = (main.outer_position(), main.outer_size(), main.scale_factor()) {
+                    let _ = companion.set_position(tauri::PhysicalPosition::new(position.x + size.width as i32 - (360.0 * scale) as i32, position.y + (60.0 * scale) as i32));
+                }
+            }
             jobs::start(app.handle().clone());
             connector::start(app.handle().clone());
             #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
@@ -61,6 +66,11 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             enable_pinch_zoom(app);
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                if let Some(companion) = window.app_handle().get_webview_window("companion") { let _ = companion.close(); }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
