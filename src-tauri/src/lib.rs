@@ -1,6 +1,8 @@
 //! ZoomPaper Plus 桌面端入口：Tauri 应用装配。
 
 mod agent;
+mod jobs;
+mod connector;
 mod ai;
 mod blog;
 mod commands;
@@ -49,6 +51,8 @@ pub fn run() {
             // 初始化数据库（建目录 + 建表）并放入应用状态
             let db = db::Db::init()?;
             app.manage(db);
+            jobs::start(app.handle().clone());
+            connector::start(app.handle().clone());
             #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
@@ -75,6 +79,9 @@ pub fn run() {
             commands::import_browser_download,
             commands::import_pdf_url,
             commands::parse_pdf,
+            jobs::list_jobs,
+            jobs::cancel_job,
+            jobs::retry_job,
             commands::translate_paper_metadata,
             commands::refresh_paper_publication,
             commands::delete_paper,

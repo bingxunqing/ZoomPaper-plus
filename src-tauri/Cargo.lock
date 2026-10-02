@@ -7559,7 +7559,7 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
 name = "zoompaper"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -7572,6 +7572,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "sqlite-vec",
  "tauri",
  "tauri-build",

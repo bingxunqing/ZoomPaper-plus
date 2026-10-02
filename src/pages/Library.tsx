@@ -36,6 +36,7 @@ import {
   setPaperStarred,
   setPaperStatus,
   updateFolder,
+  type BackgroundJob,
   type Folder,
   type Paper,
   type ParseProgress,
@@ -43,7 +44,7 @@ import {
   type ReadingStatus,
 } from "@/lib/api";
 import type { LibraryView } from "@/lib/folders";
-import { parseProgressPercent } from "@/lib/utils";
+
 import { usePaperSelection } from "@/hooks/usePaperSelection";
 import { useDragPaperSelection } from "@/hooks/useDragPaperSelection";
 import { FolderSidebar } from "@/components/library/FolderSidebar";
@@ -63,9 +64,10 @@ type Renaming = { kind: "folder"; id: string } | { kind: "paper"; id: string };
 interface Props {
   onOpenPaper: (id: string) => void;
   refreshSignal?: number;
+  jobs?: BackgroundJob[];
 }
 
-export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
+export function Library({ onOpenPaper, refreshSignal = 0, jobs = [] }: Props) {
   const [papers, setPapers] = useState<Paper[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [plans, setPlans] = useState<ReadingPlan[]>([]);
@@ -113,10 +115,12 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
   const [importing, setImporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [parsingId, setParsingId] = useState<string | null>(null);
+  const parseJobs = jobs.filter((job) => job.kind === "parse" && ["queued", "running"].includes(job.status));
+  const parseJobByPaper = new Map(parseJobs.map((job) => [job.paper_id, job]));
   const [parseProgress, setParseProgress] = useState<Record<string, ParseProgress>>({});
   const updateParseProgress = (id: string, progress: ParseProgress) => {
     setParseProgress((prev) => ({ ...prev, [id]: progress }));
-    setNotice(`解析中 · ${Math.round(parseProgressPercent(progress))}%`);
+
   };
   const handleMetadataTranslated = useCallback((updated: Paper) => {
     setPapers((current) => current.map((paper) => paper.id === updated.id ? updated : paper));
@@ -368,7 +372,7 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
           const paper = await importPdf(file);
           if (currentFolderId) await addPapersToFolder([paper.id], currentFolderId);
           setParsingId(paper.id);
-          setNotice(`正在解析并建立索引 ${index + 1} / ${paths.length}`);
+          setNotice(null);
           try {
             await parsePdf(paper.id, (progress) => updateParseProgress(paper.id, progress));
           } catch (e) {
@@ -379,7 +383,7 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
         }
       }
       await refresh();
-      setNotice(`已处理 ${paths.length} 个文件${failures.length ? `，${failures.length} 项需要处理` : ""}`);
+      setNotice(null);
       if (failures.length) setError(failures.join("\n"));
     } catch (e) {
       setError(`导入失败：${e}`);
@@ -709,7 +713,7 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
           )}
           {notice && !error && (
             <div className="m-3 rounded-md border border-zp-border bg-white px-4 py-3 text-sm text-zp-secondary dark:bg-zp-surface">
-              {notice}
+              <span>{notice}</span><button type="button" aria-label="关闭提示" className="float-right ml-3" onClick={() => setNotice(null)}>×</button>
             </div>
           )}
 
@@ -769,7 +773,7 @@ export function Library({ onOpenPaper, refreshSignal = 0 }: Props) {
                   selectionMode={selectionMode}
                   onLongPress={enterSelection}
                   isRenaming={renaming?.kind === "paper" && renaming.id === paper.id}
-                  parsing={parsingId === paper.id}
+                  parsing={parsingId === paper.id || parseJobByPaper.has(paper.id)}
                   progress={parseProgress[paper.id] ?? null}
                   currentFolderId={currentFolderId}
                   onToggle={toggle}

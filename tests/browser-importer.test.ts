@@ -117,3 +117,30 @@ it('does not retry or hand off a user-cancelled download', async () => {
   expect(api.tabs.update).not.toHaveBeenCalled();
   expect((await importer.load(id)).errors[0].message).toBe('已取消下载');
 });
+
+it('confirms app receipt and recovers from a suspended worker without downloading again', async () => {
+  const { api, items } = fixture();
+  Object.assign(api.runtime, { id: 'test' });
+  const receipt = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'waiting' }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'accepted', paperId: 'saved' }) });
+  const importer = createImporter(api, receipt);
+  const id = await importer.start(paper, candidates, 10);
+  items[1] = { id: 1, state: 'complete', mime: 'application/pdf', filename: '/tmp/paper.pdf', fileSize: 500 };
+  await importer.changed(1);
+  expect((await importer.load(id)).state).toBe('sent');
+  const resumed = createImporter(api, receipt);
+  await resumed.timeout(`import:${id}`);
+  expect((await resumed.load(id)).state).toBe('accepted');
+  expect(api.downloads.download).toHaveBeenCalledOnce();
+});
+
+it('does not claim import success if the app rejects the file', async () => {
+  const { api, items } = fixture();
+  Object.assign(api.runtime, { id: 'test' });
+  const importer = createImporter(api, vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: 'error', error: 'Disk full' }) }));
+  const id = await importer.start(paper, candidates, 10);
+  items[1] = { id: 1, state: 'complete', mime: 'application/pdf', filename: '/tmp/paper.pdf', fileSize: 500 };
+  await importer.changed(1);
+  expect((await importer.load(id)).state).toBe('error');
+  expect((await importer.load(id)).errors.at(-1).message).toContain('Disk full');
+});

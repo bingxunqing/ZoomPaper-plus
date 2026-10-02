@@ -9,8 +9,9 @@ import { AskPage } from "@/pages/AskPage";
 import { TimelinePage } from "@/pages/TimelinePage";
 import { HelpPage } from "@/pages/HelpPage";
 import { NavRail, type NavItem } from "@/components/NavRail";
-import { BrowserImportNotice, type BrowserImportPhase } from "@/components/BrowserImportNotice";
-import { importBrowserDownload, importPdfUrl, parsePdf } from "@/lib/api";
+import { type BrowserImportPhase } from "@/components/BrowserImportNotice";
+import { importBrowserDownload, importPdfUrl, listJobs, type BackgroundJob } from "@/lib/api";
+import { ReadingCompanion } from "@/components/ReadingCompanion";
 
 type View =
   | { name: "library" }
@@ -30,8 +31,29 @@ function App() {
     message: string;
     sourceUrl?: string;
   } | null>(null);
+  const [jobs, setJobs] = useState<BackgroundJob[]>([]);
+  const [readingTitle, setReadingTitle] = useState("");
+  useEffect(() => {
+    let stopped = false; let timer: ReturnType<typeof setTimeout>; let previous = ""; let revision = "";
+    const poll = async () => {
+      try {
+        const next = await listJobs();
+        if (stopped) return;
+        const signature = JSON.stringify(next);
+        if (signature !== previous) {
+          const nextRevision = next.map((job) => `${job.id}:${job.status}`).join("|");
+          if (revision && revision !== nextRevision) setLibraryRefreshSignal((value) => value + 1);
+          revision = nextRevision;
+          previous = signature; setJobs(next);
+        }
+      } catch { /* Window startup/reload: the next poll reconnects. */ }
+      if (!stopped) timer = setTimeout(poll, 1500);
+    };
+    void poll();
+    return () => { stopped = true; clearTimeout(timer); };
+  }, []);
   const handledLinks = useRef(new Set<string>());
-  const importQueue = useRef(Promise.resolve());
+
 
   useEffect(() => {
     const preventNativeMenu = (event: MouseEvent) => event.preventDefault();
@@ -65,32 +87,22 @@ function App() {
         if (handledLinks.current.has(requestId)) continue;
         handledLinks.current.add(requestId);
 
-        importQueue.current = importQueue.current.then(async () => {
+        void (async () => {
           if (disposed) return;
-          setView({ name: "library" });
           setBrowserImport({ phase: "downloading", title, message: "正在安全下载 PDF…" });
           try {
             const paper = localFile
-              ? await importBrowserDownload(localFile, title, sourceUrl, githubUrl, venue, sourceIconUrl, doi)
-              : await importPdfUrl(pdfUrl!, title, sourceUrl, githubUrl, venue, sourceIconUrl, doi);
+              ? await importBrowserDownload(localFile, title, sourceUrl, githubUrl, venue, sourceIconUrl, doi, requestId)
+              : await importPdfUrl(pdfUrl!, title, sourceUrl, githubUrl, venue, sourceIconUrl, doi, requestId);
             if (disposed) return;
             setLibraryRefreshSignal((value) => value + 1);
-            setBrowserImport({ phase: "parsing", title: paper.title, message: "已保存，正在提取正文与元数据…" });
-            try {
-              await parsePdf(paper.id);
-              if (disposed) return;
-              setLibraryRefreshSignal((value) => value + 1);
-              setBrowserImport({ phase: "done", title: paper.title, message: "" });
-            } catch (error) {
-              if (disposed) return;
-              setLibraryRefreshSignal((value) => value + 1);
-              setBrowserImport({ phase: "warning", title: paper.title, message: `PDF 已保存；自动解析失败：${String(error)}` });
-            }
+            setBrowserImport({ phase: "done", title: paper.title, message: "" });
           } catch (error) {
             if (disposed) return;
+            handledLinks.current.delete(requestId);
             setBrowserImport({ phase: "error", title, message: String(error), sourceUrl: sourceUrl?.startsWith("https://") ? sourceUrl : undefined });
           }
-        });
+        })();
       }
     };
 
@@ -120,7 +132,7 @@ function App() {
 
       {view.name === "library" ? (
         /* 论文库工作台：文件夹侧栏 + 内容区由 Library 自行组织 */
-        <Library onOpenPaper={openPaper} refreshSignal={libraryRefreshSignal} />
+        <Library onOpenPaper={openPaper} refreshSignal={libraryRefreshSignal} jobs={jobs} />
       ) : (
         /* 其余页面：主内容区自行控制滚动 */
         <main className={`flex min-h-0 min-w-0 flex-1 flex-col ${view.name === "ask" ? "bg-white dark:bg-[#191919]" : "p-6"}`}>
@@ -137,6 +149,8 @@ function App() {
             {view.name === "reader" && (
               <Reader
                 paperId={view.paperId}
+                refreshSignal={libraryRefreshSignal}
+                onTitleChange={setReadingTitle}
                 initialPageIdx={view.pageIdx}
                 onBack={() => setView({ name: "library" })}
               />
@@ -146,9 +160,8 @@ function App() {
           </motion.div>
         </main>
       )}
-      {browserImport && (
-        <BrowserImportNotice {...browserImport} onClose={() => setBrowserImport(null)} />
-      )}
+      <ReadingCompanion jobs={jobs} notice={browserImport} readingTitle={view.name === "reader" ? readingTitle : null}
+        onDismiss={() => setBrowserImport(null)} onOpenPaper={openPaper} />
     </div>
   );
 }

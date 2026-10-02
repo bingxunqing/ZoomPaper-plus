@@ -58,6 +58,7 @@ ZoomPaper Plus 先通过 MinerU 提取论文的标题、段落、公式和图片
 - **浏览器 Connector**：从 Chrome / Edge 论文页右键导入，识别常见计算机论文网站、会议与 GitHub 项目；统一使用浏览器下载，失败时可切换全文入口或手动指定地址。
 - **帮助与易用性**：提供完整的软件内帮助、AI 功能问答、图标提示、网站来源图标和更精简的桌面界面。
 - **出版信息补全**：从网页或 PDF 首页提取 DOI，核对标题后自动补全会议／期刊、年份和作者，无需额外配置；旧论文打开时也会尝试补全。
+- **后台任务与阅读小伙伴**：支持连续导入、两篇并行解析、任务进度、取消重试和重启恢复；收起气泡后继续阅读。
 - **稳定性修复**：生成任务切换论文后继续运行，并修复中文输入、DeepSeek 回放、文件夹多选、标注覆盖、数据库阻塞和本地密钥权限问题。
 
 原项目的完整功能和配置方式请查看[上游 README](https://github.com/Flutter-Misdreavus/ZoomPaper#readme)。
@@ -94,7 +95,7 @@ PDF 解析需要配置 MinerU；翻译和 AI 功能需要配置 OpenAI、Anthrop
 2. 打开 Chrome 的 `chrome://extensions` 或 Edge 的 `edge://extensions`，开启**开发者模式**，点击**加载已解压的扩展程序**，选择解压后包含 `manifest.json` 的文件夹。
 3. 在论文页面右键选择**加入 ZoomPaper Plus**，或点击扩展图标；首次使用时允许浏览器打开桌面应用。
 
-从 Connector `v0.2.8` 起扩展 ID 固定。更新时解压新版并在扩展管理页重新加载即可覆盖升级；从更早版本升级需要最后一次移除旧扩展。`v0.2.9` 新增浏览器下载权限，用于导入受验证保护的 OpenReview PDF。也可以直接安装仓库中的 [`browser-extension`](browser-extension/README.md) 文件夹；支持的网站见[兼容性说明](docs/BROWSER-SUPPORT.md)。
+从 Connector `v0.2.8` 起扩展 ID 固定。更新时解压新版并在扩展管理页重新加载即可覆盖升级；从更早版本升级需要最后一次移除旧扩展。`v0.2.9` 新增浏览器下载权限，用于导入受验证保护的 OpenReview PDF。`v0.4.0` 新增本机导入回执权限，搭配 App `v0.3.2` 使用。也可以直接安装仓库中的 [`browser-extension`](browser-extension/README.md) 文件夹；支持的网站见[兼容性说明](docs/BROWSER-SUPPORT.md)。
 
 <details>
   <summary>开发与构建</summary>

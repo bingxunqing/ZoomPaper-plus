@@ -13,6 +13,7 @@ import {
   addReadingTime,
   markPaperRead,
   openPaperForReading,
+  getPaper,
   refreshPaperPublication,
   setPaperStatus,
   type Paper,
@@ -25,9 +26,11 @@ interface Props {
   /** 外部跳入的目标页（0-based），如搜索结果/引用定位 */
   initialPageIdx?: number;
   onBack: () => void;
+  refreshSignal?: number;
+  onTitleChange?: (title: string) => void;
 }
 
-export function Reader({ paperId, initialPageIdx, onBack }: Props) {
+export function Reader({ paperId, initialPageIdx, onBack, refreshSignal, onTitleChange }: Props) {
   const [paper, setPaper] = useState<Paper | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +53,13 @@ export function Reader({ paperId, initialPageIdx, onBack }: Props) {
       cancelled = true;
     };
   }, [paperId]);
+
+  useEffect(() => {
+    let canceled = false;
+    getPaper(paperId).then((updated) => { if (!canceled) setPaper(updated); }).catch(() => {});
+    return () => { canceled = true; };
+  }, [paperId, refreshSignal]);
+  useEffect(() => { if (paper) onTitleChange?.(displayPaperTitle(paper.title)); }, [paper?.title, paper?.title_zh, onTitleChange]);
 
   // 打开论文即进入「在读」状态（未读 → 在读；已读保持不变）。失败静默，不影响阅读。
   useEffect(() => {

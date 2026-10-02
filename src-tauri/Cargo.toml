@@ -1,6 +1,6 @@
 [package]
 name = "zoompaper"
-version = "0.3.1"
+version = "0.3.2"
 description = "ZoomPaper Plus - 本地优先的论文阅读与知识管理平台"
 authors = ["ZoomPaper Plus"]
 license = "MIT"
@@ -25,6 +25,7 @@ zerocopy = "0.7"
 fastembed = "5"
 reqwest = { version = "=0.12.24", default-features = false, features = ["json", "rustls-tls", "blocking", "stream"] }
 futures-util = "0.3"
+sha2 = "0.10"
 zip = "2"
 uuid = { version = "1", features = ["v4"] }
 anyhow = "1"

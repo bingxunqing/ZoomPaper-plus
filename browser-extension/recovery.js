@@ -7,16 +7,23 @@ async function load() {
   job = response?.job;
   if (!job) { status.textContent = '记录已过期，请回到论文网页重新导入。'; return; }
   document.getElementById('title').textContent = job.paper.title;
-  const busy = ['downloading', 'handoff'].includes(job.state);
-  status.textContent = job.state === 'sent' ? '已发送给 App，请在 App 查看导入结果。' : busy ? '正在下载全文…' : job.errors.at(-1)?.message || '选择全文链接';
-  document.getElementById('submit').disabled = busy || job.state === 'sent';
+  const busy = ['downloading', 'handoff', 'sent'].includes(job.state);
+  const received = job.state === 'accepted';
+  const unconfirmed = job.state === 'unconfirmed';
+  status.textContent = received ? '已加入论文库' : unconfirmed ? '尚未收到 App 接收确认' : job.state === 'sent' ? '等待 App 接收…' : busy ? '正在下载全文…' : job.errors.at(-1)?.message || '选择全文链接';
+  document.getElementById('submit').disabled = busy || received || unconfirmed;
   const list = document.getElementById('candidates'); list.replaceChildren();
+  if (unconfirmed) {
+    const resend = document.createElement('button'); resend.textContent = '重新发送给 App';
+    resend.onclick = async () => { resend.disabled = true; const result = await ask('import-resend'); if (result?.error) status.textContent = result.error; else await load(); };
+    list.append(resend);
+  }
   for (const candidate of job.candidates) {
     const row = document.createElement('div'); row.className = 'candidate';
     const text = document.createElement('span'); text.textContent = candidate.label;
     const host = document.createElement('small'); host.textContent = new URL(candidate.url).hostname; text.append(host);
     const open = document.createElement('button'); open.textContent = '打开'; open.onclick = () => chrome.tabs.create({ url: candidate.url });
-    const select = document.createElement('button'); select.textContent = '导入'; select.disabled = busy || job.state === 'sent'; select.onclick = () => retry(candidate.url);
+    const select = document.createElement('button'); select.textContent = '导入'; select.disabled = busy || received || unconfirmed; select.onclick = () => retry(candidate.url);
     row.append(text, open, select); list.append(row);
   }
   document.getElementById('source').disabled = !job.paper.sourceUrl;

@@ -88,7 +88,8 @@ chrome.alarms.onAlarm.addListener((alarm) => { importer.timeout(alarm.name).catc
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (!sender.url?.startsWith(chrome.runtime.getURL('recovery.html'))) return;
   const action = message.type === 'import-load' ? importer.load(message.id)
-    : message.type === 'import-retry' ? importer.retry(message.id, message.url) : null;
+    : message.type === 'import-retry' ? importer.retry(message.id, message.url)
+    : message.type === 'import-resend' ? importer.resend(message.id) : null;
   if (!action) return;
   action.then((job) => reply({ job })).catch((error) => reply({ error: String(error.message || error) }));
   return true;

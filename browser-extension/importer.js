@@ -34,7 +34,7 @@ export function buildImportLink(paper, filename, requestId) {
   return url.href;
 }
 
-export function createImporter(api) {
+export function createImporter(api, receiptFetch = fetch) {
   const save = (job) => api.storage.session.set({ [PREFIX + job.id]: job });
   const load = async (id) => (await api.storage.session.get(PREFIX + id))[PREFIX + id];
   const serialize = (id, task) => {
@@ -79,6 +79,32 @@ export function createImporter(api) {
       await startDownload(job);
     } else await recover(job);
   };
+  const acknowledge = async (job) => {
+    if (!api.runtime.id) return; // Old extension hosts have no receipt capability.
+    try {
+      const response = await receiptFetch(`http://127.0.0.1:37541/imports/${job.id}`, { signal: AbortSignal.timeout(2500), cache: 'no-store' });
+      if (response.ok) {
+        const receipt = await response.json();
+        if (receipt.state === 'accepted') {
+          job.state = 'accepted'; job.paperId = receipt.paperId;
+          await save(job); await api.alarms.clear(PREFIX + job.id);
+          await api.runtime.sendMessage({ type: 'import-updated', id: job.id }).catch(() => {}); return;
+        }
+        if (receipt.state === 'error') {
+          job.errors.push({ message: `App 未保存：${receipt.error}` }); await recover(job); return;
+        }
+      }
+    } catch { /* App launch or permissions may delay the receipt. */ }
+    if (Date.now() - job.sentAt > 120_000) {
+      job.state = 'unconfirmed'; await save(job);
+      // Keep the existing download; retrying the handoff must not download another copy.
+      if (!job.recoveryTabId) {
+        const tab = await api.tabs.create({ url: api.runtime.getURL(`recovery.html?id=${encodeURIComponent(job.id)}`) });
+        job.recoveryTabId = tab.id; await save(job);
+      }
+      await api.runtime.sendMessage({ type: 'import-updated', id: job.id }).catch(() => {});
+    } else await api.alarms.create(PREFIX + job.id, { when: Date.now() + 5000 });
+  };
   const inspect = async (id) => {
     const job = await load(id);
     if (!job || job.state !== 'downloading' || job.downloadId == null) return;
@@ -97,7 +123,8 @@ export function createImporter(api) {
       } catch {
         await api.tabs.create({ url: buildImportLink(job.paper, item.filename, job.id) });
       }
-      job.state = 'sent'; await save(job);
+      job.state = 'sent'; job.sentAt = Date.now(); await save(job);
+      await acknowledge(job);
       if (job.recoveryTabId) await api.runtime.sendMessage({ type: 'import-updated', id: job.id }).catch(() => {});
     }
   };
@@ -106,7 +133,7 @@ export function createImporter(api) {
       return serialize(`tab:${tabId}`, async () => {
         // Do not start duplicate downloads from repeated toolbar clicks.
         const jobs = Object.values(await api.storage.session.get(null));
-        const active = jobs.find((job) => job?.state === 'downloading' && job.tabId === tabId && job.paper?.sourceUrl === paper.sourceUrl);
+        const active = jobs.find((job) => ['downloading', 'handoff', 'sent', 'unconfirmed'].includes(job?.state) && job.tabId === tabId && job.paper?.sourceUrl === paper.sourceUrl);
         if (active) return active.id;
         const job = { id: crypto.randomUUID(), paper, candidates, tabId, index: 0, errors: [], state: 'new' };
         if (!candidates.length) { job.errors.push({ message: '未找到全文。可粘贴 PDF 地址或在全文链接上右键导入。' }); await recover(job); }
@@ -124,6 +151,7 @@ export function createImporter(api) {
       const id = name.slice(PREFIX.length);
       await serialize(id, async () => {
         const before = await load(id);
+        if (before?.state === 'sent') { await acknowledge(before); return; }
         await inspect(id);
         const job = await load(id);
         if (job?.state !== 'downloading' || job.downloadId !== before?.downloadId) return;
@@ -132,10 +160,22 @@ export function createImporter(api) {
       });
     },
     load,
+    async resend(id) {
+      return serialize(id, async () => {
+        const job = await load(id);
+        if (!job || !['sent', 'unconfirmed'].includes(job.state)) return;
+        await acknowledge(job);
+        if (job.state === 'accepted' || job.state === 'error') return;
+        const [item] = await api.downloads.search({ id: job.downloadId });
+        if (!item || downloadProblem(item) || item.state !== 'complete') throw new Error('下载文件已不存在，请回到原网页重新导入');
+        await api.tabs.create({ url: buildImportLink(job.paper, item.filename, job.id) });
+        job.state = 'sent'; job.sentAt = Date.now(); await save(job); await acknowledge(job);
+      });
+    },
     async retry(id, rawUrl) {
       return serialize(id, async () => {
         const job = await load(id);
-        if (!job || job.state === 'downloading' || job.state === 'sent' || job.state === 'handoff') return;
+        if (!job || job.state === 'downloading' || job.state === 'sent' || job.state === 'handoff' || job.state === 'accepted' || job.state === 'unconfirmed') return;
         const url = absoluteUrl(rawUrl, job.paper.sourceUrl);
         if (!url) throw new Error('请输入公开 HTTPS 全文地址');
         job.candidates = [{ url, automatic: false, label: '指定全文' }, ...job.candidates.filter((candidate) => candidate.url !== url).map((candidate) => ({ ...candidate, automatic: false }))];

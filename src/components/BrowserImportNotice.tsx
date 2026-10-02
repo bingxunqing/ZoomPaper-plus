@@ -48,7 +48,7 @@ export function BrowserImportNotice({ phase, title, message, sourceUrl, onClose 
           {message && <p className="mt-1 text-xs leading-5 text-muted-foreground">{message}</p>}
           {phase === "error" && sourceUrl && <button type="button" onClick={() => void openUrl(sourceUrl)} className="mt-2 rounded-lg border px-2 py-1 text-xs hover:bg-muted">打开原网页</button>}
         </div>
-        {!busy && (
+        {(
           <button type="button" onClick={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="关闭提示">
             <X className="size-4" />
           </button>

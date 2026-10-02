@@ -310,7 +310,7 @@ pub fn get_paper(db: State<'_, Db>, paper_id: String) -> Result<Paper, String> {
     get_paper_inner(&db, &paper_id)
 }
 
-fn get_paper_inner(db: &Db, paper_id: &str) -> Result<Paper, String> {
+pub(crate) fn get_paper_inner(db: &Db, paper_id: &str) -> Result<Paper, String> {
     let conn = db.conn();
     let sql = format!("{PAPER_SELECT} WHERE p.id = ?1 GROUP BY p.id");
     let mut paper = conn
@@ -460,10 +460,14 @@ pub fn get_paper_md(db: State<'_, Db>, paper_id: String) -> Result<String, Strin
 
 /// 导入论文：把源 PDF 复制进论文库并插入记录。
 #[tauri::command]
-pub fn import_pdf(db: State<'_, Db>, source_path: String) -> Result<Paper, String> {
+pub async fn import_pdf(app: tauri::AppHandle, source_path: String) -> Result<Paper, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+    let db = app.state::<Db>();
     let settings = Settings::load().map_err(|e| e.to_string())?;
     let library = settings.papers_dir().map_err(|e| e.to_string())?;
     import_pdf_inner(&db, &library, &source_path)
+    }).await.map_err(|e|e.to_string())?
 }
 
 /// 核心导入逻辑（library 由调用方决定，便于测试）。
@@ -490,6 +494,19 @@ fn import_pdf_inner_with_metadata(
     venue: Option<&str>,
     source_icon_url: Option<&str>,
 ) -> Result<Paper, String> {
+    // Serialize only the short local save, never parsing/network tasks.
+    static IMPORT_SAVE: OnceLock<Mutex<()>> = OnceLock::new();
+    let _save = IMPORT_SAVE.get_or_init(|| Mutex::new(())).lock().map_err(|e| e.to_string())?;
+    use sha2::{Digest, Sha256};
+    let mut source = std::fs::File::open(source_path).map_err(|e| e.to_string())?;
+    let mut hasher = Sha256::new(); let mut buffer = [0u8;65536];
+    loop { let n = source.read(&mut buffer).map_err(|e| e.to_string())?; if n == 0 { break; } hasher.update(&buffer[..n]); }
+    let hash = format!("{:x}",hasher.finalize());
+    let existing: Option<String> = db.conn().query_row("SELECT id FROM papers WHERE content_hash=?1 AND deleted_at IS NULL LIMIT 1",[&hash],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+    if let Some(id) = existing {
+        db.conn().execute("UPDATE papers SET source_url=COALESCE(source_url,?2),source_icon_url=COALESCE(source_icon_url,?3),venue=COALESCE(venue,?4) WHERE id=?1",params![id,source_url.and_then(|s|reqwest::Url::parse(s).ok()).filter(|u|u.scheme()=="https").map(|u|u.to_string()),source_icon_url.and_then(|s|reqwest::Url::parse(s).ok()).filter(|u|u.scheme()=="https").map(|u|u.to_string()),venue.and_then(normalize_venue)]).map_err(|e|e.to_string())?;
+        return get_paper_inner(db,&id);
+    }
     let id = Uuid::new_v4().to_string();
     let src = Path::new(source_path);
     let pdf_path = crate::fs::copy_pdf(src, library, &id).map_err(|e| e.to_string())?;
@@ -564,6 +581,7 @@ fn import_pdf_inner_with_metadata(
     )
     .map_err(|e| e.to_string())?;
 
+    conn.execute("UPDATE papers SET content_hash=?2 WHERE id=?1",params![paper.id,hash]).map_err(|e|e.to_string())?;
     Ok(paper)
 }
 
@@ -901,7 +919,28 @@ fn is_browser_import_path(path: &Path) -> bool {
 /// 导入由 Connector 通过浏览器会话下载的 PDF。
 /// 文件必须位于扩展专用下载目录，避免任意网页通过深链读取其他本地文件。
 #[tauri::command]
-pub fn import_browser_download(
+pub async fn import_browser_download(
+    app: tauri::AppHandle,
+    source_path: String,
+    suggested_title: Option<String>,
+    source_url: Option<String>,
+    github_url: Option<String>,
+    venue: Option<String>,
+    source_icon_url: Option<String>,
+    doi: Option<String>,
+    request_id: Option<String>,
+) -> Result<Paper, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+    let db = app.state::<Db>();
+    if let Some(paper) = crate::connector::existing_receipt(&db, request_id.as_deref())? { return Ok(paper); }
+    let result = import_browser_download_inner(db.clone(), source_path, suggested_title, source_url, github_url, venue, source_icon_url, doi);
+    crate::connector::record_receipt(&db, request_id.as_deref(), &result);
+    result
+    }).await.map_err(|e|e.to_string())?
+}
+
+fn import_browser_download_inner(
     db: State<'_, Db>,
     source_path: String,
     suggested_title: Option<String>,
@@ -958,12 +997,30 @@ pub fn import_browser_download(
             }
         }
     }
+    if let Ok(paper) = &result { if paper.parse_status != "ready" { crate::jobs::enqueue(&db, &paper.id, "parse")?; } }
     result
 }
 
 /// 从浏览器扩展传入的 HTTPS 地址下载 PDF，再复用本地导入流程。
 #[tauri::command]
 pub async fn import_pdf_url(
+    db: State<'_, Db>,
+    url: String,
+    suggested_title: Option<String>,
+    source_url: Option<String>,
+    github_url: Option<String>,
+    venue: Option<String>,
+    source_icon_url: Option<String>,
+    doi: Option<String>,
+    request_id: Option<String>,
+) -> Result<Paper, String> {
+    if let Some(paper) = crate::connector::existing_receipt(&db, request_id.as_deref())? { return Ok(paper); }
+    let result = import_pdf_url_inner(db.clone(), url, suggested_title, source_url, github_url, venue, source_icon_url, doi).await;
+    crate::connector::record_receipt(&db, request_id.as_deref(), &result);
+    result
+}
+
+async fn import_pdf_url_inner(
     db: State<'_, Db>,
     url: String,
     suggested_title: Option<String>,
@@ -1060,6 +1117,7 @@ pub async fn import_pdf_url(
             }
         }
     }
+    if let Ok(paper) = &result { if paper.parse_status != "ready" { crate::jobs::enqueue(&db, &paper.id, "parse")?; } }
     result
 }
 
@@ -1067,11 +1125,11 @@ pub async fn import_pdf_url(
 #[tauri::command]
 pub async fn refresh_paper_publication(db: State<'_, Db>, paper_id: String) -> Result<Paper, String> {
     // Old papers are enriched when previewed/read; network errors remain non-blocking for UI.
-    let _ = refresh_publication_inner(&db, &paper_id).await;
+    if get_paper_inner(&db, &paper_id)?.parse_status == "ready" { crate::jobs::ensure(&db, &paper_id, "doi")?; }
     get_paper_inner(&db, &paper_id)
 }
 
-async fn refresh_publication_inner(db: &Db, paper_id: &str) -> Result<(), String> {
+pub(crate) async fn refresh_publication_inner(db: &Db, paper_id: &str) -> Result<(), String> {
     let cache_dir = crate::settings::app_data_dir().map_err(|e| e.to_string())?.join("doi-cache");
     refresh_publication_with_cache(db, paper_id, &cache_dir).await
 }
@@ -1169,14 +1227,26 @@ pub async fn parse_pdf(
     paper_id: String,
     on_progress: tauri::ipc::Channel<crate::ai::mineru::ParseProgress>,
 ) -> Result<Paper, String> {
+    crate::jobs::enqueue(&db, &paper_id, "parse")?;
+    let _ = on_progress.send(crate::ai::mineru::ParseProgress { stage: "queued".into(), extracted_pages: None, total_pages: None });
+    get_paper_inner(&db, &paper_id)
+}
+
+pub(crate) async fn parse_background(
+    db: &Db, paper_id: &str,
+    progress: &(dyn Fn(crate::ai::mineru::ParseProgress) + Send + Sync),
+    batch_id: Option<&str>,
+    save_batch: &(dyn Fn(&str) -> Result<(), String> + Send + Sync),
+) -> Result<(), String> {
     // 标记为解析中（不放锁跨 await）
     {
         let conn = db.conn();
         conn.execute(
-            "UPDATE papers SET parse_status = 'parsing' WHERE id = ?1",
+            "UPDATE papers SET parse_status = 'parsing', parse_revision=parse_revision+1 WHERE id = ?1",
             [&paper_id],
         )
         .map_err(|e| e.to_string())?;
+        conn.execute("UPDATE background_jobs SET status=CASE status WHEN 'running' THEN 'canceling' ELSE 'canceled' END WHERE paper_id=?1 AND kind!='parse' AND status IN ('queued','running')",[paper_id]).map_err(|e|e.to_string())?;
     }
 
     let mut fail_guard = ParseFailGuard {
@@ -1203,9 +1273,7 @@ pub async fn parse_pdf(
     // 网络调用（await 期间不持有数据库锁）
     let client = MineruClient::new(api_key);
     let output = client
-        .extract_pdf(Path::new(&pdf_path), &|p| {
-            let _ = on_progress.send(p);
-        })
+        .extract_pdf_resumable(Path::new(&pdf_path), progress, batch_id, save_batch)
         .await
         .map_err(|e| format!("MinerU 解析失败: {e}"))?;
 
@@ -1232,33 +1300,9 @@ pub async fn parse_pdf(
         .map_err(|e| e.to_string())?;
     }
 
-    if let Err(error) = refresh_publication_inner(&db, &paper_id).await {
-        eprintln!("DOI 元数据补全失败 {paper_id}: {error}");
-    }
-
-    // Heavy inference runs on a blocking worker, never while holding the database lock.
-    let _ = on_progress.send(crate::ai::mineru::ParseProgress {
-        stage: "indexing".into(),
-        extracted_pages: None,
-        total_pages: None,
-    });
-    if let Err(e) = index_paper(db.clone(), paper_id.clone()).await {
-        eprintln!("索引论文 {paper_id} 失败: {e}");
-    }
-
-    let _ = on_progress.send(crate::ai::mineru::ParseProgress {
-        stage: "translating_metadata".into(),
-        extracted_pages: None,
-        total_pages: None,
-    });
-    // Metadata translation is useful but must never turn a successful PDF parse into a failure.
-    if let Err(error) = translate_paper_metadata_inner(&db, &paper_id).await {
-        eprintln!("翻译论文元数据 {paper_id} 失败: {error}");
-    }
-
     fail_guard.complete = true;
     drop(fail_guard);
-    get_paper(db, paper_id)
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -1286,7 +1330,7 @@ fn parse_metadata_translation(raw: &str) -> Result<MetadataTranslation, String> 
     Ok(translated)
 }
 
-async fn translate_paper_metadata_inner(db: &Db, paper_id: &str) -> Result<Paper, String> {
+pub(crate) async fn translate_paper_metadata_inner(db: &Db, paper_id: &str) -> Result<Paper, String> {
     let (title, abstract_text, title_zh, abstract_zh): (String, Option<String>, Option<String>, Option<String>) = {
         let conn = db.conn();
         conn.query_row(
@@ -1316,8 +1360,8 @@ async fn translate_paper_metadata_inner(db: &Db, paper_id: &str) -> Result<Paper
     {
         let conn = db.conn();
         conn.execute(
-            "UPDATE papers SET title_zh = ?2, abstract_zh = ?3 WHERE id = ?1",
-            params![paper_id, translated.title, translated.r#abstract],
+            "UPDATE papers SET title_zh = ?2, abstract_zh = ?3 WHERE id = ?1 AND title=?4 AND abstract IS ?5",
+            params![paper_id, translated.title, translated.r#abstract, title, abstract_text],
         ).map_err(|error| error.to_string())?;
     }
     get_paper_inner(db, paper_id)
@@ -1345,6 +1389,7 @@ fn move_paper_to_trash_inner(db: &Db, paper_id: &str) -> Result<(), String> {
     if changed == 0 {
         return Err("论文不存在".into());
     }
+    conn.execute("UPDATE background_jobs SET status=CASE status WHEN 'running' THEN 'canceling' ELSE 'canceled' END WHERE paper_id=?1 AND status IN ('queued','running')",[paper_id]).map_err(|e|e.to_string())?;
     Ok(())
 }
 
@@ -2317,13 +2362,22 @@ fn timeline_stats_inner(db: &Db, days: i64) -> Result<TimelineStats, String> {
 /// 手动重建某篇论文的向量索引。返回 chunk 数量。
 #[tauri::command]
 pub async fn index_paper(db: State<'_, Db>, paper_id: String) -> Result<usize, String> {
-    let md_path = get_paper_inner(&db, &paper_id)?.md_path;
+    index_background(&db, &paper_id, Arc::new(AtomicBool::new(false))).await
+}
+
+pub(crate) async fn index_background(db: &Db, paper_id: &str, canceled: Arc<AtomicBool>) -> Result<usize, String> {
+    let revision:i64=db.conn().query_row("SELECT parse_revision FROM papers WHERE id=?1",[paper_id],|r|r.get(0)).map_err(|e|e.to_string())?;
+    let md_path = get_paper_inner(db, paper_id)?.md_path;
     let (drafts, embeddings) =
         tokio::task::spawn_blocking(move || crate::rag::prepare_index(&md_path))
             .await
             .map_err(|e| e.to_string())?
             .map_err(|e| e.to_string())?;
+    if canceled.load(Ordering::Relaxed) { return Err("索引已取消".into()); }
     let conn = db.conn();
+    if canceled.load(Ordering::Relaxed) { return Err("索引已取消".into()); }
+    let current:i64=conn.query_row("SELECT parse_revision FROM papers WHERE id=?1",[paper_id],|r|r.get(0)).map_err(|e|e.to_string())?;
+    if current!=revision { return Err("正文已更新，已丢弃旧索引".into()); }
     crate::rag::insert_chunks(&conn, &paper_id, &drafts, &embeddings).map_err(|e| e.to_string())?;
     Ok(drafts.len())
 }
@@ -5147,6 +5201,30 @@ mod tests {
         fs::remove_dir_all(&tmp).ok();
     }
 
+    #[test]
+    fn identical_pdf_contents_reuse_paper_across_filenames() {
+        db::register_sqlite_vec();
+        let conn = Connection::open_in_memory().unwrap();
+        db::migrations::migrate(&conn).unwrap();
+        let db = db::Db::from_connection(conn);
+        let tmp = std::env::temp_dir().join(format!("dedup-{}", uuid::Uuid::new_v4()));
+        let library = tmp.join("papers");
+        fs::create_dir_all(&library).unwrap();
+        let first = tmp.join("first.pdf");
+        let second = tmp.join("renamed.pdf");
+        fs::write(&first, b"%PDF-1.4 same contents").unwrap();
+        fs::write(&second, b"%PDF-1.4 same contents").unwrap();
+        let a = import_pdf_inner(&db, &library, first.to_str().unwrap()).unwrap();
+        let b = import_pdf_inner(&db, &library, second.to_str().unwrap()).unwrap();
+        assert_eq!(a.id, b.id);
+        assert_eq!(db.conn().query_row("SELECT count(*) FROM papers", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+        // Deleting a copy must not prevent a subsequent fresh import.
+        db.conn().execute("UPDATE papers SET deleted_at=1 WHERE id=?1", [&a.id]).unwrap();
+        let c = import_pdf_inner(&db, &library, second.to_str().unwrap()).unwrap();
+        assert_ne!(a.id, c.id);
+        fs::remove_dir_all(tmp).ok();
+    }
+
     #[tokio::test]
     async fn doi_enrichment_preserves_title_status_and_specific_browser_venue() {
         db::register_sqlite_vec();
@@ -5163,6 +5241,7 @@ mod tests {
         let record = serde_json::json!({"fetched_at":chrono::Utc::now().timestamp(),"publication":{"doi":doi,"title":"A Useful Research Paper About Software","venue":"New Software Conference 2026","authors":"A Smith, B Wang"}});
         fs::write(cache.join(filename),record.to_string()).unwrap();
         for initial_venue in ["arXiv", "ICSE 2026"] {
+            fs::write(&src,format!("%PDF-1.4 {initial_venue}")).unwrap();
             let paper = import_pdf_inner_with_metadata(&db,&library,src.to_str().unwrap(),Some("My custom title"),None,None,Some(initial_venue),None).unwrap();
             fs::write(&paper.md_path, "# A Useful Research Paper About Software\nDOI: 10.1145/example\n## Abstract\nText").unwrap();
             db.conn().execute("UPDATE papers SET parse_status='ready', reading_status='read' WHERE id=?1",[&paper.id]).unwrap();
@@ -5409,7 +5488,7 @@ mod tests {
         let mut ids = Vec::new();
         for i in 0..2 {
             let src = tmp.join(format!("src-{i}.pdf"));
-            fs::write(&src, b"%PDF-1.4 test").unwrap();
+            fs::write(&src, format!("%PDF-1.4 paper {i}")).unwrap();
             let paper = import_pdf_inner(&db, &library, src.to_str().unwrap()).unwrap();
             ids.push(paper.id);
         }

@@ -271,6 +271,7 @@ export const importPdfUrl = (
   venue?: string | null,
   sourceIconUrl?: string | null,
   doi?: string | null,
+  requestId?: string | null,
 ) => invoke<Paper>("import_pdf_url", {
   url,
   suggestedTitle: suggestedTitle ?? null,
@@ -279,6 +280,7 @@ export const importPdfUrl = (
   venue: venue ?? null,
   sourceIconUrl: sourceIconUrl ?? null,
   doi: doi ?? null,
+  requestId: requestId ?? null,
 });
 export const importBrowserDownload = (
   sourcePath: string,
@@ -288,6 +290,7 @@ export const importBrowserDownload = (
   venue?: string | null,
   sourceIconUrl?: string | null,
   doi?: string | null,
+  requestId?: string | null,
 ) => invoke<Paper>("import_browser_download", {
   sourcePath,
   suggestedTitle: suggestedTitle ?? null,
@@ -296,6 +299,7 @@ export const importBrowserDownload = (
   venue: venue ?? null,
   sourceIconUrl: sourceIconUrl ?? null,
   doi: doi ?? null,
+  requestId: requestId ?? null,
 });
 export interface ParseProgress {
   /** uploading / pending / converting / running / downloading / indexing */
@@ -828,3 +832,13 @@ export const quizDelete = (quizId: string) =>
   invoke<void>("quiz_delete", { quizId });
 
 export const reindexAllPapers = () => invoke<[number, number]>("reindex_all_papers");
+
+export interface BackgroundJob {
+  id: string; paper_id: string; title: string; kind: "parse" | "index" | "translate" | "doi";
+  status: "queued" | "running" | "canceling" | "done" | "failed" | "canceled";
+  stage: string; completed_pages: number | null; total_pages: number | null;
+  error: string | null; created_at: number; updated_at: number;
+}
+export const listJobs = () => invoke<BackgroundJob[]>("list_jobs");
+export const cancelJob = (jobId: string) => invoke<void>("cancel_job", { jobId });
+export const retryJob = (jobId: string) => invoke<void>("retry_job", { jobId });
