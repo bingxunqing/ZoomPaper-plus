@@ -491,3 +491,220 @@ html.companion-window, html.companion-window body, html.companion-window #root {
   .companion-glass { background: #f5f8f2; backdrop-filter: none; }
   .dark .companion-glass { background: #263027; }
 }
+
+/* ===== 配色方案：<html data-scheme="xxx"> 全量覆盖色板 =====
+   参考 GitHub Primer：每个主题定义完整 functional token 集（文字/背景/边框/强调），
+   且中性色阶向主题色方向轻微偏移，界面才统一。:root[data-scheme] 提 specificity，
+   保证压过下方 :root 中的 zp-* 默认值。 */
+:root[data-scheme="mono"] {
+    --background: #fafafa;
+    --foreground: #171717;
+    --muted: #f5f5f5;
+    --muted-foreground: #737373;
+    --secondary: #f5f5f5;
+    --secondary-foreground: #262626;
+    --primary: #171717;
+    --primary-foreground: #fafafa;
+    --accent: #f0f0f0;
+    --accent-foreground: #171717;
+    --border: #e5e5e5;
+    --input: #ebebeb;
+    --ring: #a3a3a3;
+    --sidebar: #f0f0f0;
+    --sidebar-border: #e5e5e5;
+    --card: #ffffff;
+    --card-foreground: #171717;
+    --popover: #ffffff;
+    --popover-foreground: #171717;
+    --zp-trans-zh: oklch(0.45 0 0);
+}
+:root[data-scheme="red"] {
+    --background: oklch(0.978 0.004 27);
+    --foreground: oklch(0.29 0.03 27);
+    --muted: oklch(0.966 0.006 27);
+    --muted-foreground: oklch(0.50 0.025 27);
+    --secondary: oklch(0.966 0.006 27);
+    --secondary-foreground: oklch(0.30 0.03 27);
+    --primary: #c62828;
+    --primary-foreground: #ffffff;
+    --accent: oklch(0.945 0.018 27);
+    --accent-foreground: #8f1d1a;
+    --border: oklch(0.910 0.010 27);
+    --input: oklch(0.928 0.008 27);
+    --ring: oklch(0.72 0.05 27);
+    --sidebar: oklch(0.952 0.007 27);
+    --sidebar-border: oklch(0.910 0.010 27);
+    --zp-primary: oklch(0.25 0.025 27);
+    --zp-secondary: oklch(0.44 0.028 27);
+    --zp-tertiary: oklch(0.71 0.022 27);
+    --zp-quaternary: oklch(0.56 0.028 27);
+    --zp-border: oklch(0.905 0.010 27);
+    --zp-surface: oklch(0.981 0.004 27);
+    --zp-surface-hover: oklch(0.966 0.006 27);
+    --zp-surface-active: oklch(0.950 0.009 27);
+    --card: oklch(0.995 0.003 27);
+    --card-foreground: oklch(0.29 0.03 27);
+    --popover: oklch(0.995 0.003 27);
+    --popover-foreground: oklch(0.29 0.03 27);
+    --zp-trans-zh: oklch(0.48 0.10 27);
+}
+/* green 默认方案保留现有 Plus 色板。 */
+:root[data-scheme="blue"] {
+    --background: oklch(0.978 0.004 262);
+    --foreground: oklch(0.29 0.03 262);
+    --muted: oklch(0.966 0.006 262);
+    --muted-foreground: oklch(0.50 0.025 262);
+    --secondary: oklch(0.966 0.006 262);
+    --secondary-foreground: oklch(0.30 0.03 262);
+    --primary: #2563eb;
+    --primary-foreground: #ffffff;
+    --accent: oklch(0.945 0.018 262);
+    --accent-foreground: #1d4ed8;
+    --border: oklch(0.910 0.010 262);
+    --input: oklch(0.928 0.008 262);
+    --ring: oklch(0.72 0.05 262);
+    --sidebar: oklch(0.952 0.007 262);
+    --sidebar-border: oklch(0.910 0.010 262);
+    --zp-primary: oklch(0.25 0.025 262);
+    --zp-secondary: oklch(0.44 0.028 262);
+    --zp-tertiary: oklch(0.71 0.022 262);
+    --zp-quaternary: oklch(0.56 0.028 262);
+    --zp-border: oklch(0.905 0.010 262);
+    --zp-surface: oklch(0.981 0.004 262);
+    --zp-surface-hover: oklch(0.966 0.006 262);
+    --zp-surface-active: oklch(0.950 0.009 262);
+    --card: oklch(0.995 0.003 262);
+    --card-foreground: oklch(0.29 0.03 262);
+    --popover: oklch(0.995 0.003 262);
+    --popover-foreground: oklch(0.29 0.03 262);
+    --zp-trans-zh: oklch(0.48 0.10 262);
+}
+:root[data-scheme="purple"] {
+    --background: oklch(0.978 0.004 305);
+    --foreground: oklch(0.29 0.03 305);
+    --muted: oklch(0.966 0.006 305);
+    --muted-foreground: oklch(0.50 0.025 305);
+    --secondary: oklch(0.966 0.006 305);
+    --secondary-foreground: oklch(0.30 0.03 305);
+    --primary: #6d28d9;
+    --primary-foreground: #ffffff;
+    --accent: oklch(0.945 0.018 305);
+    --accent-foreground: #5b21b6;
+    --border: oklch(0.910 0.010 305);
+    --input: oklch(0.928 0.008 305);
+    --ring: oklch(0.72 0.05 305);
+    --sidebar: oklch(0.952 0.007 305);
+    --sidebar-border: oklch(0.910 0.010 305);
+    --zp-primary: oklch(0.25 0.025 305);
+    --zp-secondary: oklch(0.44 0.028 305);
+    --zp-tertiary: oklch(0.71 0.022 305);
+    --zp-quaternary: oklch(0.56 0.028 305);
+    --zp-border: oklch(0.905 0.010 305);
+    --zp-surface: oklch(0.981 0.004 305);
+    --zp-surface-hover: oklch(0.966 0.006 305);
+    --zp-surface-active: oklch(0.950 0.009 305);
+    --card: oklch(0.995 0.003 305);
+    --card-foreground: oklch(0.29 0.03 305);
+    --popover: oklch(0.995 0.003 305);
+    --popover-foreground: oklch(0.29 0.03 305);
+    --zp-trans-zh: oklch(0.48 0.10 305);
+}
+/* 黄：主色用深琥珀（浅黄配白字对比度不足） */
+:root[data-scheme="yellow"] {
+    --background: oklch(0.978 0.005 85);
+    --foreground: oklch(0.29 0.03 85);
+    --muted: oklch(0.966 0.008 85);
+    --muted-foreground: oklch(0.50 0.025 85);
+    --secondary: oklch(0.966 0.008 85);
+    --secondary-foreground: oklch(0.30 0.03 85);
+    --primary: #a16207;
+    --primary-foreground: #ffffff;
+    --accent: oklch(0.945 0.025 85);
+    --accent-foreground: #713f12;
+    --border: oklch(0.910 0.012 85);
+    --input: oklch(0.928 0.010 85);
+    --ring: oklch(0.72 0.06 85);
+    --sidebar: oklch(0.952 0.010 85);
+    --sidebar-border: oklch(0.910 0.012 85);
+    --zp-primary: oklch(0.25 0.025 85);
+    --zp-secondary: oklch(0.44 0.028 85);
+    --zp-tertiary: oklch(0.71 0.022 85);
+    --zp-quaternary: oklch(0.56 0.028 85);
+    --zp-border: oklch(0.905 0.012 85);
+    --zp-surface: oklch(0.981 0.006 85);
+    --zp-surface-hover: oklch(0.966 0.009 85);
+    --zp-surface-active: oklch(0.950 0.012 85);
+    --card: oklch(0.995 0.004 85);
+    --card-foreground: oklch(0.29 0.03 85);
+    --popover: oklch(0.995 0.004 85);
+    --popover-foreground: oklch(0.29 0.03 85);
+    --zp-trans-zh: oklch(0.48 0.10 85);
+}
+/* 自定义：--primary 与 --primary-foreground 由 JS 内联注入，其余按 color-mix 派生 */
+:root[data-scheme="custom"] {
+    --accent: color-mix(in oklch, var(--primary) 10%, #ffffff);
+    --accent-foreground: color-mix(in oklch, var(--primary) 55%, #000000);
+    --background: color-mix(in oklch, var(--primary) 2.5%, #fdfdfd);
+    --foreground: color-mix(in oklch, var(--primary) 20%, #26262a);
+    --muted: color-mix(in oklch, var(--primary) 4%, #f7f7f7);
+    --muted-foreground: color-mix(in oklch, var(--primary) 22%, #6b6f75);
+    --secondary: color-mix(in oklch, var(--primary) 4%, #f5f5f5);
+    --secondary-foreground: color-mix(in oklch, var(--primary) 25%, #333333);
+    --border: color-mix(in oklch, var(--primary) 9%, #e6e6e6);
+    --input: color-mix(in oklch, var(--primary) 8%, #ececec);
+    --ring: color-mix(in oklch, var(--primary) 35%, #a8a8a8);
+    --sidebar: color-mix(in oklch, var(--primary) 4%, #f2f2f2);
+    --sidebar-border: color-mix(in oklch, var(--primary) 9%, #e6e6e6);
+    --zp-primary: color-mix(in oklch, var(--primary) 22%, #1a1a1a);
+    --zp-secondary: color-mix(in oklch, var(--primary) 20%, #525252);
+    --zp-tertiary: color-mix(in oklch, var(--primary) 16%, #a3a3a3);
+    --zp-quaternary: color-mix(in oklch, var(--primary) 20%, #737373);
+    --zp-border: color-mix(in oklch, var(--primary) 9%, #e5e5e5);
+    --zp-surface: color-mix(in oklch, var(--primary) 3%, #fafafa);
+    --zp-surface-hover: color-mix(in oklch, var(--primary) 5%, #f5f5f5);
+    --zp-surface-active: color-mix(in oklch, var(--primary) 8%, #f0f0f0);
+    --card: color-mix(in oklch, var(--primary) 2%, #ffffff);
+    --card-foreground: color-mix(in oklch, var(--primary) 20%, #26262a);
+    --popover: color-mix(in oklch, var(--primary) 2%, #ffffff);
+    --popover-foreground: color-mix(in oklch, var(--primary) 20%, #26262a);
+    --zp-trans-zh: color-mix(in oklch, var(--primary) 70%, #1a1a1a);
+}
+
+:root[data-scheme="dark"] {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.19 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.19 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+}
+
+
+/* Preserve the default Plus sidebar colors; colored presets use their own surfaces. */
+:root[data-scheme]:not([data-scheme="green"]) .theme-library-sidebar { background: var(--sidebar); }
+:root[data-scheme]:not([data-scheme="green"]) .theme-ask-nav { background: var(--accent); }

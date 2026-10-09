@@ -133,12 +133,12 @@ export const PaperWorkspace = forwardRef<WorkspaceHandle, { active: boolean; job
   return <section className="relative min-h-0 min-w-0 flex-1 flex-col" style={{ display: active ? 'flex' : 'none' }} aria-label="论文工作区">
     <div className="relative flex h-11 shrink-0 items-end gap-1 border-b border-zp-border bg-zp-subtle px-3">
       <div role="tablist" aria-label="打开的论文" className="flex min-w-0 flex-1 items-end gap-1">
-        <button role="tab" aria-selected={state.active === 'library'} onClick={() => select('library')} className={`flex h-9 w-[104px] shrink-0 items-center justify-center gap-2 rounded-t-lg text-sm ${state.active === 'library' ? 'bg-white text-zp-primary dark:bg-zp-surface' : 'text-zp-tertiary hover:bg-zp-surface-hover'}`}><LibraryIcon size={15} />论文库</button>
+        <button role="tab" aria-selected={state.active === 'library'} onClick={() => select('library')} className={`flex h-9 w-[104px] shrink-0 items-center justify-center gap-2 rounded-t-lg text-sm ${state.active === 'library' ? 'bg-card text-zp-primary dark:bg-zp-surface' : 'text-zp-tertiary hover:bg-zp-surface-hover'}`}><LibraryIcon size={15} />论文库</button>
         <div ref={tabSpace} className="flex min-w-0 flex-1 items-end overflow-hidden">
           {layout.visible.map(id => <div key={id} style={{ width: layout.widths[id] }} draggable onDragStart={event => event.dataTransfer.setData('text/plain', id)} onDragOver={event => event.preventDefault()} onDrop={event => {
             const from = event.dataTransfer.getData('text/plain'); if (!state.tabs.includes(from) || from === id) return;
             setState(current => { const tabs = current.tabs.filter(tab => tab !== from); tabs.splice(tabs.indexOf(id), 0, from); return { ...current, tabs }; });
-          }} onAuxClick={event => { if (event.button === 1) { event.preventDefault(); close([id]); } }} className={`group flex h-9 min-w-0 shrink-0 items-center rounded-t-lg px-2 ${state.active === id ? 'bg-white dark:bg-zp-surface' : 'text-zp-tertiary hover:bg-zp-surface-hover'}`}>
+          }} onAuxClick={event => { if (event.button === 1) { event.preventDefault(); close([id]); } }} className={`group flex h-9 min-w-0 shrink-0 items-center rounded-t-lg px-2 ${state.active === id ? 'bg-card dark:bg-zp-surface' : 'text-zp-tertiary hover:bg-zp-surface-hover'}`}>
             <button role="tab" aria-selected={state.active === id} title={shownTitle(id)} onClick={() => select(id)} className="flex min-w-0 flex-1 items-center gap-2 text-sm"><BookOpen size={14} className="shrink-0" /><span className="truncate">{shownTitle(id)}</span></button>
             <IconTooltip label="关闭论文标签"><button aria-label={`关闭 ${shownTitle(id)}`} onClick={() => close([id])} className={`ml-1 shrink-0 rounded p-1 text-zp-tertiary hover:bg-zp-subtle ${state.active === id ? '' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'}`}><X size={13} /></button></IconTooltip>
           </div>)}
@@ -148,7 +148,7 @@ export const PaperWorkspace = forwardRef<WorkspaceHandle, { active: boolean; job
         <IconTooltip label="全部论文标签"><button ref={listButton} aria-label="全部论文标签" aria-expanded={listOpen} onClick={() => { setQuery(''); setListOpen(value => !value); }} className="flex h-8 items-center gap-1 rounded px-2 text-zp-tertiary hover:bg-zp-surface-hover"><ChevronDown size={16} /><span className="text-xs tabular-nums">{state.tabs.length}</span></button></IconTooltip>
         <IconTooltip label="关闭全部论文标签"><button aria-label="关闭全部论文标签" disabled={!state.tabs.length} onClick={() => close([...state.tabs])} className="rounded p-2 text-zp-tertiary hover:bg-zp-surface-hover disabled:opacity-30"><X size={15} /></button></IconTooltip>
       </div>
-      {listOpen && <div ref={popup} role="dialog" aria-label="打开的论文列表" className="absolute right-3 top-11 z-50 w-80 max-w-[calc(100vw-90px)] rounded-xl border border-zp-border bg-white p-2 shadow-lg dark:bg-zp-surface">
+      {listOpen && <div ref={popup} role="dialog" aria-label="打开的论文列表" className="absolute right-3 top-11 z-50 w-80 max-w-[calc(100vw-90px)] rounded-xl border border-zp-border bg-card p-2 shadow-lg dark:bg-zp-surface">
         <label className="mb-2 flex items-center gap-2 rounded-lg border border-zp-border px-3 py-2 text-zp-tertiary"><Search size={15} /><input autoFocus aria-label="搜索打开的论文" value={query} onChange={event => setQuery(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm text-zp-primary outline-none" /></label>
         <div className="max-h-80 overflow-y-auto">{state.tabs.filter(id => `${titles[id]??""} ${papersById[id]?.title_zh??""}`.toLowerCase().includes(query.toLowerCase())).map(id => <div key={id} className={`flex items-center rounded-md ${state.active === id ? 'bg-zp-subtle' : ''}`}>
           <button onClick={() => select(id)} title={shownTitle(id)} className="min-w-0 flex-1 truncate px-2 py-2 text-left text-sm hover:bg-zp-subtle">{shownTitle(id)}</button>
@@ -158,6 +158,6 @@ export const PaperWorkspace = forwardRef<WorkspaceHandle, { active: boolean; job
     </div>
     <div className="min-h-0 flex-1" style={{ display: state.active === 'library' ? 'flex' : 'none' }}><MemoLibrary refreshSignal={refreshSignal} jobs={jobs} onOpenPaper={openForeground} onOpenBackground={openBackground} onOpenPapers={openMany} /></div>
     {readers.map(id => <ReaderPane key={id} id={id} active={active && state.active === id} page={pages[id]} refreshSignal={refreshSignal} onBack={back} onBusy={updateBusy} onTitle={updateTitle}/>)}
-    {undo && <div role="status" className="absolute bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-4 whitespace-nowrap rounded-xl border border-zp-border bg-white px-4 py-3 text-sm shadow-md dark:bg-zp-surface">已关闭 {undo.count} 个标签<button onClick={undoClose} className="font-medium text-zp-primary hover:underline">撤销</button></div>}
+    {undo && <div role="status" className="absolute bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-4 whitespace-nowrap rounded-xl border border-zp-border bg-card px-4 py-3 text-sm shadow-md dark:bg-zp-surface">已关闭 {undo.count} 个标签<button onClick={undoClose} className="font-medium text-zp-primary hover:underline">撤销</button></div>}
   </section>;
 });

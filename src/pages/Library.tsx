@@ -676,7 +676,7 @@ export function Library({ onOpenPaper, onOpenPapers, refreshSignal = 0, jobs = [
           <button
             type="button"
             onClick={() => onOpenPaper(continuePaper.id)}
-            className="pressable mx-4 mt-3 flex items-center justify-between rounded-xl border border-zp-border bg-white px-4 py-2.5 text-left shadow-sm transition-colors hover:bg-zp-surface-hover dark:bg-zp-surface"
+            className="pressable mx-4 mt-3 flex items-center justify-between rounded-xl border border-zp-border bg-card px-4 py-2.5 text-left shadow-sm transition-colors hover:bg-zp-surface-hover dark:bg-zp-surface"
           >
             <span className="min-w-0">
               <span className="block text-[11px] font-medium tracking-wide text-zp-quaternary">继续上次阅读</span>
@@ -703,7 +703,7 @@ export function Library({ onOpenPaper, onOpenPapers, refreshSignal = 0, jobs = [
         </AnimatePresence>
 
         <div
-          className={`min-h-0 flex-1 overflow-auto ${layout === "grid" ? "px-4 py-4" : "bg-white dark:bg-zp-surface"}`}
+          className={`min-h-0 flex-1 overflow-auto ${layout === "grid" ? "px-4 py-4" : "bg-card dark:bg-zp-surface"}`}
           onClick={(event) => {
             const target = event.target as HTMLElement;
             if (target.closest("[data-paper-item], button, a, input, textarea, select, [role='menuitem']")) return;
@@ -722,7 +722,7 @@ export function Library({ onOpenPaper, onOpenPapers, refreshSignal = 0, jobs = [
             </div>
           )}
           {notice && !error && (
-            <div className="m-3 rounded-md border border-zp-border bg-white px-4 py-3 text-sm text-zp-secondary dark:bg-zp-surface">
+            <div className="m-3 rounded-md border border-zp-border bg-card px-4 py-3 text-sm text-zp-secondary dark:bg-zp-surface">
               <span>{notice}</span><button type="button" aria-label="关闭提示" className="float-right ml-3" onClick={() => setNotice(null)}>×</button>
             </div>
           )}

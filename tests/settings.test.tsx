@@ -29,3 +29,16 @@ it('chooses a path without migration, confirms only after committing, and restor
 it('shows format errors from backup validation',async()=>{
  render(<SettingsPage/>);await screen.findByLabelText('统一标题语言');fireEvent.click(screen.getByRole('button',{name:'数据与存储'}));mocks.folder.mockResolvedValueOnce('/bad-backup');mocks.invoke.mockImplementationOnce(async()=>{throw new Error('请选择 ZoomPaper 导出的备份文件夹');});fireEvent.click(screen.getByRole('button',{name:'选择'}));await waitFor(()=>expect(screen.getByRole('alert').textContent).toContain('备份文件夹'));
 });
+
+it('integrates theme selection into existing settings and persists a custom color',async()=>{
+ render(<SettingsPage/>);const trigger=await screen.findByLabelText('主题配色');fireEvent.click(trigger);
+ const dark=await screen.findByRole('option',{name:'深色'});fireEvent.pointerDown(dark);fireEvent.click(dark);
+ expect(document.documentElement.classList.contains('dark')).toBe(true);
+ await waitFor(()=>expect(screen.queryByRole('option',{name:'自定义'})).toBeNull());
+ fireEvent.click(screen.getByLabelText('主题配色'));const custom=await screen.findByRole('option',{name:'自定义'});fireEvent.pointerDown(custom);fireEvent.click(custom);
+ fireEvent.change(await screen.findByLabelText('自定义主色'),{target:{value:'#123456'}});
+ expect(JSON.parse(localStorage.getItem('zoompaper.theme')!).customColor).toBe('#123456');
+ expect(document.documentElement.classList.contains('dark')).toBe(false);
+ fireEvent.change(screen.getByLabelText('搜索设置'),{target:{value:'主题'}});expect(screen.getByLabelText('主题配色')).toBeTruthy();
+ expect(screen.queryByText('高级主题（JSON）')).toBeNull();
+});

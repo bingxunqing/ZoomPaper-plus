@@ -4,6 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ZoomPaper Plus</title>
+    <script>
+      (() => {
+        try {
+          const raw = localStorage.getItem('zoompaper.theme');
+          const value = raw?.startsWith('{') ? JSON.parse(raw) : {scheme: raw};
+          const scheme = ['mono','red','green','blue','purple','yellow','dark','custom'].includes(value?.scheme) ? value.scheme : 'green';
+          const root = document.documentElement;
+          root.dataset.scheme = scheme;
+          root.classList.toggle('dark', scheme === 'dark');
+          if (scheme === 'custom') {
+            const color = /^#[0-9a-f]{6}$/i.test(value.customColor) ? value.customColor : '#27665b';
+            const n = parseInt(color.slice(1), 16);
+            const linear = v => { const c = v / 255; return c <= .03928 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4; };
+            const light = .2126 * linear(n >> 16) + .7152 * linear((n >> 8) & 255) + .0722 * linear(n & 255);
+            root.style.setProperty('--primary', color);
+            root.style.setProperty('--primary-foreground', light > .4 ? '#1a1a1a' : '#ffffff');
+          }
+        } catch { /* Invalid cached theme falls back to the existing appearance. */ }
+      })();
+    </script>
   </head>
 
   <body>
