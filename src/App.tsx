@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
-import { Library } from "@/pages/Library";
-import { Reader } from "@/pages/Reader";
+
+import { PaperWorkspace, type WorkspaceHandle } from "@/components/PaperWorkspace";
 import { SettingsPage } from "@/pages/Settings";
 import { SearchPage } from "@/pages/SearchPage";
 import { AskPage } from "@/pages/AskPage";
@@ -23,6 +23,7 @@ type View =
   | { name: "help" };
 
 function App() {
+  const workspace = useRef<WorkspaceHandle>(null);
   const [view, setView] = useState<View>({ name: "library" });
   const [libraryRefreshSignal, setLibraryRefreshSignal] = useState(0);
   const [browserImport, setBrowserImport] = useState<{
@@ -117,9 +118,9 @@ function App() {
     };
   }, []);
 
-  const openPaper = (paperId: string, pageIdx?: number) =>
-    setView({ name: "reader", paperId, pageIdx });
-  // 阅读页归属「论文库」导航高亮
+  const openPaper = (paperId: string, pageIdx?: number) => {
+    setView({ name: "library" }); workspace.current?.open(paperId, pageIdx);
+  };
   const activeNav: NavItem = view.name === "reader" ? "library" : view.name;
 
   return (
@@ -130,11 +131,8 @@ function App() {
         onSelect={(name) => setView({ name } as View)}
       />
 
-      {view.name === "library" ? (
-        /* 论文库工作台：文件夹侧栏 + 内容区由 Library 自行组织 */
-        <Library onOpenPaper={openPaper} refreshSignal={libraryRefreshSignal} jobs={jobs} />
-      ) : (
-        /* 其余页面：主内容区自行控制滚动 */
+      <PaperWorkspace ref={workspace} active={view.name === "library"} jobs={jobs} refreshSignal={libraryRefreshSignal} onTitleChange={setReadingTitle} />
+      {view.name !== "library" && (
         <main className={`flex min-h-0 min-w-0 flex-1 flex-col ${view.name === "ask" ? "bg-white dark:bg-[#191919]" : "p-6"}`}>
           <motion.div
             key={view.name + ("paperId" in view ? view.paperId : "")}
@@ -146,22 +144,13 @@ function App() {
             {view.name === "search" && <SearchPage onOpenPaper={openPaper} />}
             {view.name === "timeline" && <TimelinePage onOpenPaper={openPaper} />}
             {view.name === "ask" && <AskPage onOpenPaper={openPaper} />}
-            {view.name === "reader" && (
-              <Reader
-                paperId={view.paperId}
-                refreshSignal={libraryRefreshSignal}
-                onTitleChange={setReadingTitle}
-                initialPageIdx={view.pageIdx}
-                onBack={() => setView({ name: "library" })}
-              />
-            )}
             {view.name === "settings" && <SettingsPage />}
             {view.name === "help" && <HelpPage />}
           </motion.div>
         </main>
       )}
-      <CompanionBridge jobs={jobs} notice={browserImport} readingTitle={view.name === "reader" ? readingTitle : null}
-        onDismiss={() => setBrowserImport(null)} onOpenPaper={openPaper} />
+      <CompanionBridge jobs={jobs} notice={browserImport} readingTitle={view.name === "library" ? readingTitle : null}
+        onDismiss={() => setBrowserImport(null)} onOpenPaper={openPaper} onContinue={() => { setView({ name: "library" }); workspace.current?.resume(); }} onImport={() => { window.dispatchEvent(new Event("zoompaper:import")); }} />
     </div>
   );
 }

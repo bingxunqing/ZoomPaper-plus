@@ -63,11 +63,13 @@ type Renaming = { kind: "folder"; id: string } | { kind: "paper"; id: string };
 
 interface Props {
   onOpenPaper: (id: string) => void;
+  onOpenBackground?: (id: string) => void;
+  onOpenPapers?: (ids: string[]) => void;
   refreshSignal?: number;
   jobs?: BackgroundJob[];
 }
 
-export function Library({ onOpenPaper, refreshSignal = 0, jobs = [] }: Props) {
+export function Library({ onOpenPaper, onOpenPapers, refreshSignal = 0, jobs = [] }: Props) {
   const [papers, setPapers] = useState<Paper[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [plans, setPlans] = useState<ReadingPlan[]>([]);
@@ -352,6 +354,12 @@ export function Library({ onOpenPaper, refreshSignal = 0, jobs = [] }: Props) {
   }
 
   // ---------- 导入 / 解析 / 删除 ----------
+
+  useEffect(() => {
+    const importPaper = () => { void handleImport(); };
+    window.addEventListener("zoompaper:import", importPaper);
+    return () => window.removeEventListener("zoompaper:import", importPaper);
+  }, []);
 
   async function handleImport() {
     const files = await open({
@@ -682,6 +690,7 @@ export function Library({ onOpenPaper, refreshSignal = 0, jobs = [] }: Props) {
           {selectedSize > 0 && (
             <BulkBar
               count={selectedSize}
+              onOpen={onOpenPapers && view.type !== "trash" ? () => { onOpenPapers([...selected]); exitSelection(); } : undefined}
               onMarkRead={() => void handleBulkSetStatus("read")}
               onSetStatus={(s) => void handleBulkSetStatus(s)}
               onPickFolder={handleBulkPickFolder}

@@ -32,7 +32,7 @@ const guideSections: GuideSection[] = [
     id: "library", title: "论文库", icon: Library,
     items: [
       { id: "import", title: "导入论文", icon: Upload, summary: "从本机加入一个或多个 PDF。", steps: ["点击论文库右上角的上传图标。", "选择一个或多个 PDF。", "导入后等待解析完成。"] },
-      { id: "open", title: "打开论文", icon: BookOpen, summary: "进入论文阅读工作区。", steps: ["双击论文行或卡片。", "也可以右键论文，选择打开。"] },
+      { id: "open", title: "打开论文", icon: BookOpen, summary: "进入论文阅读工作区。", steps: ["双击论文行或卡片。", "也可以右键论文，选择打开。", "顶部标签切换论文，固定论文库标签返回列表。", "切换其他板块后，原来的论文保持打开。"] },
       { id: "star", title: "收藏", icon: Star, summary: "把常用论文集中到左侧收藏。", steps: ["选中一篇论文。", "点击右侧信息栏中的星标图标。", "再次点击可取消收藏。"] },
       { id: "folder", title: "添加到文件夹", icon: FolderPlus, summary: "一篇论文可以属于多个文件夹。", steps: ["右键论文，或长按论文进入多选。", "点击文件夹图标。", "勾选目标文件夹。", "点击“完成”应用更改。"] },
       { id: "status", title: "阅读状态", icon: CircleDot, summary: "标记未读、在读或已读。", steps: ["右键论文，或在多选工具栏点击状态图标。", "选择未读、在读或已读。", "可用论文库顶部筛选器查看对应状态。"] },
@@ -48,6 +48,8 @@ const guideSections: GuideSection[] = [
   {
     id: "reader", title: "论文阅读", icon: BookOpen,
     items: [
+      { id: "workspace", title: "多篇论文标签", icon: BookOpen, summary: "保留论文工作区并快速切换。", steps: ["打开论文后点击顶部标签切换。", "多选工具栏的打开图标可同时添加多篇论文。", "拖动标签排序，点击 × 或中键关闭。", "Ctrl/Cmd+Shift+T 恢复刚关闭的标签。"] },
+      { id: "companion", title: "阅读伙伴", icon: Bot, summary: "查看任务并快速导入或继续阅读。", steps: ["点击猫头鹰，选择导入论文或继续阅读。", "按住角色拖动可移动到桌面其他位置。", "任务气泡点击展开详情。", "角色右上角 × 隐藏，在设置中重新打开阅读伙伴开关。"] },
       { id: "pdf", title: "PDF 阅读", icon: FileText, summary: "阅读原始 PDF 并记录进度。", steps: ["从论文库打开论文。", "使用滚轮阅读，阅读时长和最后位置会自动记录。"] },
       { id: "toc", title: "目录与跳页", icon: TableOfContents, summary: "按章节或页码定位内容。", steps: ["点击阅读器中的目录图标。", "选择章节，或输入页码跳转。"] },
       { id: "zoom", title: "缩放页面", icon: ZoomIn, summary: "调整 PDF 显示大小。", steps: ["点击阅读器的缩放按钮。", "选择放大、缩小或适合页面。"] },

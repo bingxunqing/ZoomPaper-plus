@@ -1,6 +1,7 @@
 //! ZoomPaper Plus 桌面端入口：Tauri 应用装配。
 
 mod agent;
+mod companion;
 mod jobs;
 mod connector;
 mod ai;
@@ -56,6 +57,7 @@ pub fn run() {
                     let _ = companion.set_position(tauri::PhysicalPosition::new(position.x + size.width as i32 - (360.0 * scale) as i32, position.y + (60.0 * scale) as i32));
                 }
             }
+            companion::start(app.handle().clone());
             jobs::start(app.handle().clone());
             connector::start(app.handle().clone());
             #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
@@ -73,6 +75,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            companion::companion_regions,
             commands::get_settings,
             commands::update_settings,
             commands::add_provider,

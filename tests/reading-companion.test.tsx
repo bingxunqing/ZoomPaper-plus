@@ -55,3 +55,38 @@ it('dismisses completed import after five seconds despite callback rerenders', (
   expect(dismiss).toHaveBeenCalledOnce();
   vi.useRealTimers();
 });
+
+it('offers only import and resume actions after activating the pet', () => {
+  const onImport = vi.fn(), onContinue = vi.fn(), hide = vi.fn();
+  render(<ReadingCompanion jobs={[]} notice={null} readingTitle={null} onDismiss={vi.fn()} onOpenPaper={vi.fn()} onImport={onImport} onContinue={onContinue} onHide={hide} />);
+  expect(screen.queryByLabelText('导入论文')).toBeNull();
+  fireEvent.keyDown(screen.getByLabelText('阅读伙伴'), {key:'Enter'});
+  fireEvent.click(screen.getByLabelText('导入论文'));
+  expect(onImport).toHaveBeenCalledOnce();
+  expect(screen.queryByLabelText('继续阅读')).toBeNull();
+  fireEvent.keyDown(screen.getByLabelText('阅读伙伴'), {key:'Enter'});
+  fireEvent.click(screen.getByLabelText('继续阅读'));
+  expect(onContinue).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByLabelText('隐藏阅读伙伴'));
+  expect(hide).toHaveBeenCalledOnce();
+});
+
+it('starts native dragging only beyond six pixels and never activates actions after a drag', () => {
+  const original = window.PointerEvent;
+  window.PointerEvent = MouseEvent as typeof PointerEvent;
+  const drag = vi.fn();
+  render(<ReadingCompanion jobs={[]} notice={null} readingTitle={null} onDismiss={vi.fn()} onOpenPaper={vi.fn()} onNativeDrag={drag} />);
+  const pet = screen.getByLabelText('阅读伙伴');
+  fireEvent.pointerDown(pet, {button:0,screenX:10,screenY:10});
+  expect(drag).not.toHaveBeenCalled();
+  fireEvent.pointerMove(pet, {screenX:16,screenY:10});
+  expect(drag).not.toHaveBeenCalled();
+  fireEvent.pointerMove(pet, {screenX:17,screenY:10});
+  expect(drag).toHaveBeenCalledOnce();
+  fireEvent.pointerUp(pet);
+  expect(screen.queryByLabelText('导入论文')).toBeNull();
+  fireEvent.pointerDown(pet, {button:0,screenX:10,screenY:10});
+  fireEvent.pointerUp(pet);
+  expect(screen.getByLabelText('导入论文')).toBeTruthy();
+  window.PointerEvent = original;
+});

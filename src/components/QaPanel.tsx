@@ -50,6 +50,7 @@ export interface QaPanelHandle {
 
 interface Props {
   paperId: string;
+  onBusyChange?: (busy: boolean) => void;
   /** 引用点击后 PDF 内跳页（0-based） */
   onJumpPage?: (pageIdx: number) => void;
   /** 引用区「跳转到原文」：跳回 PDF 选中段落所在位置 */
@@ -68,7 +69,7 @@ const MAX_SELECTIONS = 5;
  * 注：费曼学习法已提升为左列独立视图（Reader 的 Tabs），此处仅保留普通问答。
  */
 export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
-  { paperId, onJumpPage, onJumpToSelection },
+  { paperId, onJumpPage, onJumpToSelection, onBusyChange },
   ref,
 ) {
   const [tab, setTab] = useState<"qa" | "quiz">(() => localStorage.getItem(`zoompaper.qaTab.${paperId}`) === "quiz" ? "quiz" : "qa");
@@ -97,6 +98,7 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
   const [deleting, setDeleting] = useState(false);
   /** QaChat 上报的发送状态（生成中禁用会话切换） */
   const [sending, setSending] = useState(false);
+  useEffect(() => { onBusyChange?.(sending); }, [sending, onBusyChange]);
 
   useImperativeHandle(ref, () => ({
     acceptSelection(

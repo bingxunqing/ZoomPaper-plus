@@ -1,3 +1,5 @@
+import { companionEnabled, setCompanionEnabled } from "@/lib/companionPreferences";
+import { Switch } from "@/components/ui/switch";
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
@@ -30,6 +32,8 @@ import {
 } from "@/components/ui/dialog";
 
 export function SettingsPage() {
+  const [petEnabled, setPetEnabled] = useState(companionEnabled);
+  useEffect(() => { const update = () => setPetEnabled(companionEnabled()); window.addEventListener("companion-preference", update); return () => window.removeEventListener("companion-preference", update); }, []);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -179,6 +183,12 @@ export function SettingsPage() {
         </div>
       )}
 
+      <Card>
+        <CardContent className="flex items-center justify-between p-5">
+          <span className="text-sm font-medium">阅读伙伴</span>
+          <Switch aria-label="显示阅读伙伴" checked={petEnabled} onCheckedChange={setCompanionEnabled} className="data-[state=checked]:bg-emerald-600 data-[state=unchecked]:bg-zinc-300" />
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
           <div>

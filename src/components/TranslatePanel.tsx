@@ -81,7 +81,8 @@ function labelFor(docKey: string): string {
  * （纯英 trans:en、纯中 trans:zh、对照逐段 trans:bi:<i> 等），持久化到 translation_annotations.json。
  */
 export function TranslatePanel({ paperId, onAskSelection }: Props) {
-  const [mode, setMode] = useState<Mode>("en");
+  const [mode, setMode] = useState<Mode>(() => { const saved = localStorage.getItem(`zoompaper.translationMode.${paperId}`); return saved === "zh" || saved === "bi" ? saved : "en"; });
+  useEffect(() => { localStorage.setItem(`zoompaper.translationMode.${paperId}`, mode); }, [mode, paperId]);
   const [enMd, setEnMd] = useState<string | null>(null);
   const [chunks, setChunks] = useState<TranslationChunk[] | null>(null);
   const [loadingEn, setLoadingEn] = useState(false);
