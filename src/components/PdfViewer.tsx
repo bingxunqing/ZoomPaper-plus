@@ -95,6 +95,7 @@ export interface PdfViewerHandle {
 }
 
 interface Props {
+  onReachEnd?: () => void;
   pdfPath: string;
   active?: boolean;
   /** 论文 id：高亮/笔记按论文持久化到 annotations.json */
@@ -258,7 +259,7 @@ async function resolveDestination(
  * - 原生带 outline 的 PDF 显示目录侧栏，点击跳页。
  */
 export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
-  { pdfPath, paperId, initialPageIdx, onAskSelection, active = true },
+  { pdfPath, paperId, onReachEnd, initialPageIdx, onAskSelection, active = true },
   ref,
 ) {
   const [doc, setDoc] = useState<pdfjs.PDFDocumentProxy | null>(null);
@@ -1116,11 +1117,12 @@ export const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   useImperativeHandle(ref, () => ({ jumpToPage, jumpToSelection }));
 
   useEffect(() => {
+    if (doc && restoredPage.current && active && currentPage === doc.numPages) onReachEnd?.();
     setPageInput(String(currentPage));
     if (doc && restoredPage.current) {
       try { localStorage.setItem(`zoompaper:page:${paperId}`, String(currentPage - 1)); } catch { /* storage unavailable */ }
     }
-  }, [currentPage, doc, paperId]);
+  }, [currentPage, doc, paperId, active, onReachEnd]);
 
   // 文档就绪后跳到外部指定页（搜索/引用定位）
   useEffect(() => {

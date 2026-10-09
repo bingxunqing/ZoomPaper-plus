@@ -10,6 +10,10 @@ import { TimelinePage } from "@/pages/TimelinePage";
 import { HelpPage } from "@/pages/HelpPage";
 import { NavRail, type NavItem } from "@/components/NavRail";
 import { type BrowserImportPhase } from "@/components/BrowserImportNotice";
+import { translationJobs } from "@/lib/translationJobs";
+import { invoke } from "@tauri-apps/api/core";
+import { isViewPreferenceKey } from "@/lib/preferences";
+import { getPaperMd, getTranslation } from "@/lib/api";
 import { importBrowserDownload, importPdfUrl, listJobs, type BackgroundJob } from "@/lib/api";
 import { CompanionBridge } from "@/components/CompanionWindow";
 
@@ -23,6 +27,7 @@ type View =
   | { name: "help" };
 
 function App() {
+  useEffect(()=>{void invoke<Record<string,string>|null>("take_restored_preferences").then(values=>{if(values){for(const[key,value]of Object.entries(values)){if(isViewPreferenceKey(key)&&typeof value==="string")localStorage.setItem(key,value);}location.reload();}}).catch(error=>window.alert(String(error)));},[]);
   const workspace = useRef<WorkspaceHandle>(null);
   const [view, setView] = useState<View>({ name: "library" });
   const [libraryRefreshSignal, setLibraryRefreshSignal] = useState(0);
@@ -40,6 +45,14 @@ function App() {
       try {
         const next = await listJobs();
         if (stopped) return;
+        for(const job of next.filter(j=>j.kind==="full_translation"&&j.status==="queued")) {
+          void invoke<boolean>("claim_frontend_translation",{jobId:job.id}).then(async claimed=>{
+            if(!claimed)return;
+            let error:string|null=null;
+            try{const [md,cached]=await Promise.all([getPaperMd(job.paper_id),getTranslation(job.paper_id)]);await translationJobs.start(job.paper_id,md,cached);}catch(e){error=String(e);}
+            await invoke("finish_frontend_translation",{jobId:job.id,error});
+          }).catch(()=>{});
+        }
         const signature = JSON.stringify(next);
         if (signature !== previous) {
           const nextRevision = next.map((job) => `${job.id}:${job.status}`).join("|");
@@ -53,6 +66,7 @@ function App() {
     void poll();
     return () => { stopped = true; clearTimeout(timer); };
   }, []);
+  useEffect(()=>{const changed=()=>setLibraryRefreshSignal(v=>v+1);window.addEventListener("zoompaper-library-changed",changed);return()=>window.removeEventListener("zoompaper-library-changed",changed);},[]);
   const handledLinks = useRef(new Set<string>());
 
 
@@ -133,7 +147,7 @@ function App() {
 
       <PaperWorkspace ref={workspace} active={view.name === "library"} jobs={jobs} refreshSignal={libraryRefreshSignal} onTitleChange={setReadingTitle} />
       {view.name !== "library" && (
-        <main className={`flex min-h-0 min-w-0 flex-1 flex-col ${view.name === "ask" ? "bg-white dark:bg-[#191919]" : "p-6"}`}>
+        <main className={`flex min-h-0 min-w-0 flex-1 flex-col ${(view.name === "ask" || view.name === "settings") ? "bg-white dark:bg-[#191919]" : "p-6"}`}>
           <motion.div
             key={view.name + ("paperId" in view ? view.paperId : "")}
             initial={{ opacity: 0 }}

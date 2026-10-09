@@ -1,3 +1,4 @@
+import { usePreferences, paperTitle } from "@/lib/preferences";
 import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,7 @@ import {
   setPaperStatus,
   type Paper,
 } from "@/lib/api";
-import { displayPaperTitle, formatDuration } from "@/lib/utils";
+import { formatDuration } from "@/lib/utils";
 import { ArrowLeft, BookCheck, Clock, GitFork, MessageSquare } from "lucide-react";
 
 interface Props {
@@ -33,6 +34,8 @@ interface Props {
 }
 
 export function Reader({ paperId, initialPageIdx, onBack, refreshSignal, onTitleChange, active = true, onBusyChange }: Props) {
+  const prefs=usePreferences();
+  const endMarked=useRef(false);
   const [paper, setPaper] = useState<Paper | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +66,7 @@ export function Reader({ paperId, initialPageIdx, onBack, refreshSignal, onTitle
     getPaper(paperId).then((updated) => { if (!canceled) setPaper(updated); }).catch(() => {});
     return () => { canceled = true; };
   }, [paperId, refreshSignal]);
-  useEffect(() => { if (paper) onTitleChange?.(displayPaperTitle(paper.title)); }, [paper?.title, paper?.title_zh, onTitleChange]);
+  useEffect(() => { if (paper) onTitleChange?.(paperTitle(paper,"tab",prefs)); }, [paper?.title, paper?.title_zh, onTitleChange, prefs]);
 
   useEffect(() => {
     if (!active) return;
@@ -74,9 +77,9 @@ export function Reader({ paperId, initialPageIdx, onBack, refreshSignal, onTitle
 
   // 打开论文即进入「在读」状态（未读 → 在读；已读保持不变）。失败静默，不影响阅读。
   useEffect(() => {
-    if (!active || !paper || paper.reading_status === "reading" || paper.reading_status === "read") return;
+    if (!prefs.markReading || !active || !paper || paper.reading_status === "reading" || paper.reading_status === "read") return;
     setPaperStatus(paper.id, "reading").catch(() => {});
-  }, [paper, active]);
+  }, [paper, active, prefs.markReading]);
 
   // 阅读时长累计：仅页面可见时计时，每 30s 上报一次，卸载/换论文时上报零头。失败静默。
   const [sessionSeconds, setSessionSeconds] = useState(0);
@@ -137,7 +140,7 @@ export function Reader({ paperId, initialPageIdx, onBack, refreshSignal, onTitle
         </Button></IconTooltip>
         <div className="min-w-0">
           <h1 className="truncate text-xl font-bold tracking-tight">
-            {paper ? displayPaperTitle(paper.title) : "加载中…"}
+            {paper ? paperTitle(paper,"tab",prefs) : "加载中…"}
           </h1>
           {paper?.authors && (
             <p className="text-sm text-muted-foreground">{paper.authors}</p>
@@ -217,6 +220,7 @@ export function Reader({ paperId, initialPageIdx, onBack, refreshSignal, onTitle
               {visited && <PdfViewer
                 ref={pdfRef}
                 active={active && readerMode === "pdf"}
+                onReachEnd={() => {if(prefs.markReadAtEnd && active && !endMarked.current && paper.reading_status!=="read"){endMarked.current=true;void markPaperRead(paper.id,true).then(setPaper).catch(()=>{endMarked.current=false;});}}}
                 pdfPath={paper.pdf_path}
                 paperId={paperId}
                 initialPageIdx={initialPageIdx}
@@ -258,6 +262,7 @@ export function Reader({ paperId, initialPageIdx, onBack, refreshSignal, onTitle
             <QaPanel
               ref={qaRef}
               paperId={paperId}
+              defaultOpen={prefs.showAssistant}
               onBusyChange={onBusyChange}
               onJumpPage={(idx) => { setReaderMode("pdf"); requestAnimationFrame(() => pdfRef.current?.jumpToPage(idx)); }}
               onJumpToSelection={(pageIdx, rects) => { setReaderMode("pdf"); requestAnimationFrame(() => pdfRef.current?.jumpToSelection(pageIdx, rects)); }}

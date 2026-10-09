@@ -21,8 +21,9 @@ export function jobLabel(job: CompanionTask) {
 }
 /** Repo-native vector character: no remote assets, animation respects reduced motion. */
 type BirdState = "idle" | "reading" | "working" | "success" | "error" | "sleep";
-function PaperBird({ state }: { state: BirdState }) {
-  const reduced = useReducedMotion();
+function PaperBird({ state, animatePet }: { state: BirdState; animatePet: boolean }) {
+  const systemReduced = useReducedMotion();
+  const reduced = systemReduced || !animatePet;
   return <motion.svg viewBox="0 0 100 100" className="h-[76px] w-[76px] drop-shadow-sm" aria-hidden="true"
     animate={reduced ? {} : state === "working" ? { y: [0, -3, 0], rotate: [0, -2, 0, 2, 0] } : state === "reading" ? { rotate: [0, 3, 0] } : state === "success" ? { y: [0, 3, 0] } : { y: 0, rotate: state === "error" ? -8 : 0 }}
     transition={{ duration: 3, repeat: state === "success" ? 0 : Infinity, ease: "easeInOut" }}>
@@ -53,8 +54,9 @@ interface Props {
   onHide?: () => void;
   onRetryLocal?: (task: CompanionTask) => Promise<void>;
   bubbleAbove?: boolean;
+  animatePet?: boolean;
 }
-export function ReadingCompanion({ jobs, notice, readingTitle, onDismiss, onOpenPaper, onNativeDrag, onImport, onContinue, onHide, onRetryLocal, bubbleAbove = false }: Props) {
+export function ReadingCompanion({ jobs, notice, readingTitle, onDismiss, onOpenPaper, onNativeDrag, onImport, onContinue, onHide, onRetryLocal, bubbleAbove = false, animatePet = true }: Props) {
   const dismissRef = useRef(onDismiss); dismissRef.current = onDismiss;
   const dragControls = useDragControls();
   const container = useRef<HTMLDivElement>(null);
@@ -130,7 +132,7 @@ export function ReadingCompanion({ jobs, notice, readingTitle, onDismiss, onOpen
           onPointerUp={() => { pointer.current = null; }}
           onPointerCancel={() => { pointer.current = null; }}
           className="touch-none cursor-grab rounded-full outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 active:cursor-grabbing">
-          <PaperBird state={busy ? "working" : notice?.phase === "error" || finished?.status === "failed" ? "error" : finished?.status === "done" || notice?.phase === "done" ? "success" : readingTitle ? "reading" : sleeping ? "sleep" : "idle"} />
+          <PaperBird animatePet={animatePet} state={busy ? "working" : notice?.phase === "error" || finished?.status === "failed" ? "error" : finished?.status === "done" || notice?.phase === "done" ? "success" : readingTitle ? "reading" : sleeping ? "sleep" : "idle"} />
         </div>
         {onHide && <IconTooltip label="隐藏阅读伙伴"><button data-companion-hit="ellipse" aria-label="隐藏阅读伙伴" onClick={onHide} className="absolute right-0 top-0 rounded-full bg-white/80 p-1 text-zp-tertiary opacity-0 group-hover:opacity-100 focus:opacity-100"><X size={12} /></button></IconTooltip>}
         {quick && <div className="absolute top-9 left-1/2 flex -translate-x-1/2 gap-[90px]">

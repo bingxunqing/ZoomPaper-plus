@@ -40,7 +40,9 @@ fn user_selections(
 #[tauri::command]
 pub async fn ask_app_help(question: String) -> Result<String, String> {
     let question = question.trim();
-    if question.is_empty() { return Err("请输入问题".into()); }
+    if question.is_empty() {
+        return Err("请输入问题".into());
+    }
     let settings = Settings::load().map_err(|e| e.to_string())?;
     let llm = Llm::from_settings(&settings).map_err(|e| e.to_string())?;
     let guide = include_str!("../../docs/USER_GUIDE.md");
@@ -141,6 +143,9 @@ pub fn get_settings() -> Result<Settings, String> {
 
 #[tauri::command]
 pub fn update_settings(new_settings: Settings) -> Result<Settings, String> {
+    if new_settings.workflow.parse_concurrency == 0 {
+        return Err("同时解析论文数必须为正整数".into());
+    }
     new_settings.save().map_err(|e| e.to_string())?;
     Ok(new_settings)
 }
@@ -463,11 +468,13 @@ pub fn get_paper_md(db: State<'_, Db>, paper_id: String) -> Result<String, Strin
 pub async fn import_pdf(app: tauri::AppHandle, source_path: String) -> Result<Paper, String> {
     use tauri::Manager;
     tauri::async_runtime::spawn_blocking(move || {
-    let db = app.state::<Db>();
-    let settings = Settings::load().map_err(|e| e.to_string())?;
-    let library = settings.papers_dir().map_err(|e| e.to_string())?;
-    import_pdf_inner(&db, &library, &source_path)
-    }).await.map_err(|e|e.to_string())?
+        let db = app.state::<Db>();
+        let settings = Settings::load().map_err(|e| e.to_string())?;
+        let library = settings.papers_dir().map_err(|e| e.to_string())?;
+        import_pdf_inner(&db, &library, &source_path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// 核心导入逻辑（library 由调用方决定，便于测试）。
@@ -481,7 +488,16 @@ fn import_pdf_inner_with_title(
     source_path: &str,
     suggested_title: Option<&str>,
 ) -> Result<Paper, String> {
-    import_pdf_inner_with_metadata(db, library, source_path, suggested_title, None, None, None, None)
+    import_pdf_inner_with_metadata(
+        db,
+        library,
+        source_path,
+        suggested_title,
+        None,
+        None,
+        None,
+        None,
+    )
 }
 
 fn import_pdf_inner_with_metadata(
@@ -496,16 +512,34 @@ fn import_pdf_inner_with_metadata(
 ) -> Result<Paper, String> {
     // Serialize only the short local save, never parsing/network tasks.
     static IMPORT_SAVE: OnceLock<Mutex<()>> = OnceLock::new();
-    let _save = IMPORT_SAVE.get_or_init(|| Mutex::new(())).lock().map_err(|e| e.to_string())?;
+    let _save = IMPORT_SAVE
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .map_err(|e| e.to_string())?;
     use sha2::{Digest, Sha256};
     let mut source = std::fs::File::open(source_path).map_err(|e| e.to_string())?;
-    let mut hasher = Sha256::new(); let mut buffer = [0u8;65536];
-    loop { let n = source.read(&mut buffer).map_err(|e| e.to_string())?; if n == 0 { break; } hasher.update(&buffer[..n]); }
-    let hash = format!("{:x}",hasher.finalize());
-    let existing: Option<String> = db.conn().query_row("SELECT id FROM papers WHERE content_hash=?1 AND deleted_at IS NULL LIMIT 1",[&hash],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 65536];
+    loop {
+        let n = source.read(&mut buffer).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+    let hash = format!("{:x}", hasher.finalize());
+    let existing: Option<String> = db
+        .conn()
+        .query_row(
+            "SELECT id FROM papers WHERE content_hash=?1 AND deleted_at IS NULL LIMIT 1",
+            [&hash],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
     if let Some(id) = existing {
         db.conn().execute("UPDATE papers SET source_url=COALESCE(source_url,?2),source_icon_url=COALESCE(source_icon_url,?3),venue=COALESCE(venue,?4) WHERE id=?1",params![id,source_url.and_then(|s|reqwest::Url::parse(s).ok()).filter(|u|u.scheme()=="https").map(|u|u.to_string()),source_icon_url.and_then(|s|reqwest::Url::parse(s).ok()).filter(|u|u.scheme()=="https").map(|u|u.to_string()),venue.and_then(normalize_venue)]).map_err(|e|e.to_string())?;
-        return get_paper_inner(db,&id);
+        return get_paper_inner(db, &id);
     }
     let id = Uuid::new_v4().to_string();
     let src = Path::new(source_path);
@@ -549,7 +583,10 @@ fn import_pdf_inner_with_metadata(
             .or_else(|| source_url.and_then(infer_venue_from_source)),
         deleted_at: None,
         source_icon_url: source_icon_url.and_then(|raw| {
-            reqwest::Url::parse(raw.trim()).ok().filter(|url| url.scheme() == "https").map(|url| url.to_string())
+            reqwest::Url::parse(raw.trim())
+                .ok()
+                .filter(|url| url.scheme() == "https")
+                .map(|url| url.to_string())
         }),
         total_read_seconds: 0,
         folder_ids: vec![],
@@ -581,7 +618,11 @@ fn import_pdf_inner_with_metadata(
     )
     .map_err(|e| e.to_string())?;
 
-    conn.execute("UPDATE papers SET content_hash=?2 WHERE id=?1",params![paper.id,hash]).map_err(|e|e.to_string())?;
+    conn.execute(
+        "UPDATE papers SET content_hash=?2 WHERE id=?1",
+        params![paper.id, hash],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(paper)
 }
 
@@ -644,25 +685,52 @@ fn venue_from_text(text: &str) -> Option<String> {
     }
     let patterns = [
         ("transactionsonsoftwareengineering", "IEEE TSE"),
-        ("transactionsonpatternanalysisandmachineintelligence", "IEEE TPAMI"),
+        (
+            "transactionsonpatternanalysisandmachineintelligence",
+            "IEEE TPAMI",
+        ),
         ("transactionsonknowledgeanddataengineering", "IEEE TKDE"),
-        ("transactionsonvisualizationandcomputergraphics", "IEEE TVCG"),
-        ("transactionsonneuralnetworksandlearningsystems", "IEEE TNNLS"),
+        (
+            "transactionsonvisualizationandcomputergraphics",
+            "IEEE TVCG",
+        ),
+        (
+            "transactionsonneuralnetworksandlearningsystems",
+            "IEEE TNNLS",
+        ),
         ("transactionsondependableandsecurecomputing", "IEEE TDSC"),
         ("transactionsoninformationandsystemsecurity", "ACM TISSEC"),
-        ("transactionsonsoftwareengineeringandmethodology", "ACM TOSEM"),
+        (
+            "transactionsonsoftwareengineeringandmethodology",
+            "ACM TOSEM",
+        ),
         ("transactionsonprogramminglanguagesandsystems", "ACM TOPLAS"),
         ("acmcomputingsurveys", "ACM CSUR"),
         ("programminglanguagedesignandimplementation", "PLDI"),
         ("principlesofprogramminglanguages", "POPL"),
-        ("objectorientedprogrammingsystemslanguagesandapplications", "OOPSLA"),
-        ("internationalsymposiumonsoftwaretestingandanalysis", "ISSTA"),
+        (
+            "objectorientedprogrammingsystemslanguagesandapplications",
+            "OOPSLA",
+        ),
+        (
+            "internationalsymposiumonsoftwaretestingandanalysis",
+            "ISSTA",
+        ),
         ("miningsoftwarerepositories", "MSR"),
-        ("internationalconferenceonsoftwaremaintenanceandevolution", "ICSME"),
-        ("internationalconferenceonautomatedsoftwareengineering", "ASE"),
+        (
+            "internationalconferenceonsoftwaremaintenanceandevolution",
+            "ICSME",
+        ),
+        (
+            "internationalconferenceonautomatedsoftwareengineering",
+            "ASE",
+        ),
         ("internationalconferenceondatamining", "ICDM"),
         ("internationalconferenceonroboticsandautomation", "ICRA"),
-        ("internationalconferenceonintelligentrobotsandsystems", "IROS"),
+        (
+            "internationalconferenceonintelligentrobotsandsystems",
+            "IROS",
+        ),
         ("empiricalmethodsnaturallanguageprocessing", "EMNLP"),
         (
             "northamericanchapterassociationforcomputationallinguistics",
@@ -680,10 +748,16 @@ fn venue_from_text(text: &str) -> Option<String> {
             "associationfortheadvancementofartificialintelligence",
             "AAAI",
         ),
-        ("internationaljointconferenceonartificialintelligence", "IJCAI"),
+        (
+            "internationaljointconferenceonartificialintelligence",
+            "IJCAI",
+        ),
         ("internationalconferenceonsoftwareengineering", "ICSE"),
         ("foundationsofsoftwareengineering", "FSE"),
-        ("internationalconferenceonautomatedsoftwareengineering", "ASE"),
+        (
+            "internationalconferenceonautomatedsoftwareengineering",
+            "ASE",
+        ),
         ("knowledgediscoveryanddatamining", "KDD"),
         ("researchanddevelopmentininformationretrieval", "SIGIR"),
         ("internationalconferenceonmanagementofdata", "SIGMOD"),
@@ -698,14 +772,21 @@ fn venue_from_text(text: &str) -> Option<String> {
         ("specialinterestgroupondatacommunication", "SIGCOMM"),
         ("conferenceoncomputercommunications", "INFOCOM"),
         ("highperformancecomputerarchitecture", "HPCA"),
-        ("architecturalsupportforprogramminglanguagesandoperatingsystems", "ASPLOS"),
+        (
+            "architecturalsupportforprogramminglanguagesandoperatingsystems",
+            "ASPLOS",
+        ),
         ("internationalsymposiumoncomputerarchitecture", "ISCA"),
         ("internationalsymposiumonmicroarchitecture", "MICRO"),
         ("conferenceonhumanfactorsincomputingsystems", "CHI"),
     ];
     let (label, compact_index, _) = patterns
         .iter()
-        .filter_map(|(pattern, label)| compact.find(pattern).map(|index| (*label, index, pattern.len())))
+        .filter_map(|(pattern, label)| {
+            compact
+                .find(pattern)
+                .map(|index| (*label, index, pattern.len()))
+        })
         .min_by_key(|(_, index, length)| (*index, std::cmp::Reverse(*length)))?;
     let source_index = *source_offsets.get(compact_index)?;
     let start = source_index;
@@ -852,7 +933,15 @@ fn backfill_paper_venue(conn: &rusqlite::Connection, paper: &mut Paper) -> Resul
     if let Some(dir) = Path::new(&paper.md_path).parent() {
         if let Ok(bytes) = std::fs::read(dir.join("publication.json")) {
             if let Ok(record) = serde_json::from_slice::<crate::publication::Publication>(&bytes) {
-                if record.venue.is_some() && crate::publication::title_matches(&extract_metadata(&std::fs::read_to_string(&paper.md_path).unwrap_or_default()).0, &record.title) {
+                if record.venue.is_some()
+                    && crate::publication::title_matches(
+                        &extract_metadata(
+                            &std::fs::read_to_string(&paper.md_path).unwrap_or_default(),
+                        )
+                        .0,
+                        &record.title,
+                    )
+                {
                     return Ok(());
                 }
             }
@@ -932,12 +1021,25 @@ pub async fn import_browser_download(
 ) -> Result<Paper, String> {
     use tauri::Manager;
     tauri::async_runtime::spawn_blocking(move || {
-    let db = app.state::<Db>();
-    if let Some(paper) = crate::connector::existing_receipt(&db, request_id.as_deref())? { return Ok(paper); }
-    let result = import_browser_download_inner(db.clone(), source_path, suggested_title, source_url, github_url, venue, source_icon_url, doi);
-    crate::connector::record_receipt(&db, request_id.as_deref(), &result);
-    result
-    }).await.map_err(|e|e.to_string())?
+        let db = app.state::<Db>();
+        if let Some(paper) = crate::connector::existing_receipt(&db, request_id.as_deref())? {
+            return Ok(paper);
+        }
+        let result = import_browser_download_inner(
+            db.clone(),
+            source_path,
+            suggested_title,
+            source_url,
+            github_url,
+            venue,
+            source_icon_url,
+            doi,
+        );
+        crate::connector::record_receipt(&db, request_id.as_deref(), &result);
+        result
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn import_browser_download_inner(
@@ -974,7 +1076,9 @@ fn import_browser_download_inner(
     }
     if !signature.starts_with(b"%PDF-") {
         let _ = std::fs::remove_file(&source);
-        return Err("下载内容不是有效 PDF，请在浏览器完成登录或验证，或改用其他全文链接".to_string());
+        return Err(
+            "下载内容不是有效 PDF，请在浏览器完成登录或验证，或改用其他全文链接".to_string(),
+        );
     }
 
     let settings = Settings::load().map_err(|e| e.to_string())?;
@@ -993,11 +1097,21 @@ fn import_browser_download_inner(
     if let Ok(paper) = &result {
         if let Some(doi) = doi.as_deref().and_then(crate::publication::normalize_doi) {
             if let Some(dir) = Path::new(&paper.md_path).parent() {
-                let _ = std::fs::write(dir.join("doi-hint.json"), serde_json::to_vec(&doi).unwrap());
+                let _ =
+                    std::fs::write(dir.join("doi-hint.json"), serde_json::to_vec(&doi).unwrap());
             }
         }
     }
-    if let Ok(paper) = &result { if paper.parse_status != "ready" { crate::jobs::enqueue(&db, &paper.id, "parse")?; } }
+    if let Ok(paper) = &result {
+        if Settings::load()
+            .map_err(|e| e.to_string())?
+            .workflow
+            .auto_parse
+            && paper.parse_status != "ready"
+        {
+            crate::jobs::enqueue(&db, &paper.id, "parse")?;
+        }
+    }
     result
 }
 
@@ -1014,8 +1128,20 @@ pub async fn import_pdf_url(
     doi: Option<String>,
     request_id: Option<String>,
 ) -> Result<Paper, String> {
-    if let Some(paper) = crate::connector::existing_receipt(&db, request_id.as_deref())? { return Ok(paper); }
-    let result = import_pdf_url_inner(db.clone(), url, suggested_title, source_url, github_url, venue, source_icon_url, doi).await;
+    if let Some(paper) = crate::connector::existing_receipt(&db, request_id.as_deref())? {
+        return Ok(paper);
+    }
+    let result = import_pdf_url_inner(
+        db.clone(),
+        url,
+        suggested_title,
+        source_url,
+        github_url,
+        venue,
+        source_icon_url,
+        doi,
+    )
+    .await;
     crate::connector::record_receipt(&db, request_id.as_deref(), &result);
     result
 }
@@ -1113,49 +1239,83 @@ async fn import_pdf_url_inner(
     if let Ok(paper) = &result {
         if let Some(doi) = doi.as_deref().and_then(crate::publication::normalize_doi) {
             if let Some(dir) = Path::new(&paper.md_path).parent() {
-                let _ = std::fs::write(dir.join("doi-hint.json"), serde_json::to_vec(&doi).unwrap());
+                let _ =
+                    std::fs::write(dir.join("doi-hint.json"), serde_json::to_vec(&doi).unwrap());
             }
         }
     }
-    if let Ok(paper) = &result { if paper.parse_status != "ready" { crate::jobs::enqueue(&db, &paper.id, "parse")?; } }
+    if let Ok(paper) = &result {
+        if Settings::load()
+            .map_err(|e| e.to_string())?
+            .workflow
+            .auto_parse
+            && paper.parse_status != "ready"
+        {
+            crate::jobs::enqueue(&db, &paper.id, "parse")?;
+        }
+    }
     result
 }
 
 /// Supplement missing publication metadata without changing titles or reading state.
 #[tauri::command]
-pub async fn refresh_paper_publication(db: State<'_, Db>, paper_id: String) -> Result<Paper, String> {
+pub async fn refresh_paper_publication(
+    db: State<'_, Db>,
+    paper_id: String,
+) -> Result<Paper, String> {
     // Old papers are enriched when previewed/read; network errors remain non-blocking for UI.
-    if get_paper_inner(&db, &paper_id)?.parse_status == "ready" { crate::jobs::ensure(&db, &paper_id, "doi")?; }
+    if Settings::load()
+        .map_err(|e| e.to_string())?
+        .workflow
+        .auto_doi
+        && get_paper_inner(&db, &paper_id)?.parse_status == "ready"
+    {
+        crate::jobs::ensure(&db, &paper_id, "doi")?;
+    }
     get_paper_inner(&db, &paper_id)
 }
 
 pub(crate) async fn refresh_publication_inner(db: &Db, paper_id: &str) -> Result<(), String> {
-    let cache_dir = crate::settings::app_data_dir().map_err(|e| e.to_string())?.join("doi-cache");
+    let cache_dir = crate::settings::app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("doi-cache");
     refresh_publication_with_cache(db, paper_id, &cache_dir).await
 }
 
-async fn refresh_publication_with_cache(db: &Db, paper_id: &str, cache_dir: &Path) -> Result<(), String> {
+async fn refresh_publication_with_cache(
+    db: &Db,
+    paper_id: &str,
+    cache_dir: &Path,
+) -> Result<(), String> {
     let paper = get_paper_inner(db, paper_id)?;
-    if paper.parse_status != "ready" || paper.deleted_at.is_some() { return Ok(()); }
+    if paper.parse_status != "ready" || paper.deleted_at.is_some() {
+        return Ok(());
+    }
     let dir = Path::new(&paper.md_path).parent().ok_or("论文目录无效")?;
     let markdown = std::fs::read_to_string(&paper.md_path).map_err(|e| e.to_string())?;
     let parsed_title = extract_metadata(&markdown).0;
     // Verified per-paper cache avoids repeat requests even if another DOI exists in the header.
     if let Ok(raw) = std::fs::read(dir.join("publication.json")) {
         if let Ok(record) = serde_json::from_slice::<crate::publication::Publication>(&raw) {
-            if crate::publication::title_matches(&parsed_title, &record.title) { return Ok(()); }
+            if crate::publication::title_matches(&parsed_title, &record.title) {
+                return Ok(());
+            }
         }
     }
     let mut candidates = Vec::new();
     if let Ok(raw) = std::fs::read(dir.join("doi-hint.json")) {
         if let Ok(hint) = serde_json::from_slice::<String>(&raw) {
-            if let Some(doi) = crate::publication::normalize_doi(&hint) { candidates.push(doi); }
+            if let Some(doi) = crate::publication::normalize_doi(&hint) {
+                candidates.push(doi);
+            }
         }
     }
     if let Some(source) = &paper.source_url {
         if let Ok(url) = reqwest::Url::parse(source) {
             if matches!(url.host_str(), Some("doi.org" | "dx.doi.org")) {
-                if let Some(doi) = crate::publication::normalize_doi(source) { candidates.push(doi); }
+                if let Some(doi) = crate::publication::normalize_doi(source) {
+                    candidates.push(doi);
+                }
             }
         }
     }
@@ -1163,41 +1323,72 @@ async fn refresh_publication_with_cache(db: &Db, paper_id: &str, cache_dir: &Pat
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.filter_map(Result::ok) {
             let name = entry.file_name().to_string_lossy().to_string();
-            if !name.ends_with("content_list.json") && !name.ends_with("content_list_v2.json") { continue; }
+            if !name.ends_with("content_list.json") && !name.ends_with("content_list_v2.json") {
+                continue;
+            }
             if let Ok(bytes) = std::fs::read(entry.path()) {
-                if let Ok(serde_json::Value::Array(blocks)) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-                    let header = blocks.iter().filter(|block| block["page_idx"].as_u64() == Some(0))
-                        .filter_map(|block| block["text"].as_str()).collect::<Vec<_>>().join("\n");
+                if let Ok(serde_json::Value::Array(blocks)) =
+                    serde_json::from_slice::<serde_json::Value>(&bytes)
+                {
+                    let header = blocks
+                        .iter()
+                        .filter(|block| block["page_idx"].as_u64() == Some(0))
+                        .filter_map(|block| block["text"].as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n");
                     candidates.extend(crate::publication::doi_candidates(&header));
                 }
             }
         }
     }
     if candidates.is_empty() {
-        let header = markdown.lines().take_while(|line| {
-            let lower = line.trim().trim_start_matches(['#', '*', ' ']).to_lowercase();
-            !lower.starts_with("abstract") && !lower.starts_with("摘要") && !lower.starts_with("references")
-        }).take(60).collect::<Vec<_>>().join("\n");
+        let header = markdown
+            .lines()
+            .take_while(|line| {
+                let lower = line
+                    .trim()
+                    .trim_start_matches(['#', '*', ' '])
+                    .to_lowercase();
+                !lower.starts_with("abstract")
+                    && !lower.starts_with("摘要")
+                    && !lower.starts_with("references")
+            })
+            .take(60)
+            .collect::<Vec<_>>()
+            .join("\n");
         candidates.extend(crate::publication::doi_candidates(&header));
     }
     let mut seen = std::collections::HashSet::new();
-    candidates.retain(|doi| seen.insert(doi.clone())); candidates.truncate(3);
+    candidates.retain(|doi| seen.insert(doi.clone()));
+    candidates.truncate(3);
     let record = tokio::time::timeout(std::time::Duration::from_secs(20), async {
         for doi in candidates {
             if let Some(record) = crate::publication::lookup(&doi, cache_dir).await? {
-                if crate::publication::title_matches(&parsed_title, &record.title) { return Ok::<_, String>(Some(record)); }
+                if crate::publication::title_matches(&parsed_title, &record.title) {
+                    return Ok::<_, String>(Some(record));
+                }
             }
         }
         Ok(None)
-    }).await.map_err(|_| "DOI 查询超时".to_string())??;
+    })
+    .await
+    .map_err(|_| "DOI 查询超时".to_string())??;
     if let Some(mut record) = record {
         record.venue = record.venue.as_deref().and_then(normalize_venue);
         let conn = db.conn();
         // Keep specific page metadata. DOI may replace only missing or repository labels.
         conn.execute("UPDATE papers SET venue = CASE WHEN venue IS NULL OR trim(venue) = '' OR lower(venue) IN ('arxiv', 'openreview') THEN COALESCE(?2, venue) ELSE venue END, authors = CASE WHEN authors IS NULL OR authors = '[]' OR trim(authors) = '' THEN COALESCE(?3, authors) ELSE authors END WHERE id = ?1", params![paper_id, &record.venue, &record.authors]).map_err(|e| e.to_string())?;
         // Remember the actual saved venue, including more specific browser metadata.
-        record.venue = conn.query_row("SELECT venue FROM papers WHERE id = ?1", [paper_id], |r| r.get(0)).map_err(|e| e.to_string())?;
-        std::fs::write(dir.join("publication.json"), serde_json::to_vec(&record).unwrap()).map_err(|e| e.to_string())?;
+        record.venue = conn
+            .query_row("SELECT venue FROM papers WHERE id = ?1", [paper_id], |r| {
+                r.get(0)
+            })
+            .map_err(|e| e.to_string())?;
+        std::fs::write(
+            dir.join("publication.json"),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -1228,12 +1419,17 @@ pub async fn parse_pdf(
     on_progress: tauri::ipc::Channel<crate::ai::mineru::ParseProgress>,
 ) -> Result<Paper, String> {
     crate::jobs::enqueue(&db, &paper_id, "parse")?;
-    let _ = on_progress.send(crate::ai::mineru::ParseProgress { stage: "queued".into(), extracted_pages: None, total_pages: None });
+    let _ = on_progress.send(crate::ai::mineru::ParseProgress {
+        stage: "queued".into(),
+        extracted_pages: None,
+        total_pages: None,
+    });
     get_paper_inner(&db, &paper_id)
 }
 
 pub(crate) async fn parse_background(
-    db: &Db, paper_id: &str,
+    db: &Db,
+    paper_id: &str,
     progress: &(dyn Fn(crate::ai::mineru::ParseProgress) + Send + Sync),
     batch_id: Option<&str>,
     save_batch: &(dyn Fn(&str) -> Result<(), String> + Send + Sync),
@@ -1313,15 +1509,21 @@ struct MetadataTranslation {
 }
 
 fn parse_metadata_translation(raw: &str) -> Result<MetadataTranslation, String> {
-    let trimmed = raw.trim().trim_start_matches("```json").trim_start_matches("```").trim_end_matches("```").trim();
+    let trimmed = raw
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
     let json = match (trimmed.find('{'), trimmed.rfind('}')) {
         (Some(start), Some(end)) if start <= end => &trimmed[start..=end],
         _ => return Err("AI 未返回有效的元数据翻译".into()),
     };
-    let mut translated: MetadataTranslation = serde_json::from_str(json)
-        .map_err(|error| format!("解析元数据翻译失败：{error}"))?;
+    let mut translated: MetadataTranslation =
+        serde_json::from_str(json).map_err(|error| format!("解析元数据翻译失败：{error}"))?;
     translated.title = translated.title.trim().to_string();
-    translated.r#abstract = translated.r#abstract
+    translated.r#abstract = translated
+        .r#abstract
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
     if translated.title.is_empty() {
@@ -1330,16 +1532,28 @@ fn parse_metadata_translation(raw: &str) -> Result<MetadataTranslation, String> 
     Ok(translated)
 }
 
-pub(crate) async fn translate_paper_metadata_inner(db: &Db, paper_id: &str) -> Result<Paper, String> {
-    let (title, abstract_text, title_zh, abstract_zh): (String, Option<String>, Option<String>, Option<String>) = {
+pub(crate) async fn translate_paper_metadata_inner(
+    db: &Db,
+    paper_id: &str,
+) -> Result<Paper, String> {
+    let (title, abstract_text, title_zh, abstract_zh): (
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = {
         let conn = db.conn();
         conn.query_row(
             "SELECT title, abstract, title_zh, abstract_zh FROM papers WHERE id = ?1",
             [paper_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-        ).map_err(|error| error.to_string())?
+        )
+        .map_err(|error| error.to_string())?
     };
-    if title_zh.is_some() && (abstract_text.is_none() || abstract_zh.is_some()) {
+    if title_zh.as_deref().is_some_and(|s| !s.trim().is_empty())
+        && (abstract_text.as_deref().is_none_or(|s| s.trim().is_empty())
+            || abstract_zh.as_deref().is_some_and(|s| !s.trim().is_empty()))
+    {
         return get_paper_inner(db, paper_id);
     }
 
@@ -1360,7 +1574,7 @@ pub(crate) async fn translate_paper_metadata_inner(db: &Db, paper_id: &str) -> R
     {
         let conn = db.conn();
         conn.execute(
-            "UPDATE papers SET title_zh = ?2, abstract_zh = ?3 WHERE id = ?1 AND title=?4 AND abstract IS ?5",
+            "UPDATE papers SET title_zh = CASE WHEN title_zh IS NULL OR trim(title_zh)='' THEN ?2 ELSE title_zh END, abstract_zh = CASE WHEN abstract_zh IS NULL OR trim(abstract_zh)='' THEN ?3 ELSE abstract_zh END WHERE id = ?1 AND title=?4 AND abstract IS ?5",
             params![paper_id, translated.title, translated.r#abstract, title, abstract_text],
         ).map_err(|error| error.to_string())?;
     }
@@ -1368,7 +1582,10 @@ pub(crate) async fn translate_paper_metadata_inner(db: &Db, paper_id: &str) -> R
 }
 
 #[tauri::command]
-pub async fn translate_paper_metadata(db: State<'_, Db>, paper_id: String) -> Result<Paper, String> {
+pub async fn translate_paper_metadata(
+    db: State<'_, Db>,
+    paper_id: String,
+) -> Result<Paper, String> {
     translate_paper_metadata_inner(&db, &paper_id).await
 }
 
@@ -1448,7 +1665,8 @@ pub fn empty_trash(db: State<'_, Db>) -> Result<usize, String> {
         let mut stmt = conn
             .prepare("SELECT id FROM papers WHERE deleted_at IS NOT NULL")
             .map_err(|e| e.to_string())?;
-        let ids = stmt.query_map([], |row| row.get(0))
+        let ids = stmt
+            .query_map([], |row| row.get(0))
             .map_err(|e| e.to_string())?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.to_string())?;
@@ -2211,6 +2429,7 @@ fn delete_reading_plan_inner(db: &Db, plan_id: &str) -> Result<(), String> {
 /// 当天读过的一篇论文（时间线日明细条目）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimelineDayPaper {
+    pub title_zh: Option<String>,
     pub paper_id: String,
     pub title: String,
     pub seconds: i64,
@@ -2262,7 +2481,7 @@ fn timeline_stats_inner(db: &Db, days: i64) -> Result<TimelineStats, String> {
     let mut stmt = conn
         .prepare(
             "SELECT date(rs.started_at, 'unixepoch', 'localtime') AS d,
-                    p.id, p.title, p.reading_status, SUM(rs.seconds)
+                    p.id, p.title, p.reading_status, SUM(rs.seconds), p.title_zh
              FROM reading_sessions rs
              JOIN papers p ON p.id = rs.paper_id
              WHERE rs.started_at >= ?1 AND p.deleted_at IS NULL
@@ -2278,6 +2497,7 @@ fn timeline_stats_inner(db: &Db, days: i64) -> Result<TimelineStats, String> {
                     title: row.get(2)?,
                     reading_status: row.get(3)?,
                     seconds: row.get(4)?,
+                    title_zh: row.get(5)?,
                 },
             ))
         })
@@ -2365,19 +2585,42 @@ pub async fn index_paper(db: State<'_, Db>, paper_id: String) -> Result<usize, S
     index_background(&db, &paper_id, Arc::new(AtomicBool::new(false))).await
 }
 
-pub(crate) async fn index_background(db: &Db, paper_id: &str, canceled: Arc<AtomicBool>) -> Result<usize, String> {
-    let revision:i64=db.conn().query_row("SELECT parse_revision FROM papers WHERE id=?1",[paper_id],|r|r.get(0)).map_err(|e|e.to_string())?;
+pub(crate) async fn index_background(
+    db: &Db,
+    paper_id: &str,
+    canceled: Arc<AtomicBool>,
+) -> Result<usize, String> {
+    let revision: i64 = db
+        .conn()
+        .query_row(
+            "SELECT parse_revision FROM papers WHERE id=?1",
+            [paper_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
     let md_path = get_paper_inner(db, paper_id)?.md_path;
     let (drafts, embeddings) =
         tokio::task::spawn_blocking(move || crate::rag::prepare_index(&md_path))
             .await
             .map_err(|e| e.to_string())?
             .map_err(|e| e.to_string())?;
-    if canceled.load(Ordering::Relaxed) { return Err("索引已取消".into()); }
+    if canceled.load(Ordering::Relaxed) {
+        return Err("索引已取消".into());
+    }
     let conn = db.conn();
-    if canceled.load(Ordering::Relaxed) { return Err("索引已取消".into()); }
-    let current:i64=conn.query_row("SELECT parse_revision FROM papers WHERE id=?1",[paper_id],|r|r.get(0)).map_err(|e|e.to_string())?;
-    if current!=revision { return Err("正文已更新，已丢弃旧索引".into()); }
+    if canceled.load(Ordering::Relaxed) {
+        return Err("索引已取消".into());
+    }
+    let current: i64 = conn
+        .query_row(
+            "SELECT parse_revision FROM papers WHERE id=?1",
+            [paper_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if current != revision {
+        return Err("正文已更新，已丢弃旧索引".into());
+    }
     crate::rag::insert_chunks(&conn, &paper_id, &drafts, &embeddings).map_err(|e| e.to_string())?;
     Ok(drafts.len())
 }
@@ -5217,9 +5460,16 @@ mod tests {
         let a = import_pdf_inner(&db, &library, first.to_str().unwrap()).unwrap();
         let b = import_pdf_inner(&db, &library, second.to_str().unwrap()).unwrap();
         assert_eq!(a.id, b.id);
-        assert_eq!(db.conn().query_row("SELECT count(*) FROM papers", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(
+            db.conn()
+                .query_row("SELECT count(*) FROM papers", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
         // Deleting a copy must not prevent a subsequent fresh import.
-        db.conn().execute("UPDATE papers SET deleted_at=1 WHERE id=?1", [&a.id]).unwrap();
+        db.conn()
+            .execute("UPDATE papers SET deleted_at=1 WHERE id=?1", [&a.id])
+            .unwrap();
         let c = import_pdf_inner(&db, &library, second.to_str().unwrap()).unwrap();
         assert_ne!(a.id, c.id);
         fs::remove_dir_all(tmp).ok();
@@ -5234,33 +5484,74 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("doi-enrichment-{}", uuid::Uuid::new_v4()));
         let library = tmp.join("papers");
         let cache = tmp.join("cache");
-        fs::create_dir_all(&library).unwrap(); fs::create_dir_all(&cache).unwrap();
-        let src = tmp.join("download.pdf"); fs::write(&src, b"%PDF-1.4 test").unwrap();
+        fs::create_dir_all(&library).unwrap();
+        fs::create_dir_all(&cache).unwrap();
+        let src = tmp.join("download.pdf");
+        fs::write(&src, b"%PDF-1.4 test").unwrap();
         let doi = "10.1145/example";
-        let filename = format!("{}.json",doi.bytes().map(|b|format!("{b:02x}")).collect::<String>());
+        let filename = format!(
+            "{}.json",
+            doi.bytes().map(|b| format!("{b:02x}")).collect::<String>()
+        );
         let record = serde_json::json!({"fetched_at":chrono::Utc::now().timestamp(),"publication":{"doi":doi,"title":"A Useful Research Paper About Software","venue":"New Software Conference 2026","authors":"A Smith, B Wang"}});
-        fs::write(cache.join(filename),record.to_string()).unwrap();
+        fs::write(cache.join(filename), record.to_string()).unwrap();
         for initial_venue in ["arXiv", "ICSE 2026"] {
-            fs::write(&src,format!("%PDF-1.4 {initial_venue}")).unwrap();
-            let paper = import_pdf_inner_with_metadata(&db,&library,src.to_str().unwrap(),Some("My custom title"),None,None,Some(initial_venue),None).unwrap();
-            fs::write(&paper.md_path, "# A Useful Research Paper About Software\nDOI: 10.1145/example\n## Abstract\nText").unwrap();
-            db.conn().execute("UPDATE papers SET parse_status='ready', reading_status='read' WHERE id=?1",[&paper.id]).unwrap();
-            refresh_publication_with_cache(&db,&paper.id,&cache).await.unwrap();
-            let updated = get_paper_inner(&db,&paper.id).unwrap();
-            assert_eq!(updated.title,"My custom title");
-            assert_eq!(updated.reading_status,"read");
-            assert_eq!(updated.authors.as_deref(),Some("A Smith, B Wang"));
-            assert_eq!(updated.venue.as_deref(),Some(if initial_venue=="arXiv" { "New Software Conference 2026" } else { "ICSE 2026" }));
+            fs::write(&src, format!("%PDF-1.4 {initial_venue}")).unwrap();
+            let paper = import_pdf_inner_with_metadata(
+                &db,
+                &library,
+                src.to_str().unwrap(),
+                Some("My custom title"),
+                None,
+                None,
+                Some(initial_venue),
+                None,
+            )
+            .unwrap();
+            fs::write(
+                &paper.md_path,
+                "# A Useful Research Paper About Software\nDOI: 10.1145/example\n## Abstract\nText",
+            )
+            .unwrap();
+            db.conn()
+                .execute(
+                    "UPDATE papers SET parse_status='ready', reading_status='read' WHERE id=?1",
+                    [&paper.id],
+                )
+                .unwrap();
+            refresh_publication_with_cache(&db, &paper.id, &cache)
+                .await
+                .unwrap();
+            let updated = get_paper_inner(&db, &paper.id).unwrap();
+            assert_eq!(updated.title, "My custom title");
+            assert_eq!(updated.reading_status, "read");
+            assert_eq!(updated.authors.as_deref(), Some("A Smith, B Wang"));
+            assert_eq!(
+                updated.venue.as_deref(),
+                Some(if initial_venue == "arXiv" {
+                    "New Software Conference 2026"
+                } else {
+                    "ICSE 2026"
+                })
+            );
             // Subsequent read sees the persisted result, without falling back to source inference.
-            refresh_publication_with_cache(&db,&paper.id,&cache).await.unwrap();
+            refresh_publication_with_cache(&db, &paper.id, &cache)
+                .await
+                .unwrap();
         }
         fs::remove_dir_all(tmp).unwrap();
     }
 
     #[test]
     fn journal_full_names_use_the_specific_match() {
-        assert_eq!(venue_from_text("ACM Transactions on Software Engineering and Methodology 2026"), Some("ACM TOSEM 2026".into()));
-        assert_eq!(venue_from_text("IEEE Transactions on Software Engineering 2026"), Some("IEEE TSE 2026".into()));
+        assert_eq!(
+            venue_from_text("ACM Transactions on Software Engineering and Methodology 2026"),
+            Some("ACM TOSEM 2026".into())
+        );
+        assert_eq!(
+            venue_from_text("IEEE Transactions on Software Engineering 2026"),
+            Some("IEEE TSE 2026".into())
+        );
     }
 
     #[test]
@@ -5314,7 +5605,8 @@ mod tests {
     fn metadata_translation_accepts_json_fences_and_trims_values() {
         let translated = parse_metadata_translation(
             "```json\n{\"title\":\"  注意力机制 \u{3000}\",\"abstract\":\" 中文摘要。 \"}\n```",
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(translated.title, "注意力机制");
         assert_eq!(translated.r#abstract.as_deref(), Some("中文摘要。"));
     }
@@ -6067,4 +6359,17 @@ mod tests {
         assert_eq!(plan.items.len(), 2);
         assert!(plan.items.iter().any(|i| i.paper_id == "p3"));
     }
+}
+
+#[tauri::command]
+pub fn enqueue_metadata_translations(
+    db: State<'_, Db>,
+    paper_ids: Vec<String>,
+) -> Result<(), String> {
+    let settings = Settings::load().map_err(|e| e.to_string())?;
+    Llm::from_settings(&settings).map_err(|e| e.to_string())?;
+    for id in paper_ids {
+        crate::jobs::enqueue(&db, &id, "translate")?;
+    }
+    Ok(())
 }

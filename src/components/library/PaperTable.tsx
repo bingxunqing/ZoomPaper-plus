@@ -1,8 +1,9 @@
+import { usePreferences, paperTitle } from "@/lib/preferences";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu";
 import { useState } from "react";
 import { Check, MoreHorizontal, Star } from "lucide-react";
-import { cn, displayPaperTitle, formatTime } from "@/lib/utils";
+import { cn, formatTime } from "@/lib/utils";
 import { folderColor } from "@/lib/folderColors";
 import type { Folder, Paper, ReadingPlan, ReadingStatus } from "@/lib/api";
 import { PaperMenuItems, type PaperMenuActions } from "./paperMenu";
@@ -45,6 +46,7 @@ export interface PaperTableProps {
 }
 
 export function PaperTable(props: PaperTableProps) {
+  const prefs=usePreferences();
   const folderById = new Map(props.folders.map((folder) => [folder.id, folder]));
   const [targetPlans, setTargetPlans] = useState<Record<string, string>>({});
   const longPress = useLongPressSelection((paperId) => {
@@ -151,7 +153,7 @@ export function PaperTable(props: PaperTableProps) {
                     onCancel={props.onCancelRename}
                   />
                 ) : (
-                  <span className={cn("truncate", paper.reading_status === "unread" ? "font-semibold text-zp-primary" : paper.reading_status === "read" ? "font-normal text-zp-tertiary" : "font-medium text-zp-primary")}>{displayPaperTitle(paper.title)}</span>
+                  <span className={cn("truncate", paper.reading_status === "unread" ? "font-semibold text-zp-primary" : paper.reading_status === "read" ? "font-normal text-zp-tertiary" : "font-medium text-zp-primary")}>{paperTitle(paper,"library",prefs)}</span>
                 )}
                 <IconTooltip label={paper.starred ? "取消收藏" : "收藏论文"}>
                   <button

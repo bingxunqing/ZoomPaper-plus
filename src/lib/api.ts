@@ -19,7 +19,10 @@ export interface ProviderConfig {
   enabled: boolean;
 }
 
+export interface WorkflowSettings { autoParse: boolean; parseConcurrency: number; autoDoi: boolean; autoMetadataTranslation: boolean; autoFullTranslation: boolean; }
+export const DEFAULT_WORKFLOW: WorkflowSettings = {autoParse:true,parseConcurrency:2,autoDoi:true,autoMetadataTranslation:true,autoFullTranslation:false};
 export interface Settings {
+  workflow?: WorkflowSettings;
   providers: ProviderConfig[];
   active_provider_id: string;
   mineru_api_key: string;
@@ -396,6 +399,7 @@ export interface ReadingPlan {
 
 /** 时间线某天的论文明细条目 */
 export interface TimelineDayPaper {
+  title_zh?: string|null;
   paper_id: string;
   title: string;
   seconds: number;
@@ -834,7 +838,7 @@ export const quizDelete = (quizId: string) =>
 export const reindexAllPapers = () => invoke<[number, number]>("reindex_all_papers");
 
 export interface BackgroundJob {
-  id: string; paper_id: string; title: string; kind: "parse" | "index" | "translate" | "doi";
+  id: string; paper_id: string; title: string; kind: "parse" | "index" | "translate" | "doi" | "full_translation";
   status: "queued" | "running" | "canceling" | "done" | "failed" | "canceled";
   stage: string; completed_pages: number | null; total_pages: number | null;
   error: string | null; created_at: number; updated_at: number;
@@ -842,3 +846,5 @@ export interface BackgroundJob {
 export const listJobs = () => invoke<BackgroundJob[]>("list_jobs");
 export const cancelJob = (jobId: string) => invoke<void>("cancel_job", { jobId });
 export const retryJob = (jobId: string) => invoke<void>("retry_job", { jobId });
+
+export const enqueueMetadataTranslations = (paperIds: string[]) => invoke<void>("enqueue_metadata_translations", {paperIds});

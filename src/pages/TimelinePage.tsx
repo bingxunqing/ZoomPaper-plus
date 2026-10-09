@@ -1,3 +1,4 @@
+import { usePreferences, paperTitle } from "@/lib/preferences";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { IconTooltip } from "@/components/ui/icon-tooltip";
@@ -91,6 +92,7 @@ function readingTitleClass(status: string): string {
 }
 
 export function TimelinePage({ onOpenPaper }: Props) {
+  const prefs=usePreferences();
   const [stats, setStats] = useState<TimelineStats | null>(null);
   const [plans, setPlans] = useState<ReadingPlan[]>([]);
   const [papers, setPapers] = useState<Paper[]>([]);
@@ -252,7 +254,7 @@ export function TimelinePage({ onOpenPaper }: Props) {
                           iconUrl={paperById.get(p.paper_id)?.source_icon_url}
                           status={p.reading_status as ReadingStatus}
                         />
-                        <span className={cn("min-w-0 flex-1 truncate", readingTitleClass(p.reading_status))}>{p.title}</span>
+                        <span className={cn("min-w-0 flex-1 truncate", readingTitleClass(p.reading_status))}>{paperTitle(p,"history",prefs)}</span>
                         <span className="shrink-0 text-xs text-muted-foreground">
                           {formatDuration(p.seconds)}
                         </span>
@@ -295,7 +297,7 @@ export function TimelinePage({ onOpenPaper }: Props) {
                   className="pressable flex w-full items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-zp-surface-hover"
                 >
                   <VenueBadge compact venue={p.venue} sourceUrl={p.source_url} iconUrl={p.source_icon_url} status={p.reading_status as ReadingStatus} />
-                  <span className={cn("min-w-0 flex-1 truncate text-sm", readingTitleClass(p.reading_status))}>{p.title}</span>
+                  <span className={cn("min-w-0 flex-1 truncate text-sm", readingTitleClass(p.reading_status))}>{paperTitle(p,"history",prefs)}</span>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     累计 {formatDuration(p.total_read_seconds)}
                   </span>
@@ -431,7 +433,7 @@ function PlanCard({ plan, paperMap, todayFinished, onChanged, onDelete, onOpenPa
       return <li key={item.paper_id} className="flex items-center gap-2 py-2">
         <button onClick={() => onOpenPaper(item.paper_id)} className="flex min-w-0 flex-1 items-center gap-3 text-left text-sm">
           <VenueBadge compact venue={paper?.venue ?? null} sourceUrl={paper?.source_url} iconUrl={paper?.source_icon_url} status={paper?.reading_status as ReadingStatus} />
-          <span className={cn("truncate", read && "text-zp-tertiary")}>{paper?.title ?? "论文已删除"}</span>
+          <span className={cn("truncate", read && "text-zp-tertiary")}>{paper ? paperTitle(paper,"history") : "论文已删除"}</span>
         </button>
         {due && <span className={cn("shrink-0 text-xs", due.tone === "red" ? "text-red-700" : "text-zp-tertiary")}>{due.text}</span>}
         <IconTooltip label="从计划移除"><button aria-label="从计划移除" onClick={() => { void removePaperFromPlan(plan.id,item.paper_id).then(onChanged).catch(e => setError(String(e))); }} className="rounded p-1 text-zp-tertiary hover:bg-zp-subtle"><X size={14} /></button></IconTooltip>
@@ -552,7 +554,7 @@ function PlanForm({
                       onChange={() => togglePaper(p.id)}
                       className="accent-zp-primary"
                     />
-                    <span className="min-w-0 flex-1 truncate">{p.title}</span>
+                    <span className="min-w-0 flex-1 truncate">{paperTitle(p,"history")}</span>
                     <span className="shrink-0 text-xs text-muted-foreground">
                       {p.reading_status === "reading" ? "在读" : "未读"}
                     </span>

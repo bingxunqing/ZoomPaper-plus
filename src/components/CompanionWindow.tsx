@@ -2,26 +2,29 @@ import { useEffect, useRef, useState } from "react";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, PhysicalPosition, currentMonitor } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { DEFAULT_PREFERENCES, usePreferences, type Preferences } from "@/lib/preferences";
 import { useCompanionTasks, retryCompanionTask, type CompanionTask } from "@/lib/companionTasks";
 import { companionPlacement } from "@/lib/companionPlacement";
 import { companionEnabled, setCompanionEnabled } from "@/lib/companionPreferences";
-import { listJobs, type BackgroundJob } from "@/lib/api";
+import { listJobs, retryJob, type BackgroundJob } from "@/lib/api";
 import { ReadingCompanion } from "./ReadingCompanion";
 import type { BrowserImportPhase } from "./BrowserImportNotice";
 
 interface Snapshot {
+  preferences: Preferences;
   tasks: CompanionTask[];
   jobs: BackgroundJob[];
   notice: { phase: BrowserImportPhase; title: string; message: string } | null;
   readingTitle: string | null;
 }
-const initial: Snapshot = { tasks: [], jobs: [], notice: null, readingTitle: null };
-export function CompanionBridge(props: Omit<Snapshot, "tasks"> & { onDismiss: () => void; onOpenPaper: (id: string) => void; onImport: () => void; onContinue: () => void }) {
+const initial: Snapshot = { preferences: DEFAULT_PREFERENCES, tasks: [], jobs: [], notice: null, readingTitle: null };
+export function CompanionBridge(props: Omit<Snapshot, "tasks" | "preferences"> & { onDismiss: () => void; onOpenPaper: (id: string) => void; onImport: () => void; onContinue: () => void }) {
   const tasks = useCompanionTasks();
-  const latest = useRef({ ...props, tasks }); latest.current = { ...props, tasks };
+  const preferences=usePreferences();
+  const latest = useRef({ ...props, tasks, preferences }); latest.current = { ...props, tasks, preferences };
   useEffect(() => {
     const send = () => emitTo("companion", "companion:state", {
-      tasks: latest.current.tasks, jobs: latest.current.jobs, notice: latest.current.notice, readingTitle: latest.current.readingTitle,
+      preferences:latest.current.preferences, tasks: latest.current.tasks, jobs: latest.current.jobs, notice: latest.current.notice, readingTitle: latest.current.readingTitle,
     });
     const focusMain = async () => { const window = getCurrentWindow(); await window.show(); await window.unminimize(); await window.setFocus(); };
     const preference = () => { void emitTo("companion", "companion:visibility", companionEnabled()); };
@@ -43,7 +46,7 @@ export function CompanionBridge(props: Omit<Snapshot, "tasks"> & { onDismiss: ()
     ];
     return () => { window.removeEventListener("companion-preference", preference); for (const handler of handlers) void handler.then((unlisten) => unlisten()); };
   }, []);
-  useEffect(() => { void emitTo("companion", "companion:state", { tasks, jobs: props.jobs, notice: props.notice, readingTitle: props.readingTitle }); }, [tasks, props.jobs, props.notice, props.readingTitle]);
+  useEffect(() => { void emitTo("companion", "companion:state", { preferences, tasks, jobs: props.jobs, notice: props.notice, readingTitle: props.readingTitle }); }, [preferences, tasks, props.jobs, props.notice, props.readingTitle]);
   return null;
 }
 export function CompanionWindow() {
@@ -103,8 +106,8 @@ export function CompanionWindow() {
     return () => { stopped = true; clearTimeout(timer); resize.disconnect(); mutation.disconnect(); void pointerRegion.then(unlisten => unlisten()); void actionError.then(unlisten => unlisten()); void visibility.then(unlisten => unlisten()); void subscription.then((unlisten) => unlisten()); };
   }, []);
   return <div ref={contents} className="w-[340px] p-[10px]">
-    <ReadingCompanion {...state} jobs={[...state.jobs, ...state.tasks]} bubbleAbove={bubbleAbove}
-      onRetryLocal={async task => { await emitTo("main", "companion:retry-local", task); }} onHide={() => { void getCurrentWindow().hide(); void emitTo("main", "companion:hide"); }}
+    <ReadingCompanion {...state} jobs={state.preferences.petTasks ? [...state.jobs.filter(job=>!state.tasks.some(task=>task.paper_id===job.paper_id&&task.kind===job.kind)).map(job=>({...job,local:job.kind==="full_translation"})), ...state.tasks] : []} readingTitle={state.preferences.petReading ? state.readingTitle : null} notice={state.preferences.petTasks ? state.notice : null} animatePet={state.preferences.petAnimation} bubbleAbove={bubbleAbove}
+      onRetryLocal={async task => { const backend=state.jobs.find(j=>j.kind==="full_translation"&&j.paper_id===task.paper_id&&["failed","canceled"].includes(j.status));if(backend)await retryJob(backend.id);else await emitTo("main", "companion:retry-local", task); }} onHide={() => { void getCurrentWindow().hide(); void emitTo("main", "companion:hide"); }}
       onImport={() => { void emitTo("main", "companion:import"); }} onContinue={() => { void emitTo("main", "companion:continue"); }} onNativeDrag={() => { void getCurrentWindow().startDragging(); }}
       onDismiss={() => { setState((prev) => ({ ...prev, notice: null })); void emitTo("main", "companion:dismiss"); }}
       onOpenPaper={(id) => { void emitTo("main", "companion:open", id); }} />

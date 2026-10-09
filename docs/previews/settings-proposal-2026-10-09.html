@@ -149,7 +149,7 @@ const groups=[
   },
   {
     "id": "companion",
-    "name": "阅读伙伴与通知",
+    "name": "阅读伙伴",
     "icon": "bot",
     "family": "偏好",
     "sections": [
@@ -186,43 +186,6 @@ const groups=[
             "toggle",
             [],
             true
-          ]
-        ]
-      },
-      {
-        "title": "任务通知",
-        "rows": [
-          [
-            "completeNotice",
-            "任务完成提示",
-            "toggle",
-            [],
-            true
-          ],
-          [
-            "failedNotice",
-            "任务失败提示",
-            "toggle",
-            [],
-            true
-          ],
-          [
-            "noticeTime",
-            "完成提示停留",
-            "select",
-            [
-              "3 秒",
-              "5 秒",
-              "10 秒"
-            ],
-            "5 秒"
-          ],
-          [
-            "sound",
-            "提示音",
-            "toggle",
-            [],
-            false
           ]
         ]
       }
@@ -444,7 +407,7 @@ const groups=[
 let translated=false,translationTarget=null;const state={};let active='general';let savedTimer;const all=groups.flatMap(g=>g.sections.flatMap(s=>s.rows.map(r=>({g,s,r}))));all.forEach(({r})=>state[r[0]]=r[4]);
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function controls(r){const[id,label,type,options,value,help]=r;if(type==='toggle')return `<button role="switch" aria-label="${label}" aria-checked="${state[id]}" class="switch" data-id="${id}"></button>`;if(type==='select')return `<select aria-label="${label}" data-id="${id}">${options.map(o=>`<option ${o===state[id]?'selected':''}>${o}</option>`).join('')}</select>`;if(type==='number')return `<input aria-label="${label}" type="number" min="1" step="1" required class="textinput" style="width:90px" data-id="${id}" value="${state[id]}">`;if(type==='secret'||type==='text')return `<input aria-label="${label}" type="${type==='secret'?'password':'text'}" class="textinput" data-id="${id}" value="${esc(state[id])}" autocomplete="off">`;if(type==='action')return `<button class="smallbutton ${id==='trash'?'danger':''}" data-action="${id}">${value}</button>`;if(type==='key')return `<kbd class="shortcut">${value}</kbd>`;return `<span class="muted">${value}</span>`}
-function render(){const g=groups.find(g=>g.id===active);document.getElementById('nav').innerHTML=groups.map((g,i)=>`${!i||g.family!==groups[i-1].family?`<div class="caption">${g.family}</div>`:''}<button data-page="${g.id}" class="${active===g.id?'active':''}">${icon(g.icon)}${g.name}</button>`).join('');document.getElementById('content').innerHTML=`<div class="heading"><h2>${g.name}</h2><span class="saved" id="saved">已保存 · 预览</span></div>${g.sections.map(s=>`<h3>${s.title}</h3><div class="group">${s.rows.map(r=>`<div class="row" id="row-${r[0]}"><div class="label">${r[1]}${r[5]?`<span tabindex="0" class="info" aria-label="${r[1]}说明" data-help="${esc(r[5])}">i</span>`:''}</div><div class="control">${controls(r)}</div></div>`).join('')}</div>`).join('')}${active==='general'?'<div class="preview"><h3>显示效果预览</h3><div id="languagePreview"></div></div>':''}${active==='companion'?'<div class="pet-preview" id="petPreview"></div>':''}`;updatePreview();}
+function render(){const g=groups.find(g=>g.id===active);document.getElementById('nav').innerHTML=groups.map((g,i)=>`${!i||g.family!==groups[i-1].family?`<div class="caption">${g.family}</div>`:''}<button data-page="${g.id}" class="${active===g.id?'active':''}">${icon(g.icon)}${g.name}</button>`).join('');document.getElementById('content').innerHTML=`<div class="heading"><h2>${g.name}</h2><span class="saved" id="saved">已保存 · 预览</span></div>${g.sections.map(s=>`<h3>${s.title}</h3><div class="group">${s.rows.map(r=>`<div class="row" id="row-${r[0]}"><div class="label">${r[1]}</div><div class="control">${controls(r)}</div></div>`).join('')}</div>`).join('')}${active==='general'?'<div class="preview"><h3>显示效果预览</h3><div id="languagePreview"></div></div>':''}${active==='companion'?'<div class="pet-preview" id="petPreview"></div>':''}`;updatePreview();}
 function languageAt(key){return state[key]==='跟随统一设置'?state.language:state[key]}const english='EvoC2Rust: A Skeleton-guided Framework for Project-Level C-to-Rust Translation',chinese='EvoC2Rust：骨架引导的项目级 C 到 Rust 翻译框架';function titleFor(lang,missing=false){return lang==='原文'||missing?english:lang==='中英双语'?chinese+' / '+english:chinese}
 function updatePreview(){const box=document.getElementById('languagePreview');if(box)box.innerHTML=[['论文库','libraryLang'],['标签页','tabLang'],['概览','detailLang'],['阅读历史','historyLang']].map(([name,key])=>`<div class="paperline"><span>${name}</span><strong>${titleFor(languageAt(key))}${key==='detailLang'?`<small>${state.abstractLang==='原文'?'A skeleton-guided framework translates legacy C projects into Rust.':state.abstractLang==='中英双语'?'通过骨架引导将旧 C 项目转为 Rust。 / A skeleton-guided framework translates legacy C projects into Rust.':'通过骨架引导，将旧 C 项目逐步转换为 Rust。'}</small>`:''}</strong></div>`).join('')+`<div class="paperline"><span>${translated?'已补译':'没有译文'}</span><strong>${translated&&state.language!=='原文'?'利用语言模型阅读研究论文':'Reading Research with Language Models'}</strong>${!translated?'<button class="smallbutton" data-action="missingTranslations">补全中文</button>':''}</div>`;const pet=document.getElementById('petPreview');if(pet)pet.innerHTML=state.pet?`<span aria-hidden="true">🦉</span>${state.petReading||state.petTask?'<div class="bubble">正在阅读 EvoC2Rust</div>':''}`:'';document.body.classList.toggle('dark',state.theme==='深色'||state.theme==='跟随系统'&&matchMedia('(prefers-color-scheme:dark)').matches);document.body.style.fontSize=state.font==='大'?'17px':state.font==='小'?'13px':'15px';}
 function saved(){const el=document.getElementById('saved');if(!el)return;el.classList.add('show');clearTimeout(savedTimer);savedTimer=setTimeout(()=>el.classList.remove('show'),1600)}

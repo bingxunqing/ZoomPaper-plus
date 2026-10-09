@@ -50,6 +50,7 @@ export interface QaPanelHandle {
 
 interface Props {
   paperId: string;
+  defaultOpen?: boolean;
   onBusyChange?: (busy: boolean) => void;
   /** 引用点击后 PDF 内跳页（0-based） */
   onJumpPage?: (pageIdx: number) => void;
@@ -69,7 +70,7 @@ const MAX_SELECTIONS = 5;
  * 注：费曼学习法已提升为左列独立视图（Reader 的 Tabs），此处仅保留普通问答。
  */
 export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
-  { paperId, onJumpPage, onJumpToSelection, onBusyChange },
+  { paperId, onJumpPage, onJumpToSelection, onBusyChange, defaultOpen = true },
   ref,
 ) {
   const [tab, setTab] = useState<"qa" | "quiz">(() => localStorage.getItem(`zoompaper.qaTab.${paperId}`) === "quiz" ? "quiz" : "qa");
@@ -77,8 +78,9 @@ export const QaPanel = forwardRef<QaPanelHandle, Props>(function QaPanel(
   useEffect(() => { setTab(localStorage.getItem(`zoompaper.qaTab.${paperId}`) === "quiz" ? "quiz" : "qa"); }, [paperId]);
   const [width, setWidth] = useState(loadWidth);
   const [collapsed, setCollapsed] = useState(
-    () => localStorage.getItem(COLLAPSED_KEY) === "1",
+    () => !defaultOpen,
   );
+  useEffect(()=>setCollapsed(!defaultOpen),[defaultOpen]);
   const [dragging, setDragging] = useState(false);
   // PDF 选中的段落列表（上下文引用区，可多条；发送成功后由 QaChat 回调清空）
   const [selections, setSelections] = useState<AskSelection[]>([]);

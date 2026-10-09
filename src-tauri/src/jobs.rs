@@ -127,7 +127,26 @@ fn retry(db: &Db, id: &str) -> Result<(), String> {
     Ok(())
 }
 fn claim(db: &Db, kind: &str) -> Result<Option<Job>, String> {
+    let limit = crate::settings::Settings::load()
+        .map(|s| s.workflow.parse_concurrency)
+        .unwrap_or(2)
+        .max(1);
+    claim_with_limit(db, kind, limit)
+}
+fn claim_with_limit(db: &Db, kind: &str, limit: u32) -> Result<Option<Job>, String> {
+    if crate::storage::MAINTENANCE.load(Ordering::SeqCst) {
+        return Ok(None);
+    }
     let conn = db.conn();
+    if crate::storage::MAINTENANCE.load(Ordering::SeqCst) {
+        return Ok(None);
+    }
+    if kind == "parse" {
+        let running:u32=conn.query_row("SELECT count(*) FROM background_jobs WHERE kind='parse' AND status IN ('running','canceling')",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+        if running >= limit {
+            return Ok(None);
+        }
+    }
     let id:Option<String>=conn.query_row("SELECT j.id FROM background_jobs j JOIN papers p ON p.id=j.paper_id WHERE j.kind=?1 AND j.status='queued' AND p.deleted_at IS NULL ORDER BY j.created_at LIMIT 1",[kind],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
     let Some(id) = id else { return Ok(None) };
     conn.execute(
@@ -157,15 +176,30 @@ pub fn start(app: AppHandle) {
     );
     // Recover missing follow-up jobs if the app closed between parse completion and enqueue.
     for kind in ["index", "translate", "doi"] {
+        if !follow_up_enabled(kind) {
+            continue;
+        }
         let _=app.state::<Db>().conn().execute("INSERT INTO background_jobs(id,paper_id,kind,status,stage,created_at,updated_at,revision) SELECT lower(hex(randomblob(16))),j.paper_id,?1,'queued','queued',?2,?2,p.parse_revision FROM background_jobs j JOIN papers p ON p.id=j.paper_id WHERE j.kind='parse' AND j.status='done' AND p.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM background_jobs next WHERE next.paper_id=j.paper_id AND next.kind=?1 AND next.revision=p.parse_revision) GROUP BY j.paper_id", params![kind,chrono::Utc::now().timestamp()]);
     }
 
-    for kind in ["parse", "parse", "index", "translate", "doi"] {
+    let parser = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            if let Ok(Some(job)) = claim(&parser.state::<Db>(), "parse") {
+                let owner = parser.clone();
+                tauri::async_runtime::spawn(async move {
+                    run(&owner, &job).await;
+                });
+            } else {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+        }
+    });
+    for kind in ["index", "translate", "doi"] {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             loop {
-                let next = claim(&app.state::<Db>(), kind);
-                if let Ok(Some(job)) = next {
+                if let Ok(Some(job)) = claim(&app.state::<Db>(), kind) {
                     run(&app, &job).await;
                 } else {
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -174,14 +208,15 @@ pub fn start(app: AppHandle) {
         });
     }
 }
+
 async fn run(app: &AppHandle, job: &Job) {
     let db = app.state::<Db>();
     let canceled = Arc::new(AtomicBool::new(false));
     let flag = canceled.clone();
-    let work =
-        async {
-            match job.kind.as_str() {
-                "parse" => crate::commands::parse_background(
+    let work = async {
+        match job.kind.as_str() {
+            "parse" => {
+                crate::commands::parse_background(
                     &db,
                     &job.paper_id,
                     &|p| progress(&db, &job.id, p),
@@ -196,20 +231,21 @@ async fn run(app: &AppHandle, job: &Job) {
                         Ok(())
                     },
                 )
-                .await,
-                "index" => {
-                    // A blocking model inference cannot be forcibly terminated. Wait for it even after cancel,
-                    // but do not commit its results, preventing another job from overlapping it.
-                    let result = crate::commands::index_background(&db, &job.paper_id, flag).await;
-                    result.map(|_| ())
-                }
-                "translate" => crate::commands::translate_paper_metadata_inner(&db, &job.paper_id)
-                    .await
-                    .map(|_| ()),
-                "doi" => crate::commands::refresh_publication_inner(&db, &job.paper_id).await,
-                _ => Err("未知任务类型".into()),
+                .await
             }
-        };
+            "index" => {
+                // A blocking model inference cannot be forcibly terminated. Wait for it even after cancel,
+                // but do not commit its results, preventing another job from overlapping it.
+                let result = crate::commands::index_background(&db, &job.paper_id, flag).await;
+                result.map(|_| ())
+            }
+            "translate" => crate::commands::translate_paper_metadata_inner(&db, &job.paper_id)
+                .await
+                .map(|_| ()),
+            "doi" => crate::commands::refresh_publication_inner(&db, &job.paper_id).await,
+            _ => Err("未知任务类型".into()),
+        }
+    };
     tokio::pin!(work);
     let timeout = tokio::time::sleep(std::time::Duration::from_secs(if job.kind == "parse" {
         1800
@@ -248,7 +284,10 @@ async fn run(app: &AppHandle, job: &Job) {
         [&job.id],
     );
     if completed == 1 && status == "done" && job.kind == "parse" {
-        for kind in ["index", "translate", "doi"] {
+        for kind in ["index", "translate", "doi", "full_translation"] {
+            if !follow_up_enabled(kind) {
+                continue;
+            }
             let _ = enqueue(&db, &job.paper_id, kind);
         }
     }
@@ -341,4 +380,62 @@ mod tests {
             Some("batch-123")
         );
     }
+}
+
+fn follow_up_enabled(kind: &str) -> bool {
+    let w = crate::settings::Settings::load()
+        .unwrap_or_default()
+        .workflow;
+    match kind {
+        "doi" => w.auto_doi,
+        "translate" => w.auto_metadata_translation,
+        "full_translation" => w.auto_full_translation,
+        _ => true,
+    }
+}
+#[cfg(test)]
+mod concurrency_tests {
+    use super::*;
+    #[test]
+    fn changing_limit_never_interrupts_running_jobs() {
+        crate::db::register_sqlite_vec();
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::migrations::migrate(&conn).unwrap();
+        conn.execute("INSERT INTO papers(id,title,pdf_path,md_path)VALUES('a','A','a.pdf','a.md'),('b','B','b.pdf','b.md')",[]).unwrap();
+        let db = Db::from_connection(conn);
+        enqueue(&db, "a", "parse").unwrap();
+        enqueue(&db, "b", "parse").unwrap();
+        assert!(claim_with_limit(&db, "parse", 1).unwrap().is_some());
+        assert!(claim_with_limit(&db, "parse", 1).unwrap().is_none());
+        assert!(claim_with_limit(&db, "parse", 2).unwrap().is_some());
+        assert!(claim_with_limit(&db, "parse", 1).unwrap().is_none());
+        assert_eq!(
+            snapshot(&db)
+                .unwrap()
+                .iter()
+                .filter(|j| j.status == "running")
+                .count(),
+            2
+        );
+    }
+}
+
+#[tauri::command]
+pub fn claim_frontend_translation(db: State<'_, Db>, job_id: String) -> Result<bool, String> {
+    if crate::storage::MAINTENANCE.load(Ordering::SeqCst) {
+        return Ok(false);
+    }
+    let conn = db.conn();
+    if crate::storage::MAINTENANCE.load(Ordering::SeqCst) { return Ok(false); }
+    let changed=conn.execute("UPDATE background_jobs SET status='running',stage='translate',updated_at=?2 WHERE id=?1 AND kind='full_translation' AND status='queued'",params![job_id,chrono::Utc::now().timestamp()]).map_err(|e|e.to_string())?;
+    Ok(changed == 1)
+}
+#[tauri::command]
+pub fn finish_frontend_translation(
+    db: State<'_, Db>,
+    job_id: String,
+    error: Option<String>,
+) -> Result<(), String> {
+    db.conn().execute("UPDATE background_jobs SET status=?2,error=?3,updated_at=?4 WHERE id=?1 AND kind='full_translation' AND status='running'",params![job_id,if error.is_some(){"failed"}else{"done"},error,chrono::Utc::now().timestamp()]).map_err(|e|e.to_string())?;
+    Ok(())
 }

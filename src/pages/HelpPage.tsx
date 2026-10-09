@@ -93,8 +93,10 @@ const guideSections: GuideSection[] = [
   {
     id: "system", title: "设置与扩展", icon: Settings2,
     items: [
+      { id: "preferences", title: "阅读偏好", icon: Settings2, summary: "选择标题语言和阅读器行为。", steps: ["设置 → 常规：选择标题与摘要语言，可分别配置论文库、标签和概览。", "缺少中文时选择全部翻译或保留英文。", "设置 → 论文阅读：调整自动阅读状态和默认 AI 助手。", "设置 → 阅读伙伴：调整伙伴及气泡显示。"] },
+      { id: "storage", title: "备份与迁移", icon: Download, summary: "备份论文库或更换存储位置。", steps: ["等待后台任务完成，打开设置 → 数据与存储。", "导出完整备份，不包含 API 密钥。", "选择备份恢复，完全退出并重新打开应用后生效。", "迁移会复制文件并保留旧目录；维护可重建索引或清理缓存。"] },
       { id: "model", title: "配置 AI", icon: KeyRound, summary: "连接翻译、问答和生成功能所需的模型。", steps: ["打开设置。", "选择服务商并填写 API 地址、密钥和模型。", "保存后使用测试功能检查连接。"] },
-      { id: "parser", title: "配置解析", icon: FileText, summary: "连接 MinerU 解析 PDF 正文。", steps: ["打开设置中的解析配置。", "填写 MinerU 信息并保存。", "回到论文库解析论文。"] },
+      { id: "parser", title: "配置解析", icon: FileText, summary: "连接 MinerU 解析 PDF 正文。", steps: ["打开设置 → 导入与解析 → PDF 解析。", "填写 MinerU 信息并保存。", "回到论文库解析论文。"] },
       { id: "browser", title: "浏览器扩展", icon: MonitorDown, summary: "从论文网页直接加入 ZoomPaper Plus。", steps: ["在 Chrome 或 Edge 的扩展管理页加载解压后的扩展。", "打开受支持的论文页面。", "右键页面或点击扩展按钮，选择加入 ZoomPaper Plus。"] },
       { id: "reparse", title: "重新解析", icon: RefreshCw, summary: "在元数据或正文不完整时重新处理论文。", steps: ["在论文库右键论文。", "点击解析或重新解析。", "等待状态变为已解析。"] },
       { id: "help-ai", title: "询问软件用法", icon: HelpCircle, summary: "让 AI 根据完整功能手册回答操作问题。", steps: ["打开帮助页面。", "在“问 AI”输入功能或操作问题。", "发送后按回答中的步骤操作。"] },

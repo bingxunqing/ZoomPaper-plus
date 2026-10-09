@@ -1,20 +1,21 @@
 //! ZoomPaper Plus 桌面端入口：Tauri 应用装配。
 
 mod agent;
-mod companion;
-mod jobs;
-mod connector;
 mod ai;
 mod blog;
 mod commands;
+mod companion;
+mod connector;
 mod db;
 mod feynman;
 mod fs;
+mod jobs;
+mod publication;
 mod qa;
 mod quiz;
-mod publication;
 mod rag;
 mod settings;
+mod storage;
 mod translate;
 
 use tauri::Manager;
@@ -50,11 +51,28 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // 初始化数据库（建目录 + 建表）并放入应用状态
+            if let Err(error) = storage::apply_pending() {
+                eprintln!("恢复备份失败：{error}");
+                if let Ok(data) = settings::app_data_dir() {
+                    let _ = std::fs::write(data.join("restore-error.txt"), error.to_string());
+                    let _ = std::fs::remove_file(data.join("restore-request.json"));
+                }
+            }
             let db = db::Db::init()?;
             app.manage(db);
-            if let (Some(main), Some(companion)) = (app.get_webview_window("main"), app.get_webview_window("companion")) {
-                if let (Ok(position), Ok(size), Ok(scale)) = (main.outer_position(), main.outer_size(), main.scale_factor()) {
-                    let _ = companion.set_position(tauri::PhysicalPosition::new(position.x + size.width as i32 - (360.0 * scale) as i32, position.y + (60.0 * scale) as i32));
+            if let (Some(main), Some(companion)) = (
+                app.get_webview_window("main"),
+                app.get_webview_window("companion"),
+            ) {
+                if let (Ok(position), Ok(size), Ok(scale)) = (
+                    main.outer_position(),
+                    main.outer_size(),
+                    main.scale_factor(),
+                ) {
+                    let _ = companion.set_position(tauri::PhysicalPosition::new(
+                        position.x + size.width as i32 - (360.0 * scale) as i32,
+                        position.y + (60.0 * scale) as i32,
+                    ));
                 }
             }
             companion::start(app.handle().clone());
@@ -71,13 +89,25 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
-                if let Some(companion) = window.app_handle().get_webview_window("companion") { let _ = companion.close(); }
+                if let Some(companion) = window.app_handle().get_webview_window("companion") {
+                    let _ = companion.close();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
             companion::companion_regions,
             commands::get_settings,
             commands::update_settings,
+            commands::enqueue_metadata_translations,
+            jobs::claim_frontend_translation,
+            jobs::finish_frontend_translation,
+            storage::export_library_backup,
+            storage::stage_library_restore,
+            storage::take_restored_preferences,
+            storage::relocate_library,
+            storage::clear_library_cache,
+            storage::prepare_browser_extension,
+            connector::browser_extension_status,
             commands::add_provider,
             commands::update_provider,
             commands::delete_provider,

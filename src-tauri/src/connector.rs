@@ -3,6 +3,11 @@ use crate::{db::models::Paper, db::Db};
 use rusqlite::{params, OptionalExtension};
 use std::io::{Read, Write};
 use tauri::{AppHandle, Manager};
+static READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+#[tauri::command]
+pub fn browser_extension_status() -> bool {
+    READY.load(std::sync::atomic::Ordering::Relaxed)
+}
 const ORIGIN: &str = "chrome-extension://fjmflfompjgilhdknkpogjhpjeanndbn";
 pub fn existing_receipt(db: &Db, id: Option<&str>) -> Result<Option<Paper>, String> {
     let Some(id) = id.filter(|s| uuid::Uuid::parse_str(s).is_ok()) else {
@@ -65,6 +70,7 @@ pub fn start(app: AppHandle) {
             return;
         }
     };
+    READY.store(true, std::sync::atomic::Ordering::Relaxed);
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { continue };

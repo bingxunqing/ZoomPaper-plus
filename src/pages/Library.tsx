@@ -23,6 +23,7 @@ import {
   emptyTrash,
   exportNotes,
   importPdf,
+  getSettings,
   listFolders,
   listPapers,
   listReadingPlans,
@@ -180,7 +181,7 @@ export function Library({ onOpenPaper, onOpenPapers, refreshSignal = 0, jobs = [
     const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
     if (words.length) {
       list = list.filter((p) => {
-        const haystack = `${p.title} ${p.venue ?? ""} ${p.authors ?? ""} ${p.abstract ?? ""}`.toLocaleLowerCase();
+        const haystack = `${p.title} ${p.venue ?? ""} ${p.authors ?? ""} ${p.abstract ?? ""} ${p.title_zh ?? ""} ${p.abstract_zh ?? ""}`.toLocaleLowerCase();
         return words.every((word) => haystack.includes(word));
       });
     }
@@ -382,7 +383,7 @@ export function Library({ onOpenPaper, onOpenPapers, refreshSignal = 0, jobs = [
           setParsingId(paper.id);
           setNotice(null);
           try {
-            await parsePdf(paper.id, (progress) => updateParseProgress(paper.id, progress));
+            if ((await getSettings()).workflow?.autoParse !== false) await parsePdf(paper.id, (progress) => updateParseProgress(paper.id, progress));
           } catch (e) {
             failures.push(`${paper.title}：已导入，解析失败（${e}）`);
           } finally { clearParseProgress(paper.id); }
