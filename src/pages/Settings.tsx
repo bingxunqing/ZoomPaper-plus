@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { usePreferences, setPreferences, exportViewPreferences, missingMetadata, type Preferences } from "@/lib/preferences";
 import { blogJobs } from "@/lib/blogJobs";
 import { translationJobs } from "@/lib/translationJobs";
@@ -29,6 +30,9 @@ export function SettingsPage() {
     const [extensionReady, setExtensionReady] = useState(false);
     useEffect(() => { void invoke<boolean>('browser_extension_status').then(setExtensionReady).catch(() => { }); }, []);
     const [extensionPath, setExtensionPath] = useState('');
+    const [extensionInstall, setExtensionInstall] = useState(false);
+    const [storagePath, setStoragePath] = useState('');
+    useEffect(() => { void invoke<string>('library_storage_path').then(setStoragePath).catch(() => {}); }, []);
     const [concurrency, setConcurrency] = useState('2');
     const settingsRef = useRef<Settings | null>(null);
     const saveQueue = useRef(Promise.resolve());
@@ -129,9 +133,9 @@ export function SettingsPage() {
             if (name === 'extension' || name === 'extensionDir') {
                 const path = await invoke<string>('prepare_browser_extension');
                 setExtensionPath(path);
-                await openPath(path);
+                await revealItemInDir(path);
                 if (name === 'extension')
-                    setActionStatus('在 Chrome 扩展管理中开启开发者模式，加载此文件夹。');
+                    setExtensionInstall(true);
             }
             else if (name === 'cache') {
                 await invoke('clear_library_cache');
@@ -152,7 +156,7 @@ export function SettingsPage() {
                 if (name === 'backup') {
                     const values = exportViewPreferences();
                     const result = await invoke<string>('export_library_backup', { destination: path, preferences: values });
-                    await openPath(result);
+                    await revealItemInDir(result);
                     setActionStatus('备份已导出');
                 }
                 else if (name === 'restore') {
@@ -162,6 +166,7 @@ export function SettingsPage() {
                 else if (name === 'path') {
                     const updated = await invoke<Settings>('relocate_library', { destination: path });
                     setSettings(updated);
+                    setStoragePath(updated.paper_library_path ?? storagePath);
                     settingsRef.current = updated;
                     window.dispatchEvent(new Event('zoompaper-library-changed'));
                     setActionStatus('论文库已迁移；旧目录仍保留。');
@@ -250,33 +255,35 @@ export function SettingsPage() {
     const workflow = { ...DEFAULT_WORKFLOW, ...current.workflow };
     const row = (id: string, label: string, control: React.ReactNode) => <div id={`setting-${id}`} className="flex min-h-[64px] items-center justify-between gap-5 py-4"><span className="text-sm">{label}</span><div className="flex shrink-0 items-center gap-2">{control}</div></div>;
     const toggle = (key: keyof Preferences, label: string) => row(key, label, <Switch aria-label={label} checked={Boolean(prefs[key])} onCheckedChange={value => setPreferences({ [key]: value })}/>);
-    const language = (key: keyof Preferences, label: string, inherit = false) => row(key, label, <select aria-label={label} value={String(prefs[key])} onChange={e => void changeLanguage(key, e.target.value)} className="rounded-lg border border-zp-border bg-zp-subtle px-3 py-1.5 text-sm">{inherit && <option value="inherit">跟随统一设置</option>}<option value="zh">中文优先</option><option value="original">原文</option><option value="both">中英双语</option></select>);
+    const selectControl = (label: string, value: string, options: {value:string;label:string}[], change: (value:string)=>void) => <Select value={value} onValueChange={value=>{if(value!==null)change(value);}}><SelectTrigger aria-label={label} className="h-8 min-w-32 border-zp-border shadow-none"><SelectValue>{options.find(option=>option.value===value)?.label}</SelectValue></SelectTrigger><SelectContent>{options.map(option=><SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>;
+    const language = (key: keyof Preferences, label: string, _inherit = false) => row(key, label, selectControl(label, String(prefs[key] === 'inherit' ? prefs.titleLanguage : prefs[key]), [{value:'original',label:'英文'},{value:'zh',label:'中文'},{value:'both',label:'中英双语'}], value=>void changeLanguage(key,value)));
     const workflowToggle = (key: keyof WorkflowSettings, label: string) => row(key, label, <Switch aria-label={label} checked={Boolean(workflow[key])} onCheckedChange={value => saveWorkflow({ [key]: value })}/>);
     const action = (id: string, label: string, button: string) => row(id, label, <Button size="sm" variant="outline" disabled={working || reindexing} onClick={() => ['extension', 'extensionDir', 'backup'].includes(id) ? void perform(id) : setOperation(id)}>{button}</Button>);
     const panels = [
         { id: 'general', groups: [{ title: '标题与摘要', rows: [language('titleLanguage', '统一标题语言'), language('libraryLanguage', '论文库标题', true), language('tabLanguage', '论文标签标题', true), language('detailLanguage', '概览标题', true), language('abstractLanguage', '概览摘要'), language('historyLanguage', '阅读历史标题', true)] }, { title: '启动', rows: [toggle('restoreTabs', '恢复上次打开的论文')] }] },
         { id: 'reader', groups: [{ title: '阅读器', rows: [toggle('markReading', '打开后标记在读'), toggle('markReadAtEnd', '读到末页自动标记已读'), toggle('showAssistant', '默认显示 AI 助手')] }] },
-        { id: 'companion', groups: [{ title: '阅读伙伴', rows: [row('pet', '显示桌面阅读伙伴', <Switch aria-label="显示桌面阅读伙伴" checked={petEnabled} onCheckedChange={setCompanionEnabled}/>), row('petAnimation', '角色动画', <select aria-label="角色动画" value={prefs.petAnimation ? 'system' : 'reduced'} onChange={e => setPreferences({ petAnimation: e.target.value === 'system' })} className="rounded-lg border border-zp-border bg-zp-subtle px-3 py-1.5 text-sm"><option value="system">跟随系统</option><option value="reduced">减少动画</option></select>), toggle('petReading', '显示正在阅读'), toggle('petTasks', '显示任务气泡')] }] },
-        { id: 'ai', groups: [{ title: 'AI 服务', rows: [<div key="providers" className="space-y-3 py-4">{current.providers.map(provider => <ProviderCard key={provider.id} provider={provider} isActive={provider.id === current.active_provider_id} onSetActive={() => handleSetActive(provider.id)} onEdit={() => { setEditingProvider(provider); setShowEditDialog(true); }} onDelete={() => handleDeleteProvider(provider.id)}/>)}<Button size="sm" variant="outline" onClick={() => setShowAddDialog(true)}><Plus size={15}/>添加 Provider</Button></div>] }, { title: '联网搜索', rows: [row('webProvider', '搜索 Provider', <select aria-label="搜索 Provider" value={current.web_search_provider} onChange={e => setSettings({ ...current, web_search_provider: e.target.value })} className="rounded-lg border border-zp-border bg-zp-subtle px-3 py-1.5 text-sm"><option value="none">关闭</option><option value="auto">自动</option><option value="deepseek">DeepSeek</option><option value="anthropic">Anthropic</option></select>), row('webModel', '搜索模型名', <Input aria-label="搜索模型名" value={current.web_search_model ?? ''} onChange={e => setSettings({ ...current, web_search_model: e.target.value || null })} className="w-56"/>)] }] },
-        { id: 'import', groups: [{ title: 'PDF 解析', rows: [row('mineru', 'MinerU API Key', <Input aria-label="MinerU API Key" type="password" autoComplete="off" value={current.mineru_api_key} onChange={e => setSettings({ ...current, mineru_api_key: e.target.value })} className="w-56"/>), workflowToggle('autoParse', '导入后自动解析'), row('parseConcurrency', '同时解析论文数', <Input aria-label="同时解析论文数" type="number" min={1} step={1} value={concurrency} onChange={e => setConcurrency(e.target.value)} onBlur={() => { const n = Number(concurrency); if (!Number.isSafeInteger(n) || n < 1 || n > 4294967295) {
+        { id: 'companion', groups: [{ title: '阅读伙伴', rows: [row('pet', '显示桌面阅读伙伴', <Switch aria-label="显示桌面阅读伙伴" checked={petEnabled} onCheckedChange={setCompanionEnabled}/>), row('petAnimation', '角色动画', selectControl('角色动画',prefs.petAnimation?'rich':'normal',[{value:'rich',label:'丰富'},{value:'normal',label:'普通'}],value=>setPreferences({petAnimation:value==='rich'}))), toggle('petReading', '显示正在阅读'), toggle('petTasks', '显示任务气泡')] }] },
+        { id: 'ai', groups: [{ title: 'AI 服务', rows: [<div key="providers" className="space-y-3 py-4">{current.providers.map(provider => <ProviderCard key={provider.id} provider={provider} isActive={provider.id === current.active_provider_id} onSetActive={() => handleSetActive(provider.id)} onEdit={() => { setEditingProvider(provider); setShowEditDialog(true); }} onDelete={() => handleDeleteProvider(provider.id)}/>)}<Button size="sm" variant="outline" onClick={() => setShowAddDialog(true)}><Plus size={15}/>添加 Provider</Button></div>] }, { title: '联网搜索', rows: [row('webProvider', '搜索 Provider', selectControl('搜索 Provider',current.web_search_provider,[{value:'none',label:'关闭'},{value:'auto',label:'自动'},{value:'deepseek',label:'DeepSeek'},{value:'anthropic',label:'Anthropic'}],value=>setSettings({...current,web_search_provider:value}))), row('webModel', '搜索模型名', <Input aria-label="搜索模型名" value={current.web_search_model ?? ''} onChange={e => setSettings({ ...current, web_search_model: e.target.value || null })} className="w-56"/>)] }] },
+        { id: 'import', groups: [{ title: 'PDF 解析', rows: [row('mineru', 'MinerU API Key', <Input aria-label="MinerU API Key" type="password" autoComplete="off" value={current.mineru_api_key} onBlur={() => saveWorkflow({})} onChange={e => setSettings({ ...current, mineru_api_key: e.target.value })} className="w-56"/>), workflowToggle('autoParse', '导入后自动解析'), row('parseConcurrency', '同时解析论文数', <Input aria-label="同时解析论文数" type="number" min={1} step={1} value={concurrency} onChange={e => setConcurrency(e.target.value)} onBlur={() => { const n = Number(concurrency); if (!Number.isSafeInteger(n) || n < 1 || n > 4294967295) {
                             setError('同时解析论文数必须为正整数');
                             setConcurrency(String(workflow.parseConcurrency));
                         }
                         else
-                            saveWorkflow({ parseConcurrency: n }); }} className="w-24"/>)] }, { title: '导入后处理', rows: [workflowToggle('autoDoi', '自动补全会议与 DOI'), workflowToggle('autoMetadataTranslation', '翻译标题与摘要'), workflowToggle('autoFullTranslation', '自动翻译全文')] }, { title: '浏览器扩展', rows: [row('connector', '导入接收服务', <span className="text-sm text-zp-tertiary">{extensionReady ? '已就绪' : '未连接'}</span>), action('extension', '安装扩展', '安装'), action('extensionDir', '扩展文件夹', '打开')] }] },
-        { id: 'data', groups: [{ title: '论文库', rows: [row('path', '存储位置', <><span className="max-w-64 truncate text-xs text-zp-tertiary" title={current.paper_library_path ?? ''}>{current.paper_library_path ?? '默认位置'}</span><Button size="sm" variant="outline" disabled={working} onClick={() => setOperation('path')}>迁移</Button></>), action('backup', '完整备份', '导出'), action('restore', '从备份恢复', '选择')] }, { title: '维护', rows: [action('reindex', '向量索引', '重建'), action('cache', '缓存', '清理'), action('trash', '回收站', '清空')] }] },
+                            saveWorkflow({ parseConcurrency: n }); }} className="w-24"/>)] }, { title: '导入后处理', rows: [workflowToggle('autoDoi', '自动补全会议与 DOI'), workflowToggle('autoMetadataTranslation', '翻译标题与摘要'), workflowToggle('autoFullTranslation', '自动翻译全文')] }, { title: '浏览器扩展', rows: [row('connector', '导入接收服务', <span className="text-sm text-zp-tertiary">{extensionReady ? '已就绪' : '未连接'}</span>), action('extension', '浏览器扩展', '加载扩展'), action('extensionDir', '扩展文件夹', '定位')] }] },
+        { id: 'data', groups: [{ title: '论文库', rows: [row('path', '存储位置', <><Input aria-label="论文库存储路径" readOnly value={current.paper_library_path ?? storagePath} title={current.paper_library_path ?? storagePath} className="w-[min(32vw,400px)] text-xs text-zp-secondary"/><Button size="sm" variant="outline" disabled={working} onClick={() => setOperation('path')}>选择文件夹</Button></>), action('backup', '完整备份', '导出'), action('restore', '从备份恢复', '选择')] }, { title: '维护', rows: [action('reindex', '向量索引', '重建'), action('cache', '缓存', '清理'), action('trash', '回收站', '清空')] }] },
     ];
     const needle = query.trim().toLowerCase();
     const visible = panels.filter(panel => needle || panel.id === section).map(panel => ({ ...panel, groups: panel.groups.map(group => ({ ...group, rows: group.rows.filter(element => !needle || `${SECTIONS.find(s => s.id === panel.id)?.name} ${group.title} ${element.props.children?.[0]?.props?.children ?? ''} ${element.props.id ?? ''} ${String(element.props.id ?? '').includes('Language') ? '中文 英文 语言' : ''}`.toLowerCase().includes(needle) || needle === 'api' && panel.id === 'ai' || needle === '宠物' && panel.id === 'companion') })).filter(group => group.rows.length) })).filter(panel => panel.groups.length);
     return <div className="flex min-h-0 w-full flex-1 bg-zp-subtle">
-    <aside className="w-60 shrink-0 overflow-y-auto border-r border-zp-border px-4 py-7"><h1 className="mb-6 px-3 text-xl font-semibold">设置</h1><label className="mb-6 flex items-center gap-2 rounded-full bg-zp-surface-hover px-3 py-2"><Search size={17} className="text-zp-tertiary"/><input aria-label="搜索设置" value={query} onChange={e => setQuery(e.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none"/>{query && <button aria-label="清空设置搜索" onClick={() => setQuery('')}><X size={14}/></button>}</label><nav className="space-y-1">{SECTIONS.map(s => <button key={s.id} onClick={() => { setSection(s.id); setQuery(''); }} className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm ${section === s.id && !needle ? 'bg-zp-surface-hover text-zp-primary' : 'text-zp-secondary hover:bg-zp-surface-hover'}`}><s.icon size={18}/>{s.name}</button>)}</nav></aside>
+    <aside className="w-60 shrink-0 overflow-y-auto border-r border-zp-border px-4 py-7"><h1 className="mb-6 px-3 text-xl font-semibold">设置</h1><label className="mb-6 flex items-center gap-2 rounded-full bg-zp-surface-hover px-3 py-2"><Search size={17} className="text-zp-tertiary"/><input aria-label="搜索设置" value={query} onChange={e => setQuery(e.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none"/>{query && <button aria-label="清空设置搜索" onClick={() => setQuery('')}><X size={14}/></button>}</label><nav className="space-y-1">{SECTIONS.map(s => <button key={s.id} onClick={() => { setSection(s.id); setQuery(''); setError(null); setActionStatus(''); setReindexResult(null); }} className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm ${section === s.id && !needle ? 'bg-zp-surface-hover text-zp-primary' : 'text-zp-secondary hover:bg-zp-surface-hover'}`}><s.icon size={18}/>{s.name}</button>)}</nav></aside>
     <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-8 py-10"><div className="mx-auto max-w-[860px]"><h2 className="mb-8 text-2xl font-semibold">{needle ? '搜索设置' : SECTIONS.find(s => s.id === section)?.name}</h2>
       {error && <p role="alert" className="mb-5 rounded-lg border border-red-200 px-4 py-3 text-sm text-red-600">{error}</p>}
       {visible.map(panel => <section key={panel.id}>{needle && <h3 className="mt-6 text-sm text-zp-tertiary">{SECTIONS.find(s => s.id === panel.id)?.name}</h3>}{panel.groups.map(group => <div key={group.title} className="mb-7"><h3 className="mb-3 text-sm font-medium">{group.title}</h3><div className="rounded-2xl border border-zp-border bg-white px-5 dark:bg-zp-surface">{group.rows.map((element, index) => <div key={element.props.id ?? index} className="border-b border-zp-border last:border-0">{element}</div>)}</div></div>)}</section>)}
-      {(section === 'ai' || section === 'import') && !needle && <Button onClick={() => { settingsRef.current = current; void handleSave(); }} disabled={saving}>保存 API 配置</Button>}
+      {section === 'ai' && !needle && <Button onClick={() => { settingsRef.current = current; void handleSave(); }} disabled={saving}>保存 API 配置</Button>}
       {saved && <span role="status" className="ml-3 text-xs text-zp-tertiary">已保存</span>}
-      {reindexResult && <p role="status" className="mt-4 text-sm text-zp-secondary">{reindexResult}</p>}{actionStatus && <p role="status" className="mt-4 text-sm text-zp-secondary">{actionStatus}</p>}{extensionPath && <button className="mt-3 max-w-full truncate text-left text-xs text-zp-tertiary" onClick={() => void openPath(extensionPath)}>{extensionPath}</button>}
+      {reindexResult && <p role="status" className="mt-4 text-sm text-zp-secondary">{reindexResult}</p>}{actionStatus && <p role="status" className="mt-4 text-sm text-zp-secondary">{actionStatus}</p>}
     </div></div>
+    <Dialog open={extensionInstall} onOpenChange={setExtensionInstall}><DialogContent><DialogHeader><DialogTitle>加载浏览器扩展</DialogTitle></DialogHeader><ol className="list-decimal space-y-3 py-3 pl-5 text-sm"><li>在 Chrome / Edge 的扩展管理页开启开发者模式。</li><li>点击“加载已解压的扩展程序”，选择此文件夹。</li></ol><Input aria-label="扩展文件夹路径" readOnly value={extensionPath}/><DialogFooter><Button variant="outline" onClick={()=>void revealItemInDir(extensionPath).catch(e=>setError(String(e)))}>定位文件夹</Button><Button onClick={()=>setExtensionInstall(false)}>完成</Button></DialogFooter></DialogContent></Dialog>
     <Dialog open={missing !== null} onOpenChange={value => { if (!value)
         setMissing(null); }}><DialogContent><DialogHeader><DialogTitle>补全中文标题与摘要？</DialogTitle></DialogHeader><div className="space-y-3 py-3 text-sm"><p>全部论文，回收站除外</p><p>{missing?.filter(p => !p.title_zh?.trim()).length ?? 0} 个标题 · {missing?.filter(p => !!p.abstract?.trim() && !p.abstract_zh?.trim()).length ?? 0} 个摘要</p></div><DialogFooter><Button variant="outline" onClick={() => setMissing(null)}>保留英文</Button><Button disabled={working} onClick={async () => { setWorking(true); try {
         await enqueueMetadataTranslations(missing!.map(p => p.id));

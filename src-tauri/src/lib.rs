@@ -107,6 +107,7 @@ pub fn run() {
             storage::relocate_library,
             storage::clear_library_cache,
             storage::prepare_browser_extension,
+            storage::library_storage_path,
             connector::browser_extension_status,
             commands::add_provider,
             commands::update_provider,

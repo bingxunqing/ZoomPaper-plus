@@ -32,7 +32,7 @@ function PaperBird({ state, animatePet }: { state: BirdState; animatePet: boolea
     <path d="M22 33Q17 59 30 75Q50 87 70 75Q83 58 78 33L69 24H31Z" fill="#f8faf7" stroke="#a9b8ad" strokeWidth="2" />
     <path d="M23 35l8-17 13 12m33 5-8-17-13 12" fill="#dce7d9" stroke="#a9b8ad" strokeWidth="2" strokeLinejoin="round" />
     <circle cx="37" cy="45" r="12" fill="#e9efe6" /><circle cx="63" cy="45" r="12" fill="#e9efe6" />
-    <motion.g animate={reduced ? {} : { scaleY: state === "sleep" ? 0.08 : [1, 1, 0.08, 1] }} transition={{ duration: 5, times: [0, 0.92, 0.96, 1], repeat: Infinity }} style={{ transformOrigin: "50px 46px" }}>
+    <motion.g animate={systemReduced ? {} : { scaleY: state === "sleep" ? 0.08 : [1, 1, 0.08, 1] }} transition={{ duration: 5, times: [0, 0.92, 0.96, 1], repeat: Infinity }} style={{ transformOrigin: "50px 46px" }}>
     <circle cx="38" cy="46" r="4" fill="#34443b" /><circle cx="62" cy="46" r="4" fill="#34443b" />
     <circle cx="39" cy="44" r="1.3" fill="white" /><circle cx="63" cy="44" r="1.3" fill="white" />
     </motion.g>

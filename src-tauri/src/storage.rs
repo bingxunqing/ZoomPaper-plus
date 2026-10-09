@@ -524,3 +524,9 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[tauri::command]
+pub fn library_storage_path() -> Result<String, String> {
+    Settings::load().and_then(|settings| settings.papers_dir())
+        .map(|path| path.to_string_lossy().into_owned()).map_err(|error| error.to_string())
+}
