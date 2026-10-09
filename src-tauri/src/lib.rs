@@ -96,6 +96,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             companion::companion_regions,
+            companion::companion_press,
+            companion::companion_release,
             commands::get_settings,
             commands::update_settings,
             commands::enqueue_metadata_translations,

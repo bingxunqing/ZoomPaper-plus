@@ -107,3 +107,15 @@ it('leaves the idle pet without a bubble or action buttons', () => {
   fireEvent.pointerEnter(screen.getByLabelText('阅读伙伴'));
   expect(screen.getByLabelText('导入论文').className).toContain('companion-glass');
 });
+
+it('uses the whole pet surface to begin a desktop gesture and waits for the native result',()=>{
+ const original=window.PointerEvent;window.PointerEvent=MouseEvent as typeof PointerEvent;
+ const press=vi.fn().mockResolvedValue(undefined),release=vi.fn().mockResolvedValue(undefined);
+ render(<ReadingCompanion jobs={[]} notice={null} readingTitle={null} onDismiss={vi.fn()} onOpenPaper={vi.fn()} onNativePress={press} onNativeRelease={release}/>);
+ const pet=screen.getByLabelText('阅读伙伴');expect(pet.getAttribute('data-companion-hit')).toBe('pet');
+ fireEvent.pointerDown(pet,{button:0,clientX:160,clientY:46});expect(press).toHaveBeenCalledWith(160,46);
+ fireEvent.pointerMove(pet,{screenX:300,screenY:200});fireEvent.pointerUp(pet);expect(release).toHaveBeenCalledOnce();
+ fireEvent(window,new CustomEvent('companion:gesture-end',{detail:false}));expect(screen.getByLabelText('导入论文')).toBeTruthy();
+ fireEvent.pointerDown(pet,{button:0,clientX:160,clientY:46});fireEvent(window,new Event('companion:gesture-dragging'));fireEvent(window,new CustomEvent('companion:gesture-end',{detail:true}));expect(screen.queryByLabelText('导入论文')).toBeNull();
+ window.PointerEvent=original;
+});

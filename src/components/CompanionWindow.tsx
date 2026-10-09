@@ -62,6 +62,8 @@ export function CompanionWindow() {
     let enabled = companionEnabled();
     const visibility = listen<boolean>("companion:visibility", ({ payload }) => { enabled = payload; void (payload ? window.show() : window.hide()); });
     const pointerRegion = listen<boolean>("companion:pointer-region", ({ payload }) => document.defaultView?.dispatchEvent(new Event(payload ? "companion:pointer-inside" : "companion:pointer-outside")));
+    const dragStart = listen("companion:gesture-dragging",()=>document.defaultView?.dispatchEvent(new Event("companion:gesture-dragging")));
+    const dragEnd = listen<boolean>("companion:gesture-end",({payload})=>document.defaultView?.dispatchEvent(new CustomEvent("companion:gesture-end",{detail:payload})));
     const actionError = listen<string>("companion:action-error", ({ payload }) => setState(previous => ({ ...previous, notice: { phase: "error", title: "操作失败", message: payload } })));
     const subscription = listen<Snapshot>("companion:state", ({ payload }) => { if (!stopped) setState(payload); });
     void subscription.then(() => emitTo("main", "companion:ready"));
@@ -78,7 +80,7 @@ export function CompanionWindow() {
       if (!contents.current) return;
       const regions = [...contents.current.querySelectorAll<HTMLElement>('[data-companion-hit]')].map(element => {
         const rect = element.getBoundingClientRect();
-        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, ellipse: element.dataset.companionHit === 'ellipse' };
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, ellipse: element.dataset.companionHit === 'ellipse', pet: element.dataset.companionHit === 'pet' };
       });
       void invoke('companion_regions', { regions }).catch(() => {});
       const height = Math.ceil(contents.current.getBoundingClientRect().height || 100);
@@ -103,12 +105,12 @@ export function CompanionWindow() {
     if (contents.current) { resize.observe(contents.current); mutation.observe(contents.current, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "data-companion-hit"] }); }
     measure();
     if (enabled) void window.show();
-    return () => { stopped = true; clearTimeout(timer); resize.disconnect(); mutation.disconnect(); void pointerRegion.then(unlisten => unlisten()); void actionError.then(unlisten => unlisten()); void visibility.then(unlisten => unlisten()); void subscription.then((unlisten) => unlisten()); };
+    return () => { stopped = true; clearTimeout(timer); resize.disconnect(); mutation.disconnect(); void pointerRegion.then(unlisten => unlisten()); void dragStart.then(unlisten=>unlisten()); void dragEnd.then(unlisten=>unlisten()); void actionError.then(unlisten => unlisten()); void visibility.then(unlisten => unlisten()); void subscription.then((unlisten) => unlisten()); };
   }, []);
   return <div ref={contents} className="w-[340px] p-[10px]">
     <ReadingCompanion {...state} jobs={state.preferences.petTasks ? [...state.jobs.filter(job=>!state.tasks.some(task=>task.paper_id===job.paper_id&&task.kind===job.kind)).map(job=>({...job,local:job.kind==="full_translation"})), ...state.tasks] : []} readingTitle={state.preferences.petReading ? state.readingTitle : null} notice={state.preferences.petTasks ? state.notice : null} animatePet={state.preferences.petAnimation} bubbleAbove={bubbleAbove}
       onRetryLocal={async task => { const backend=state.jobs.find(j=>j.kind==="full_translation"&&j.paper_id===task.paper_id&&["failed","canceled"].includes(j.status));if(backend)await retryJob(backend.id);else await emitTo("main", "companion:retry-local", task); }} onHide={() => { void getCurrentWindow().hide(); void emitTo("main", "companion:hide"); }}
-      onImport={() => { void emitTo("main", "companion:import"); }} onContinue={() => { void emitTo("main", "companion:continue"); }} onNativeDrag={() => getCurrentWindow().startDragging()}
+      onImport={() => { void emitTo("main", "companion:import"); }} onContinue={() => { void emitTo("main", "companion:continue"); }} onNativePress={(x,y)=>invoke('companion_press',{x,y})} onNativeRelease={()=>invoke('companion_release')}
       onDismiss={() => { setState((prev) => ({ ...prev, notice: null })); void emitTo("main", "companion:dismiss"); }}
       onOpenPaper={(id) => { void emitTo("main", "companion:open", id); }} />
   </div>;

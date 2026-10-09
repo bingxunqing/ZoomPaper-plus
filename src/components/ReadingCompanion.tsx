@@ -48,6 +48,8 @@ interface Props {
   readingTitle: string | null;
   onDismiss: () => void;
   onOpenPaper: (paperId: string) => void;
+  onNativePress?: (x:number,y:number)=>Promise<unknown>;
+  onNativeRelease?: ()=>Promise<unknown>;
   onNativeDrag?: () => void | Promise<void>;
   onImport?: () => void;
   onContinue?: () => void;
@@ -56,7 +58,7 @@ interface Props {
   bubbleAbove?: boolean;
   animatePet?: boolean;
 }
-export function ReadingCompanion({ jobs, notice, readingTitle, onDismiss, onOpenPaper, onNativeDrag, onImport, onContinue, onHide, onRetryLocal, bubbleAbove = false, animatePet = true }: Props) {
+export function ReadingCompanion({ jobs, notice, readingTitle, onDismiss, onOpenPaper, onNativePress, onNativeRelease, onNativeDrag, onImport, onContinue, onHide, onRetryLocal, bubbleAbove = false, animatePet = true }: Props) {
   const dismissRef = useRef(onDismiss); dismissRef.current = onDismiss;
   const dragControls = useDragControls();
   const container = useRef<HTMLDivElement>(null);
@@ -74,6 +76,12 @@ export function ReadingCompanion({ jobs, notice, readingTitle, onDismiss, onOpen
   const [sleeping, setSleeping] = useState(false);
   const pointer = useRef<{ x: number; y: number; dragged: boolean } | null>(null);
   useEffect(() => { setSleeping(false); const timer = setTimeout(() => setSleeping(true), 60000); return () => clearTimeout(timer); }, [jobs.map(job => `${job.id}:${job.status}`).join("|"), readingTitle, quick]);
+  useEffect(()=>{
+    const dragging=()=>{if(pointer.current)pointer.current.dragged=true;if(leaveTimer.current)clearTimeout(leaveTimer.current);setQuick(false);};
+    const ended=(event:Event)=>{pointer.current=null;if(!(event as CustomEvent<boolean>).detail){if(leaveTimer.current)clearTimeout(leaveTimer.current);setQuick(true);}};
+    window.addEventListener('companion:gesture-dragging',dragging);window.addEventListener('companion:gesture-end',ended);
+    return()=>{window.removeEventListener('companion:gesture-dragging',dragging);window.removeEventListener('companion:gesture-end',ended);};
+  },[]);
   const [expanded, setExpanded] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,17 +128,17 @@ export function ReadingCompanion({ jobs, notice, readingTitle, onDismiss, onOpen
   };
   const visibleJobs = [...pending, ...jobs.filter((job) => ["failed", "canceled"].includes(job.status)).slice(0, 3)];
   const showBubble = busy || notice != null || finished != null || !!readingTitle || !!failed;
-  return <motion.div ref={container} className={onNativeDrag ? "w-[320px] max-w-full select-none" : "fixed top-5 right-5 z-[90] w-[320px] max-w-[calc(100vw-40px)] select-none"}
+  return <motion.div ref={container} className={onNativeDrag || onNativePress ? "w-[320px] max-w-full select-none" : "fixed top-5 right-5 z-[90] w-[320px] max-w-[calc(100vw-40px)] select-none"}
     onPointerEnter={reveal} onPointerLeave={conceal} onFocusCapture={reveal} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) conceal(); }}
-    drag={!onNativeDrag} dragControls={dragControls} dragListener={false} dragMomentum={false} dragConstraints={bounds}>
+    drag={!onNativeDrag && !onNativePress} dragControls={dragControls} dragListener={false} dragMomentum={false} dragConstraints={bounds}>
     <div className="flex flex-col items-center gap-2">
       <div data-companion-anchor className="group relative">
-        <div data-companion-hit="ellipse" role="button" tabIndex={0} aria-label="阅读伙伴" aria-expanded={quick}
+        <div data-companion-hit="pet" role="button" tabIndex={0} aria-label="阅读伙伴" aria-expanded={quick}
           onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setQuick(value => !value); } }}
-          onPointerDown={event => { if (event.button !== 0) return; setSleeping(false); pointer.current = { x: event.screenX, y: event.screenY, dragged: false }; event.currentTarget.setPointerCapture?.(event.pointerId); if (!onNativeDrag) dragControls.start(event, { distanceThreshold: 6 }); }}
-          onPointerMove={event => { const start = pointer.current; if (start && !start.dragged && Math.hypot(event.screenX-start.x, event.screenY-start.y) > 6) { start.dragged = true; setQuick(false); if (leaveTimer.current)clearTimeout(leaveTimer.current); if(onNativeDrag){event.currentTarget.releasePointerCapture?.(event.pointerId); void Promise.resolve(onNativeDrag()).catch(error=>setError(String(error))).finally(()=>{if(pointer.current===start)pointer.current=null;});} } }}
-          onPointerUp={event => { const start=pointer.current; pointer.current = null; event.currentTarget.releasePointerCapture?.(event.pointerId); if(start && !start.dragged){if(leaveTimer.current)clearTimeout(leaveTimer.current);setQuick(true);} }}
-          onPointerCancel={() => { pointer.current = null; }}
+          onPointerDown={event => { if (event.button !== 0) return; setSleeping(false); pointer.current = { x: event.screenX, y: event.screenY, dragged: false }; event.currentTarget.setPointerCapture?.(event.pointerId); if(onNativePress){event.preventDefault();void onNativePress(event.clientX,event.clientY).catch(error=>{pointer.current=null;setError(String(error));});} else if (!onNativeDrag) dragControls.start(event, { distanceThreshold: 6 }); }}
+          onPointerMove={event => { if(onNativePress)return; const start = pointer.current; if (start && !start.dragged && Math.hypot(event.screenX-start.x, event.screenY-start.y) > 6) { start.dragged = true; setQuick(false); if (leaveTimer.current)clearTimeout(leaveTimer.current); if(onNativeDrag){event.currentTarget.releasePointerCapture?.(event.pointerId); void Promise.resolve(onNativeDrag()).catch(error=>setError(String(error))).finally(()=>{if(pointer.current===start)pointer.current=null;});} } }}
+          onPointerUp={event => { if(onNativePress){void onNativeRelease?.().catch(error=>setError(String(error)));return;} const start=pointer.current; pointer.current = null; event.currentTarget.releasePointerCapture?.(event.pointerId); if(start && !start.dragged){if(leaveTimer.current)clearTimeout(leaveTimer.current);setQuick(true);} }}
+          onPointerCancel={() => { if(onNativePress)void onNativeRelease?.(); pointer.current = null; }}
           className="touch-none cursor-grab rounded-full outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 active:cursor-grabbing">
           <PaperBird animatePet={animatePet} state={busy ? "working" : notice?.phase === "error" || finished?.status === "failed" ? "error" : finished?.status === "done" || notice?.phase === "done" ? "success" : readingTitle ? "reading" : sleeping ? "sleep" : "idle"} />
         </div>
