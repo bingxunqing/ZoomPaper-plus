@@ -24,7 +24,7 @@ type BirdState = "idle" | "reading" | "working" | "success" | "error" | "sleep";
 function PaperBird({ state, animatePet }: { state: BirdState; animatePet: boolean }) {
   const systemReduced = useReducedMotion();
   const reduced = systemReduced || !animatePet;
-  return <motion.svg viewBox="0 0 100 100" className="h-[76px] w-[76px] drop-shadow-sm" aria-hidden="true"
+  return <motion.svg viewBox="0 0 100 100" className="pointer-events-none h-[76px] w-[76px] drop-shadow-sm" aria-hidden="true"
     animate={reduced ? {} : state === "working" ? { y: [0, -3, 0], rotate: [0, -2, 0, 2, 0] } : state === "reading" ? { rotate: [0, 3, 0] } : state === "success" ? { y: [0, 3, 0] } : { y: 0, rotate: state === "error" ? -8 : 0 }}
     transition={{ duration: 3, repeat: state === "success" ? 0 : Infinity, ease: "easeInOut" }}>
     <ellipse cx="51" cy="88" rx="25" ry="4" fill="#000" opacity=".07" />
@@ -48,7 +48,7 @@ interface Props {
   readingTitle: string | null;
   onDismiss: () => void;
   onOpenPaper: (paperId: string) => void;
-  onNativeDrag?: () => void;
+  onNativeDrag?: () => void | Promise<void>;
   onImport?: () => void;
   onContinue?: () => void;
   onHide?: () => void;
@@ -65,8 +65,8 @@ export function ReadingCompanion({ jobs, notice, readingTitle, onDismiss, onOpen
   const previousJobs = useRef(new Map<string, string>());
   const [quick, setQuick] = useState(false);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reveal = () => { if (leaveTimer.current) clearTimeout(leaveTimer.current); setQuick(true); };
-  const conceal = () => { if (leaveTimer.current) clearTimeout(leaveTimer.current); leaveTimer.current = setTimeout(() => setQuick(false), 250); };
+  const reveal = () => { if(pointer.current?.dragged)return; if (leaveTimer.current) clearTimeout(leaveTimer.current); setQuick(true); };
+  const conceal = () => { if(pointer.current)return; if (leaveTimer.current) clearTimeout(leaveTimer.current); leaveTimer.current = setTimeout(() => setQuick(false), 250); };
   useEffect(() => {
     window.addEventListener("companion:pointer-inside", reveal); window.addEventListener("companion:pointer-outside", conceal);
     return () => { window.removeEventListener("companion:pointer-inside", reveal); window.removeEventListener("companion:pointer-outside", conceal); if (leaveTimer.current) clearTimeout(leaveTimer.current); };
@@ -128,8 +128,8 @@ export function ReadingCompanion({ jobs, notice, readingTitle, onDismiss, onOpen
         <div data-companion-hit="ellipse" role="button" tabIndex={0} aria-label="阅读伙伴" aria-expanded={quick}
           onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setQuick(value => !value); } }}
           onPointerDown={event => { if (event.button !== 0) return; setSleeping(false); pointer.current = { x: event.screenX, y: event.screenY, dragged: false }; event.currentTarget.setPointerCapture?.(event.pointerId); if (!onNativeDrag) dragControls.start(event, { distanceThreshold: 6 }); }}
-          onPointerMove={event => { const start = pointer.current; if (start && !start.dragged && Math.hypot(event.screenX-start.x, event.screenY-start.y) > 6) { start.dragged = true; onNativeDrag?.(); } }}
-          onPointerUp={() => { pointer.current = null; }}
+          onPointerMove={event => { const start = pointer.current; if (start && !start.dragged && Math.hypot(event.screenX-start.x, event.screenY-start.y) > 6) { start.dragged = true; setQuick(false); if (leaveTimer.current)clearTimeout(leaveTimer.current); if(onNativeDrag){event.currentTarget.releasePointerCapture?.(event.pointerId); void Promise.resolve(onNativeDrag()).catch(error=>setError(String(error))).finally(()=>{if(pointer.current===start)pointer.current=null;});} } }}
+          onPointerUp={event => { const start=pointer.current; pointer.current = null; event.currentTarget.releasePointerCapture?.(event.pointerId); if(start && !start.dragged){if(leaveTimer.current)clearTimeout(leaveTimer.current);setQuick(true);} }}
           onPointerCancel={() => { pointer.current = null; }}
           className="touch-none cursor-grab rounded-full outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 active:cursor-grabbing">
           <PaperBird animatePet={animatePet} state={busy ? "working" : notice?.phase === "error" || finished?.status === "failed" ? "error" : finished?.status === "done" || notice?.phase === "done" ? "success" : readingTitle ? "reading" : sleeping ? "sleep" : "idle"} />

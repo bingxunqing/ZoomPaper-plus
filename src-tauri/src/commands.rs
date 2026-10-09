@@ -518,7 +518,12 @@ fn import_pdf_inner_with_metadata(
         .map_err(|e| e.to_string())?;
     use sha2::{Digest, Sha256};
     let mut source = std::fs::File::open(source_path).map_err(|e| e.to_string())?;
+    let mut signature = [0u8; 5];
+    if source.read_exact(&mut signature).is_err() || &signature != b"%PDF-" {
+        return Err("文件格式不符合要求，请选择有效的 PDF 论文".into());
+    }
     let mut hasher = Sha256::new();
+    hasher.update(signature);
     let mut buffer = [0u8; 65536];
     loop {
         let n = source.read(&mut buffer).map_err(|e| e.to_string())?;
@@ -5410,6 +5415,23 @@ mod tests {
     use crate::db;
     use rusqlite::Connection;
     use std::fs;
+
+    #[test]
+    fn import_rejects_non_pdf_before_saving() {
+        db::register_sqlite_vec();
+        let conn = Connection::open_in_memory().unwrap();
+        db::migrations::migrate(&conn).unwrap();
+        let db = db::Db::from_connection(conn);
+        let tmp = std::env::temp_dir().join(format!("zoompaper-invalid-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&tmp).unwrap();
+        let src = tmp.join("invalid.pdf");
+        fs::write(&src, b"<html>Access denied</html>").unwrap();
+        let library=tmp.join("papers");
+        assert!(import_pdf_inner(&db,&library,src.to_str().unwrap()).unwrap_err().contains("PDF"));
+        assert_eq!(db.conn().query_row("SELECT count(*) FROM papers",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+        assert!(!library.exists());
+        fs::remove_dir_all(tmp).unwrap();
+    }
 
     #[test]
     fn import_copies_pdf_and_inserts_row() {

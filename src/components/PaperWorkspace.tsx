@@ -1,11 +1,17 @@
 import { getPreferences, usePreferences, paperTitle } from "@/lib/preferences";
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { BookOpen, ChevronDown, Library as LibraryIcon, Search, X } from 'lucide-react';
 import { Library } from '@/pages/Library';
 import { Reader } from '@/pages/Reader';
 import { getPaper, listPapers, type BackgroundJob } from '@/lib/api';
 import { closeWorkspacePaper, layoutWorkspaceTabs, openWorkspacePaper, restoreWorkspace, type WorkspaceState } from '@/lib/workspace';
 import { IconTooltip } from './ui/icon-tooltip';
+const MemoLibrary = memo(Library);
+const ReaderPane = memo(function ReaderPane({id,active,page,refreshSignal,onBack,onBusy,onTitle}: {id:string;active:boolean;page?:number;refreshSignal:number;onBack:()=>void;onBusy:(id:string,running:boolean)=>void;onTitle:(id:string,title:string)=>void}) {
+  const busy=useCallback((running:boolean)=>onBusy(id,running),[id,onBusy]);
+  const title=useCallback((value:string)=>onTitle(id,value),[id,onTitle]);
+  return <div className="min-h-0 flex-1 flex-col p-6" style={{display:active?'flex':'none'}}><Reader paperId={id} active={active} initialPageIdx={page} refreshSignal={refreshSignal} onBack={onBack} onBusyChange={busy} onTitleChange={title}/></div>;
+});
 const KEY = 'zoompaper.workspace';
 export interface WorkspaceHandle { open: (id: string, page?: number, background?: boolean) => void; resume: () => void; }
 export const PaperWorkspace = forwardRef<WorkspaceHandle, { active: boolean; jobs: BackgroundJob[]; refreshSignal: number; onTitleChange: (title: string) => void }>(function PaperWorkspace({ active, jobs, refreshSignal, onTitleChange }, ref) {
@@ -62,11 +68,11 @@ export const PaperWorkspace = forwardRef<WorkspaceHandle, { active: boolean; job
     document.addEventListener('pointerdown', outside);
     return () => document.removeEventListener('pointerdown', outside);
   }, [listOpen]);
-  const open = (id: string, page?: number, background = false) => {
+  const open = useCallback((id: string, page?: number, background = false) => {
     setPages(prev => ({ ...prev, [id]: page }));
     setState(current => openWorkspacePaper(current, id, background));
     void getPaper(id).then(paper => {setPapersById(prev=>({...prev,[id]:paper}));setTitles(prev => ({ ...prev, [id]: paper.title }));}).catch(() => {});
-  };
+  }, []);
   const close = (ids: string[]) => {
     if (!ids.length) return;
     closed.current.push(ids);
@@ -116,7 +122,14 @@ export const PaperWorkspace = forwardRef<WorkspaceHandle, { active: boolean; job
   ])];
   const shownTitle = (id:string) => papersById[id] ? paperTitle(papersById[id],"tab",prefs) : titles[id] ?? "论文";
   const layout = layoutWorkspaceTabs(state.tabs, state.active, width);
-  const select = (id: string) => { setState(current => ({ ...current, active: id, lastRead: id === 'library' ? current.lastRead : id })); setListOpen(false); };
+  const select = useCallback((id: string) => { setState(current => ({ ...current, active: id, lastRead: id === 'library' ? current.lastRead : id })); setListOpen(false); },[]);
+  const back = useCallback(()=>select('library'),[select]);
+  const updateBusy = useCallback((id:string,running:boolean)=>setBusy(current=>{if(current.has(id)===running)return current;const next=new Set(current);if(running)next.add(id);else next.delete(id);return next;}),[]);
+  const updateTitle = useCallback((id:string,title:string)=>setTitles(current=>current[id]===title?current:{...current,[id]:title}),[]);
+  const openForeground = useCallback((id:string)=>open(id),[open]);
+  const openBackground = useCallback((id:string)=>open(id,undefined,true),[open]);
+  const openMany = useCallback((ids:string[])=>ids.forEach(id=>open(id,undefined,true)),[open]);
+  useEffect(()=>{if(active)onTitleChange(state.active==='library'?'':shownTitle(state.active));},[active,state.active,titles,papersById,prefs,onTitleChange]);
   return <section className="relative min-h-0 min-w-0 flex-1 flex-col" style={{ display: active ? 'flex' : 'none' }} aria-label="论文工作区">
     <div className="relative flex h-11 shrink-0 items-end gap-1 border-b border-zp-border bg-zp-subtle px-3">
       <div role="tablist" aria-label="打开的论文" className="flex min-w-0 flex-1 items-end gap-1">
@@ -143,10 +156,8 @@ export const PaperWorkspace = forwardRef<WorkspaceHandle, { active: boolean; job
         </div>)}</div>
       </div>}
     </div>
-    <div className="min-h-0 flex-1" style={{ display: state.active === 'library' ? 'flex' : 'none' }}><Library refreshSignal={refreshSignal} jobs={jobs} onOpenPaper={id => open(id)} onOpenBackground={id => open(id, undefined, true)} onOpenPapers={ids => ids.forEach(id => open(id, undefined, true))} /></div>
-    {readers.map(id => <div key={id} className="min-h-0 flex-1 flex-col p-6" style={{ display: state.active === id ? 'flex' : 'none' }}><Reader paperId={id} active={active && state.active === id} initialPageIdx={pages[id]} refreshSignal={refreshSignal} onBack={() => select('library')} onBusyChange={running => setBusy(current => {
-      if (current.has(id) === running) return current; const next = new Set(current); if (running) next.add(id); else next.delete(id); return next;
-    })} onTitleChange={title => { setTitles(current => current[id] === title ? current : ({ ...current, [id]: title })); if (active && state.active === id) onTitleChange(title); }} /></div>)}
+    <div className="min-h-0 flex-1" style={{ display: state.active === 'library' ? 'flex' : 'none' }}><MemoLibrary refreshSignal={refreshSignal} jobs={jobs} onOpenPaper={openForeground} onOpenBackground={openBackground} onOpenPapers={openMany} /></div>
+    {readers.map(id => <ReaderPane key={id} id={id} active={active && state.active === id} page={pages[id]} refreshSignal={refreshSignal} onBack={back} onBusy={updateBusy} onTitle={updateTitle}/>)}
     {undo && <div role="status" className="absolute bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-4 whitespace-nowrap rounded-xl border border-zp-border bg-white px-4 py-3 text-sm shadow-md dark:bg-zp-surface">已关闭 {undo.count} 个标签<button onClick={undoClose} className="font-medium text-zp-primary hover:underline">撤销</button></div>}
   </section>;
 });

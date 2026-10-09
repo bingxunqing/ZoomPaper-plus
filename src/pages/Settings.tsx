@@ -32,6 +32,12 @@ export function SettingsPage() {
     const [extensionPath, setExtensionPath] = useState('');
     const [extensionInstall, setExtensionInstall] = useState(false);
     const [storagePath, setStoragePath] = useState('');
+    const [pendingPath, setPendingPath] = useState('');
+    async function chooseStorageFolder() {
+        setError(null);
+        try { const path = await open({directory:true,multiple:false}); if(typeof path === 'string')setPendingPath(path); }
+        catch(error){setError(String(error));}
+    }
     useEffect(() => { void invoke<string>('library_storage_path').then(setStoragePath).catch(() => {}); }, []);
     const [concurrency, setConcurrency] = useState('2');
     const settingsRef = useRef<Settings | null>(null);
@@ -150,8 +156,8 @@ export function SettingsPage() {
                 await handleReindex();
             }
             else {
-                const path = await open({ directory: true, multiple: false });
-                if (typeof path !== 'string')
+                const path = name === 'path' ? pendingPath : await open({ directory: true, multiple: false });
+                if (typeof path !== 'string' || !path)
                     return;
                 if (name === 'backup') {
                     const values = exportViewPreferences();
@@ -167,6 +173,7 @@ export function SettingsPage() {
                     const updated = await invoke<Settings>('relocate_library', { destination: path });
                     setSettings(updated);
                     setStoragePath(updated.paper_library_path ?? storagePath);
+                    setPendingPath('');
                     settingsRef.current = updated;
                     window.dispatchEvent(new Event('zoompaper-library-changed'));
                     setActionStatus('论文库已迁移；旧目录仍保留。');
@@ -258,7 +265,7 @@ export function SettingsPage() {
     const selectControl = (label: string, value: string, options: {value:string;label:string}[], change: (value:string)=>void) => <Select value={value} onValueChange={value=>{if(value!==null)change(value);}}><SelectTrigger aria-label={label} className="h-8 min-w-32 border-zp-border shadow-none"><SelectValue>{options.find(option=>option.value===value)?.label}</SelectValue></SelectTrigger><SelectContent>{options.map(option=><SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>;
     const language = (key: keyof Preferences, label: string, _inherit = false) => row(key, label, selectControl(label, String(prefs[key] === 'inherit' ? prefs.titleLanguage : prefs[key]), [{value:'original',label:'英文'},{value:'zh',label:'中文'},{value:'both',label:'中英双语'}], value=>void changeLanguage(key,value)));
     const workflowToggle = (key: keyof WorkflowSettings, label: string) => row(key, label, <Switch aria-label={label} checked={Boolean(workflow[key])} onCheckedChange={value => saveWorkflow({ [key]: value })}/>);
-    const action = (id: string, label: string, button: string) => row(id, label, <Button size="sm" variant="outline" disabled={working || reindexing} onClick={() => ['extension', 'extensionDir', 'backup'].includes(id) ? void perform(id) : setOperation(id)}>{button}</Button>);
+    const action = (id: string, label: string, button: string) => row(id, label, <Button size="sm" variant="outline" disabled={working || reindexing} onClick={() => ['extension', 'extensionDir', 'backup', 'restore'].includes(id) ? void perform(id) : setOperation(id)}>{button}</Button>);
     const panels = [
         { id: 'general', groups: [{ title: '标题与摘要', rows: [language('titleLanguage', '统一标题语言'), language('libraryLanguage', '论文库标题', true), language('tabLanguage', '论文标签标题', true), language('detailLanguage', '概览标题', true), language('abstractLanguage', '概览摘要'), language('historyLanguage', '阅读历史标题', true)] }, { title: '启动', rows: [toggle('restoreTabs', '恢复上次打开的论文')] }] },
         { id: 'reader', groups: [{ title: '阅读器', rows: [toggle('markReading', '打开后标记在读'), toggle('markReadAtEnd', '读到末页自动标记已读'), toggle('showAssistant', '默认显示 AI 助手')] }] },
@@ -270,7 +277,7 @@ export function SettingsPage() {
                         }
                         else
                             saveWorkflow({ parseConcurrency: n }); }} className="w-24"/>)] }, { title: '导入后处理', rows: [workflowToggle('autoDoi', '自动补全会议与 DOI'), workflowToggle('autoMetadataTranslation', '翻译标题与摘要'), workflowToggle('autoFullTranslation', '自动翻译全文')] }, { title: '浏览器扩展', rows: [row('connector', '导入接收服务', <span className="text-sm text-zp-tertiary">{extensionReady ? '已就绪' : '未连接'}</span>), action('extension', '浏览器扩展', '加载扩展'), action('extensionDir', '扩展文件夹', '定位')] }] },
-        { id: 'data', groups: [{ title: '论文库', rows: [row('path', '存储位置', <><Input aria-label="论文库存储路径" readOnly value={current.paper_library_path ?? storagePath} title={current.paper_library_path ?? storagePath} className="w-[min(32vw,400px)] text-xs text-zp-secondary"/><Button size="sm" variant="outline" disabled={working} onClick={() => setOperation('path')}>选择文件夹</Button></>), action('backup', '完整备份', '导出'), action('restore', '从备份恢复', '选择')] }, { title: '维护', rows: [action('reindex', '向量索引', '重建'), action('cache', '缓存', '清理'), action('trash', '回收站', '清空')] }] },
+        { id: 'data', groups: [{ title: '论文库', rows: [row('path', '存储位置', <><Input aria-label="论文库存储路径" readOnly value={pendingPath || current.paper_library_path || storagePath} title={pendingPath || current.paper_library_path || storagePath} className={`${pendingPath ? "w-[min(16vw,200px)]" : "w-[min(28vw,400px)]"} text-xs text-zp-secondary`}/><Button size="sm" variant="outline" disabled={working} onClick={() => void chooseStorageFolder()}>选择文件夹</Button>{pendingPath && <><Button size="sm" disabled={working} onClick={() => setOperation('path')}>确定</Button><Button size="sm" variant="ghost" disabled={working} onClick={() => setPendingPath('')}>取消</Button></>}</>), action('backup', '完整备份', '导出'), action('restore', '从备份恢复', '选择')] }, { title: '维护', rows: [action('reindex', '向量索引', '重建'), action('cache', '缓存', '清理'), action('trash', '回收站', '清空')] }] },
     ];
     const needle = query.trim().toLowerCase();
     const visible = panels.filter(panel => needle || panel.id === section).map(panel => ({ ...panel, groups: panel.groups.map(group => ({ ...group, rows: group.rows.filter(element => !needle || `${SECTIONS.find(s => s.id === panel.id)?.name} ${group.title} ${element.props.children?.[0]?.props?.children ?? ''} ${element.props.id ?? ''} ${String(element.props.id ?? '').includes('Language') ? '中文 英文 语言' : ''}`.toLowerCase().includes(needle) || needle === 'api' && panel.id === 'ai' || needle === '宠物' && panel.id === 'companion') })).filter(group => group.rows.length) })).filter(panel => panel.groups.length);
@@ -298,7 +305,7 @@ export function SettingsPage() {
         setWorking(false);
     } }}>全部翻译</Button></DialogFooter></DialogContent></Dialog>
     <Dialog open={operation !== null} onOpenChange={value => { if (!value && !working)
-        setOperation(null); }}><DialogContent><DialogHeader><DialogTitle>{operation === 'trash' ? '清空回收站？' : operation === 'restore' ? '从备份恢复？' : operation === 'path' ? '迁移论文库？' : operation === 'cache' ? '清理缓存？' : '重建索引？'}</DialogTitle></DialogHeader><p className="py-3 text-sm">{operation === 'trash' ? '永久删除回收站中的论文与文件。' : operation === 'restore' ? '校验备份，重启时恢复；恢复前自动备份当前论文库。' : operation === 'path' ? '复制论文与生成内容到新位置，保留旧目录。' : operation === 'cache' ? '清理 DOI 查询缓存，保留论文、笔记与译文。' : '重新生成索引，保留论文与笔记。'}</p><DialogFooter><Button variant="outline" disabled={working} onClick={() => setOperation(null)}>取消</Button><Button disabled={working} onClick={() => void perform(operation!)}>{working ? '处理中…' : '确认'}</Button></DialogFooter></DialogContent></Dialog>
+        setOperation(null); }}><DialogContent><DialogHeader><DialogTitle>{operation === 'trash' ? '清空回收站？' : operation === 'restore' ? '从备份恢复？' : operation === 'path' ? '迁移论文库？' : operation === 'cache' ? '清理缓存？' : '重建索引？'}</DialogTitle></DialogHeader><p className="py-3 text-sm">{operation === 'trash' ? '永久删除回收站中的论文与文件。' : operation === 'restore' ? '校验备份，重启时恢复；恢复前自动备份当前论文库。' : operation === 'path' ? '复制到所选文件夹中新建的论文库，保留旧目录。' : operation === 'cache' ? '清理 DOI 查询缓存，保留论文、笔记与译文。' : '重新生成索引，保留论文与笔记。'}</p><DialogFooter><Button variant="outline" disabled={working} onClick={() => setOperation(null)}>取消</Button><Button disabled={working} onClick={() => void perform(operation!)}>{working ? '处理中…' : '确认'}</Button></DialogFooter></DialogContent></Dialog>
     <AddProviderDialog open={showAddDialog} onClose={() => { setShowAddDialog(false); setSelectedTemplate(null); }} onAdd={handleAddProvider} selectedTemplate={selectedTemplate} onSelectTemplate={setSelectedTemplate}/>
     {editingProvider && <EditProviderDialog open={showEditDialog} provider={editingProvider} onClose={() => { setShowEditDialog(false); setEditingProvider(null); }} onSave={handleUpdateProvider}/>}
   </div>;

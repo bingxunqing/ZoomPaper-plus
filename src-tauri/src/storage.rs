@@ -228,7 +228,10 @@ pub async fn stage_library_restore(
     tauri::async_runtime::spawn_blocking(move || {
         let db = app.state::<Db>();
         let _g = guard(&db)?;
-        validate(Path::new(&source))?;
+        if !Path::new(&source).join("manifest.json").is_file() {
+            return Err("请选择 ZoomPaper 导出的备份文件夹，目录中需包含 manifest.json".into());
+        }
+        validate(Path::new(&source)).map_err(|error| format!("备份格式无效或文件不完整：{error}"))?;
         let data = crate::settings::app_data_dir().map_err(|e| e.to_string())?;
         let stage = data.join(format!("restore-{}", uuid::Uuid::new_v4()));
         copy_tree(Path::new(&source), &stage)?;
@@ -328,6 +331,13 @@ pub fn take_restored_preferences() -> Result<Option<serde_json::Value>, String> 
     fs::remove_file(path).map_err(|e| e.to_string())?;
     Ok(Some(value))
 }
+fn migration_root(destination: &Path, current: &Path) -> Result<PathBuf, String> {
+    let root = destination.canonicalize().map_err(|_| "请选择有效的文件夹")?;
+    if !root.is_dir() { return Err("请选择有效的文件夹".into()); }
+    let current = current.canonicalize().map_err(|error|error.to_string())?;
+    if root.starts_with(current) { return Err("请选择当前论文库之外的新文件夹".into()); }
+    Ok(root)
+}
 #[tauri::command]
 pub async fn relocate_library(
     app: tauri::AppHandle,
@@ -338,8 +348,8 @@ pub async fn relocate_library(
         let _g = guard(&db)?;
         let mut settings = Settings::load().map_err(|e| e.to_string())?;
         let old = settings.papers_dir().map_err(|e| e.to_string())?;
-        let target =
-            PathBuf::from(destination).join(format!("ZoomPaper-library-{}", uuid::Uuid::new_v4()));
+        let root = migration_root(Path::new(&destination), &old)?;
+        let target = root.join(format!("ZoomPaper-library-{}", uuid::Uuid::new_v4()));
         fs::create_dir(&target).map_err(|e| e.to_string())?;
         for id in ids(&db.conn())? {
             let source = old.join(&id);
@@ -453,6 +463,20 @@ mod tests {
         fs::create_dir(&p).unwrap();
         p
     }
+    #[test]
+    fn migration_refuses_nested_destinations_before_copying() {
+        let root = std::env::temp_dir().join(format!("zoompaper-migration-{}",uuid::Uuid::new_v4()));
+        let library = root.join("library");
+        let nested = library.join("paper");
+        let other = root.join("other");
+        fs::create_dir_all(&nested).unwrap();
+        fs::create_dir_all(&other).unwrap();
+        assert!(migration_root(&nested,&library).is_err());
+        assert!(migration_root(&library,&library).is_err());
+        assert_eq!(migration_root(&other,&library).unwrap(),other.canonicalize().unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn snapshot_preserves_papers_and_rewrites_paths_without_exporting_keys() {
         let root = temp();

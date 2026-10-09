@@ -88,7 +88,7 @@ it('starts native dragging only beyond six pixels and never activates actions af
   expect(screen.queryByLabelText('导入论文')).toBeNull();
   fireEvent.pointerDown(pet, {button:0,screenX:10,screenY:10});
   fireEvent.pointerUp(pet);
-  expect(screen.queryByLabelText('导入论文')).toBeNull();
+  expect(screen.getByLabelText('导入论文')).toBeTruthy();
   fireEvent.pointerEnter(pet);
   expect(screen.getByLabelText('导入论文')).toBeTruthy();
   window.PointerEvent = original;

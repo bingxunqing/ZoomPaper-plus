@@ -49,7 +49,7 @@ const guideSections: GuideSection[] = [
     id: "reader", title: "论文阅读", icon: BookOpen,
     items: [
       { id: "workspace", title: "多篇论文标签", icon: BookOpen, summary: "保留论文工作区并快速切换。", steps: ["打开论文后点击顶部标签切换。", "多选工具栏的打开图标可同时添加多篇论文。", "拖动标签排序，点击 × 或中键关闭。", "标签较多时点击右上角列表搜索论文；× 一键关闭全部，提示中可撤销。", "重启恢复标签；Ctrl/Cmd+Shift+T 恢复刚关闭的一组标签。"] },
-      { id: "companion", title: "阅读伙伴", icon: Bot, summary: "查看任务并快速导入或继续阅读。", steps: ["鼠标移到猫头鹰上，点击导入论文或继续阅读。", "按住角色拖动可移动到桌面其他位置。", "阅读、全文翻译和博客生成都会显示气泡；默认两行，点击展开。", "角色右上角 × 隐藏，在设置中重新打开阅读伙伴开关。"] },
+      { id: "companion", title: "阅读伙伴", icon: Bot, summary: "查看任务并快速导入或继续阅读。", steps: ["鼠标移到猫头鹰上，点击导入论文或继续阅读。", "按住角色移动鼠标可拖动；原地点击展开按钮。", "阅读、全文翻译和博客生成都会显示气泡；默认两行，点击展开。", "角色右上角 × 隐藏，在设置中重新打开阅读伙伴开关。"] },
       { id: "pdf", title: "PDF 阅读", icon: FileText, summary: "阅读原始 PDF 并记录进度。", steps: ["从论文库打开论文。", "使用滚轮阅读，阅读时长和最后位置会自动记录。"] },
       { id: "toc", title: "目录与跳页", icon: TableOfContents, summary: "按章节或页码定位内容。", steps: ["点击阅读器中的目录图标。", "选择章节，或输入页码跳转。"] },
       { id: "zoom", title: "缩放页面", icon: ZoomIn, summary: "调整 PDF 显示大小。", steps: ["点击阅读器的缩放按钮。", "选择放大、缩小或适合页面。"] },

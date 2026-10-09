@@ -108,7 +108,7 @@ export function CompanionWindow() {
   return <div ref={contents} className="w-[340px] p-[10px]">
     <ReadingCompanion {...state} jobs={state.preferences.petTasks ? [...state.jobs.filter(job=>!state.tasks.some(task=>task.paper_id===job.paper_id&&task.kind===job.kind)).map(job=>({...job,local:job.kind==="full_translation"})), ...state.tasks] : []} readingTitle={state.preferences.petReading ? state.readingTitle : null} notice={state.preferences.petTasks ? state.notice : null} animatePet={state.preferences.petAnimation} bubbleAbove={bubbleAbove}
       onRetryLocal={async task => { const backend=state.jobs.find(j=>j.kind==="full_translation"&&j.paper_id===task.paper_id&&["failed","canceled"].includes(j.status));if(backend)await retryJob(backend.id);else await emitTo("main", "companion:retry-local", task); }} onHide={() => { void getCurrentWindow().hide(); void emitTo("main", "companion:hide"); }}
-      onImport={() => { void emitTo("main", "companion:import"); }} onContinue={() => { void emitTo("main", "companion:continue"); }} onNativeDrag={() => { void getCurrentWindow().startDragging(); }}
+      onImport={() => { void emitTo("main", "companion:import"); }} onContinue={() => { void emitTo("main", "companion:continue"); }} onNativeDrag={() => getCurrentWindow().startDragging()}
       onDismiss={() => { setState((prev) => ({ ...prev, notice: null })); void emitTo("main", "companion:dismiss"); }}
       onOpenPaper={(id) => { void emitTo("main", "companion:open", id); }} />
   </div>;
