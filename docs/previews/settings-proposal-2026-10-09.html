@@ -7,33 +7,453 @@
 <div class="layout"><div class="rail" aria-hidden="true"><div class="logo">Z</div><span data-icon="book"></span><span data-icon="calendar"></span><span data-icon="search"></span><span data-icon="chat"></span><span data-icon="help"></span><span data-icon="settings" class="selected"></span></div>
 <aside><h1>设置</h1><label class="search"><span data-icon="search"></span><input id="search" aria-label="搜索设置" autocomplete="off"><span class="muted" id="searchHint">搜索</span></label><nav id="nav"></nav></aside>
 <main class="pane" id="pane"><div class="content" id="content"></div></main></div>
-<dialog id="reviewDialog"><button class="close smallbutton" onclick="this.closest('dialog').close()">关闭</button><h2>本轮方案</h2><p>这是独立交互原型，不连接 API、不修改论文库。所有新增设置均待审核；这里的连接测试和数据操作只演示流程。</p><h3>优先落地</h3><ol><li>设置分类与全文搜索；服务连接分别归入 AI、导入解析、检索。</li><li>统一标题语言，并允许论文库、论文标签、右侧概览、阅读历史独立覆盖。没有中文时回退原文，不因切换显示调用 AI。</li><li>阅读伙伴独立板块；保留恢复标签、字体、列表密度、阅读状态、任务通知等高频偏好。</li></ol><h3>第二批</h3><p>按用途覆盖模型、连接检测、任务并发限制、数据备份与恢复、快捷键自定义。备份需要包含 PDF、数据库与生成内容，排除 API 密钥，并提供恢复前校验。</p><h3>设置规则</h3><p>普通偏好自动保存；API 配置在表单确认保存，并允许手动填写模型名。耗费 API 的自动操作显式开关。维护与删除操作再次确认；不增加自动清空回收站。</p><h3>默认值建议</h3><p>标题中文优先，摘要中文优先；未有译文使用原文。其他位置默认跟随统一设置，可设原文、中文优先或中英双语。默认列表、最近阅读排序、适合宽度、恢复工作区；联网提问默认关闭，由用户主动开启。</p><p>分类参考 <a href="https://www.zotero.org/support/preferences" target="_blank" rel="noreferrer">Zotero 设置</a>，布局参考你提供的设置截图。每个设置的说明收进 ⓘ，主页面保留短标签。</p></dialog>
+<dialog id="reviewDialog"><button class="close smallbutton" onclick="this.closest('dialog').close()">关闭</button><h2>精简后的设置方案</h2><p>仅保留本次指定的六个板块。HTML 为交互预览，不连接 API、不执行翻译或文件操作。</p><h3>缺少中文</h3><p>选择中文或双语时，统计对应范围缺少的标题与摘要，提供“全部翻译”或“保留英文”。全部翻译仅补齐标题与摘要，不翻译全文；成功项立即更新，失败项保留原文并允许重试。选择保留英文后，仅缺失项显示原文，已有中文继续按偏好显示。每次设置选择只提示一次，不在每次打开论文时重复弹窗。</p><h3>AI 与解析</h3><p>AI 服务及联网设置沿用现有能力，不新增模型分配或对话偏好。MinerU 单独配置，并发数填写正整数。</p><h3>扩展安装</h3><p>当前文件夹版不能由 App 直接静默安装。按钮准备固定扩展目录，并协助打开 Chrome 的扩展管理页，用户完成一次“加载已解压的扩展”。升级覆盖同一目录，用户重新加载。上架商店后，可跳转安装页，由用户确认。</p><p><a href="https://developer.chrome.com/docs/extensions/how-to/distribute" target="_blank" rel="noreferrer">Chrome 官方分发说明</a></p><h3>保存与版本</h3><p>偏好自动保存，API 表单确认保存。备份恢复、文件迁移与永久删除另行确认。版本号保持 0.4.2。</p></dialog>
 <dialog id="providerDialog"><button class="close smallbutton" onclick="this.closest('dialog').close()">关闭</button><h2>AI 服务</h2><div class="row"><label for="pname">名称</label><input class="textinput" id="pname" value="自定义服务"></div><div class="row"><label for="pprotocol">协议</label><select id="pprotocol"><option>OpenAI 兼容</option><option>Anthropic</option></select></div><div class="row"><label for="purl">Base URL</label><input class="textinput" id="purl"></div><div class="row"><label for="pkey">API Key</label><input class="textinput" id="pkey" type="password" autocomplete="off"></div><div class="row"><label for="pmodel">默认模型</label><input class="textinput" id="pmodel"></div><div class="actions"><button class="smallbutton" id="testApi">测试连接</button><button class="smallbutton" id="saveApi">保存</button></div><p class="muted" id="apiStatus"></p></dialog>
+<dialog id="translationDialog"><h2>补全中文标题与摘要？</h2><p id="translationScope"></p><div class="group"><div class="row"><span>待翻译标题</span><strong>4 篇</strong></div><div class="row"><span>待翻译摘要</span><strong>3 篇</strong></div></div><p class="muted">仅翻译缺少的标题与摘要，使用当前 AI 服务。</p><div class="actions"><button class="smallbutton" id="keepEnglish">保留英文</button><button class="smallbutton" id="translateAll">全部翻译</button></div><p class="muted" id="translationFeedback"></p></dialog>
 <dialog id="confirmDialog"><h2 id="confirmTitle"></h2><p id="confirmText"></p><div class="actions"><button class="smallbutton" onclick="this.closest('dialog').close()">取消</button><button class="smallbutton" id="confirmAction">继续</button></div></dialog>
 <script>
 const paths={settings:'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1Z',book:'M12 5v15 M3 4h5q4 0 4 3 0-3 4-3h5v15h-5q-4 0-4 2-0-2-4-2H3Z',search:'M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14 M15 15l6 6',calendar:'M4 5h16v16H4Z M8 2v6 M16 2v6 M4 10h16',chat:'M3 4h18v13H8l-5 4Z',help:'M9 8q0-5 6-3 5 3-2 7v2 M12 18h.01 M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20',eye:'M2 12q10-15 20 0-10 15-20 0Z M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8',import:'M12 2v13 M7 10l5 5 5-5 M3 16v5h18v-5',bot:'M5 7h14v13H5Z M12 3v4 M8 11v2 M16 11v2 M9 17h6 M2 10v6 M22 10v6',data:'M3 5q9-6 18 0v14q-9 6-18 0Z M3 5q9 6 18 0 M3 12q9 6 18 0',keys:'M2 5h20v14H2Z M6 9h1 M11 9h1 M16 9h1 M6 13h1 M10 15h8',info:'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20 M12 10v7 M12 6h.01'};
 function icon(name){return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[name]||paths.settings}"/></svg>`}document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=icon(el.dataset.icon));
 const groups=[
-{id:'general',name:'常规与显示',icon:'settings',family:'偏好',sections:[{title:'外观',rows:[['theme','主题','select',['跟随系统','浅色','深色'],'跟随系统'],['font','界面字号','select',['小','标准','大'],'标准'],['density','论文列表密度','select',['舒适','紧凑'],'舒适']]},{title:'标题与摘要',rows:[['language','统一标题语言','select',['中文优先','原文','中英双语'],'中文优先','中文未生成时显示原文。此设置只改变显示，不调用 AI 或修改原始元数据。'],['libraryLang','论文库标题','select',['跟随统一设置','中文优先','原文','中英双语'],'跟随统一设置'],['tabLang','论文标签标题','select',['跟随统一设置','中文优先','原文','中英双语'],'跟随统一设置','双语标题较长，标签仍保持自动缩宽；悬停显示完整标题。'],['detailLang','概览标题','select',['跟随统一设置','中文优先','原文','中英双语'],'跟随统一设置'],['abstractLang','概览摘要','select',['中文优先','原文','中英双语'],'中文优先'],['historyLang','阅读历史标题','select',['跟随统一设置','中文优先','原文','中英双语'],'跟随统一设置']]},{title:'启动',rows:[['restore','恢复上次打开的论文','toggle',[],true],['start','启动页面','select',['上次工作区','论文库','时间线'],'上次工作区']]}]},
-{id:'reading',name:'论文与阅读',icon:'book',family:'偏好',sections:[{title:'论文库',rows:[['layout','默认视图','select',['列表','卡片'],'列表'],['sort','默认排序','select',['最近阅读','添加时间','标题'],'最近阅读'],['stars','显示星标入口','toggle',[],true],['longpress','长按多选时间','select',['350 毫秒','500 毫秒','700 毫秒'],'500 毫秒','长按后直接向下拖动即可连续多选；右键菜单依旧保留。']]},{title:'阅读器',rows:[['zoom','新论文缩放','select',['适合宽度','适合页面','100%'],'适合宽度','已打开论文优先保留自己的缩放和页码。'],['readerMode','默认阅读内容','select',['原文','已有译文'],'原文','没有译文时打开原文，不自动启动全文翻译。'],['autoReading','打开后标记在读','toggle',[],true],['autoRead','读到末页自动标记已读','toggle',[],false,'默认关闭：翻到最后一页不一定代表已经读完。'],['assistant','默认显示 AI 助手','toggle',[],true]]}]},
-{id:'ai',name:'AI 模型与 API',icon:'chat',family:'服务',sections:[{title:'服务连接',rows:[['provider','默认 AI 服务','select',['已配置服务 A','已配置服务 B'],'已配置服务 A'],['providers','管理服务','action',[],'添加 / 编辑','每个服务单独保存 API Key、Base URL 与默认模型。模型名允许手动填写；候选列表不能视为 API 支持列表。']]},{title:'模型分配',rows:[['qaModel','论文问答','select',['跟随默认模型','按用途设置'],'跟随默认模型'],['translationModel','翻译与标题摘要','select',['跟随默认模型','按用途设置'],'跟随默认模型'],['blogModel','博客与费曼学习','select',['跟随默认模型','按用途设置'],'跟随默认模型','初期全部跟随默认模型。按用途配置属于第二批功能，不必重复填写密钥。']]},{title:'对话默认值',rows:[['depth','回答模式','select',['快速','深度'],'深度'],['webDefault','新对话默认联网','toggle',[],false],['replyLanguage','回答语言','select',['中文','英文','跟随提问'],'中文'],['rounds','深度工具调用上限','select',['6 轮','10 轮','15 轮'],'15 轮','这是推理过程中工具调用轮数，更多轮次可能增加时间和费用。保持目前 15 轮默认值。']]}]},
-{id:'import',name:'导入与解析',icon:'import',family:'服务',sections:[{title:'PDF 解析',rows:[['mineru','MinerU API Key','secret',[], ''],['parseAuto','导入后自动解析','toggle',[],true],['parseConcurrency','同时解析论文数','select',['1 篇','2 篇'],'2 篇']]},{title:'导入后处理',rows:[['metadata','自动补全会议与 DOI','toggle',[],true,'优先使用浏览器元数据和解析结果，再尝试公共 DOI 元数据查询。'],['metaTranslate','翻译标题与摘要','toggle',[],true,'解析后使用已配置 AI，可能产生 API 费用；不等同于翻译全文。'],['fullAuto','自动翻译全文','toggle',[],false,'默认关闭，避免导入多篇时意外产生大量请求。'],['duplicates','重复论文','select',['跳过并打开已有论文','先询问'],'跳过并打开已有论文']]},{title:'浏览器扩展',rows:[['connector','连接状态','status',[],'预览 · 未检测'],['extension','扩展安装与升级','action',[],'查看步骤']]}]},
-{id:'search',name:'检索与索引',icon:'search',family:'服务',sections:[{title:'论文检索',rows:[['searchMode','默认检索方式','select',['关键词','语义'],'关键词'],['searchScope','默认检索范围','select',['全部论文','当前文件夹'],'全部论文']]},{title:'联网搜索',rows:[['webProvider','搜索服务','select',['关闭','自动','DeepSeek','Anthropic'],'关闭','复用已配置服务的密钥，不保证所有模型都支持联网。'],['webModel','搜索模型 ID','text',[],'']]},{title:'索引',rows:[['indexAuto','解析后自动建索引','toggle',[],true],['reindex','重建全文与向量索引','action',[],'重建','只在升级或检索异常时使用，不删除论文和笔记。']]}]},
-{id:'companion',name:'阅读伙伴与通知',icon:'bot',family:'偏好',sections:[{title:'阅读伙伴',rows:[['pet','显示桌面阅读伙伴','toggle',[],true],['petMotion','角色动画','select',['跟随系统','减少动画'],'跟随系统'],['petReading','显示正在阅读','toggle',[],true],['petTask','显示任务气泡','toggle',[],true],['petPos','伙伴位置','action',[],'恢复右上角']]},{title:'任务通知',rows:[['completeNotice','任务完成提示','toggle',[],true],['failedNotice','任务失败提示','toggle',[],true],['noticeTime','完成提示停留','select',['3 秒','5 秒','10 秒'],'5 秒'],['sound','提示音','toggle',[],false]]}]},
-{id:'data',name:'数据与存储',icon:'data',family:'管理',sections:[{title:'论文库',rows:[['path','存储位置','action',[],'选择文件夹','修改位置需要明确迁移流程，不能直接丢弃旧数据。'],['backup','完整备份','action',[],'导出备份','包含论文、笔记、会话、译文和阅读状态；默认排除 API 密钥。'],['restoreBackup','从备份恢复','action',[],'选择备份','先校验格式和数据，恢复前创建当前库备份。第二批实施。']]},{title:'维护',rows:[['cache','缓存','action',[],'清理','只清理可重新生成的缓存，不删除论文、译文或笔记。'],['trash','回收站','action',[],'清空','永久删除需要单独确认，默认不自动清空。']]}]},
-{id:'shortcuts',name:'键盘快捷键',icon:'keys',family:'管理',sections:[{title:'工作区',rows:[['closeTab','关闭当前论文','key',[],'⌘ / Ctrl + W'],['restoreTab','恢复关闭的标签','key',[],'⌘ / Ctrl + Shift + T'],['nextTab','切换论文','key',[],'⌘ / Ctrl + Tab']]},{title:'对话',rows:[['send','发送消息','key',[],'Enter'],['newline','换行','key',[],'Shift + Enter']]},{title:'个性化',rows:[['sendMode','发送键','select',['Enter','⌘ / Ctrl + Enter'],'Enter'],['resetKeys','恢复默认快捷键','action',[],'恢复默认']]}]},
-{id:'about',name:'关于与帮助',icon:'info',family:'管理',sections:[{title:'ZoomPaper Plus',rows:[['version','当前版本','status',[],'0.4.2'],['guide','功能帮助','action',[],'打开'],['license','许可证','status',[],'MIT'],['diagnostics','导出诊断信息','action',[],'导出','排除 API 密钥与论文正文；导出前显示可查看的内容。不自动上传。']]}]}
+  {
+    "id": "general",
+    "name": "常规",
+    "icon": "settings",
+    "family": "偏好",
+    "sections": [
+      {
+        "title": "标题与摘要",
+        "rows": [
+          [
+            "language",
+            "统一标题语言",
+            "select",
+            [
+              "中文优先",
+              "原文",
+              "中英双语"
+            ],
+            "中文优先",
+            "选择中文时可补齐缺失的标题与摘要；仅确认“全部翻译”才调用 AI，保留原始元数据。"
+          ],
+          [
+            "libraryLang",
+            "论文库标题",
+            "select",
+            [
+              "跟随统一设置",
+              "中文优先",
+              "原文",
+              "中英双语"
+            ],
+            "跟随统一设置"
+          ],
+          [
+            "tabLang",
+            "论文标签标题",
+            "select",
+            [
+              "跟随统一设置",
+              "中文优先",
+              "原文",
+              "中英双语"
+            ],
+            "跟随统一设置",
+            "双语标题较长，标签仍保持自动缩宽；悬停显示完整标题。"
+          ],
+          [
+            "detailLang",
+            "概览标题",
+            "select",
+            [
+              "跟随统一设置",
+              "中文优先",
+              "原文",
+              "中英双语"
+            ],
+            "跟随统一设置"
+          ],
+          [
+            "abstractLang",
+            "概览摘要",
+            "select",
+            [
+              "中文优先",
+              "原文",
+              "中英双语"
+            ],
+            "中文优先"
+          ],
+          [
+            "historyLang",
+            "阅读历史标题",
+            "select",
+            [
+              "跟随统一设置",
+              "中文优先",
+              "原文",
+              "中英双语"
+            ],
+            "跟随统一设置"
+          ]
+        ]
+      },
+      {
+        "title": "启动",
+        "rows": [
+          [
+            "restore",
+            "恢复上次打开的论文",
+            "toggle",
+            [],
+            true
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "reading",
+    "name": "论文阅读",
+    "icon": "book",
+    "family": "偏好",
+    "sections": [
+      {
+        "title": "阅读器",
+        "rows": [
+          [
+            "autoReading",
+            "打开后标记在读",
+            "toggle",
+            [],
+            true
+          ],
+          [
+            "autoRead",
+            "读到末页自动标记已读",
+            "toggle",
+            [],
+            false,
+            "默认关闭：翻到最后一页不一定代表已经读完。"
+          ],
+          [
+            "assistant",
+            "默认显示 AI 助手",
+            "toggle",
+            [],
+            true
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "companion",
+    "name": "阅读伙伴与通知",
+    "icon": "bot",
+    "family": "偏好",
+    "sections": [
+      {
+        "title": "阅读伙伴",
+        "rows": [
+          [
+            "pet",
+            "显示桌面阅读伙伴",
+            "toggle",
+            [],
+            true
+          ],
+          [
+            "petMotion",
+            "角色动画",
+            "select",
+            [
+              "跟随系统",
+              "减少动画"
+            ],
+            "跟随系统"
+          ],
+          [
+            "petReading",
+            "显示正在阅读",
+            "toggle",
+            [],
+            true
+          ],
+          [
+            "petTask",
+            "显示任务气泡",
+            "toggle",
+            [],
+            true
+          ]
+        ]
+      },
+      {
+        "title": "任务通知",
+        "rows": [
+          [
+            "completeNotice",
+            "任务完成提示",
+            "toggle",
+            [],
+            true
+          ],
+          [
+            "failedNotice",
+            "任务失败提示",
+            "toggle",
+            [],
+            true
+          ],
+          [
+            "noticeTime",
+            "完成提示停留",
+            "select",
+            [
+              "3 秒",
+              "5 秒",
+              "10 秒"
+            ],
+            "5 秒"
+          ],
+          [
+            "sound",
+            "提示音",
+            "toggle",
+            [],
+            false
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ai",
+    "name": "AI 模型与 API",
+    "icon": "chat",
+    "family": "服务",
+    "sections": [
+      {
+        "title": "服务连接",
+        "rows": [
+          [
+            "provider",
+            "默认 AI 服务",
+            "select",
+            [
+              "已配置服务 A",
+              "已配置服务 B"
+            ],
+            "已配置服务 A"
+          ],
+          [
+            "providers",
+            "管理服务",
+            "action",
+            [],
+            "添加 / 编辑",
+            "每个服务单独保存 API Key、Base URL 与默认模型。模型名允许手动填写；候选列表不能视为 API 支持列表。"
+          ]
+        ]
+      },
+      {
+        "title": "联网搜索",
+        "rows": [
+          [
+            "webProvider",
+            "搜索服务",
+            "select",
+            [
+              "关闭",
+              "自动",
+              "DeepSeek",
+              "Anthropic"
+            ],
+            "关闭",
+            "复用已配置服务的密钥，不保证所有模型都支持联网。"
+          ],
+          [
+            "webModel",
+            "搜索模型 ID",
+            "text",
+            [],
+            ""
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "import",
+    "name": "导入与解析",
+    "icon": "import",
+    "family": "服务",
+    "sections": [
+      {
+        "title": "PDF 解析",
+        "rows": [
+          [
+            "mineru",
+            "MinerU API Key",
+            "secret",
+            [],
+            ""
+          ],
+          [
+            "parseAuto",
+            "导入后自动解析",
+            "toggle",
+            [],
+            true
+          ],
+          [
+            "parseConcurrency",
+            "同时解析论文数",
+            "number",
+            [],
+            2,
+            "可输入正整数，默认 2 篇。"
+          ]
+        ]
+      },
+      {
+        "title": "导入后处理",
+        "rows": [
+          [
+            "metadata",
+            "自动补全会议与 DOI",
+            "toggle",
+            [],
+            true,
+            "优先使用浏览器元数据和解析结果，再尝试公共 DOI 元数据查询。"
+          ],
+          [
+            "metaTranslate",
+            "翻译标题与摘要",
+            "toggle",
+            [],
+            true,
+            "解析后使用已配置 AI，可能产生 API 费用；不等同于翻译全文。"
+          ],
+          [
+            "fullAuto",
+            "自动翻译全文",
+            "toggle",
+            [],
+            false,
+            "默认关闭，避免导入多篇时意外产生大量请求。"
+          ]
+        ]
+      },
+      {
+        "title": "浏览器扩展",
+        "rows": [
+          [
+            "connector",
+            "连接状态",
+            "status",
+            [],
+            "预览 · 未检测"
+          ],
+          [
+            "extension",
+            "扩展安装与升级",
+            "action",
+            [],
+            "安装扩展"
+          ],
+          [
+            "extensionDir",
+            "扩展文件夹",
+            "action",
+            [],
+            "打开"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "data",
+    "name": "数据与存储",
+    "icon": "data",
+    "family": "管理",
+    "sections": [
+      {
+        "title": "论文库",
+        "rows": [
+          [
+            "path",
+            "存储位置",
+            "action",
+            [],
+            "选择文件夹",
+            "修改位置需要明确迁移流程，不能直接丢弃旧数据。"
+          ],
+          [
+            "backup",
+            "完整备份",
+            "action",
+            [],
+            "导出备份",
+            "包含论文、笔记、会话、译文和阅读状态；默认排除 API 密钥。"
+          ],
+          [
+            "restoreBackup",
+            "从备份恢复",
+            "action",
+            [],
+            "选择备份",
+            "先校验格式和数据，恢复前创建当前库备份。第二批实施。"
+          ]
+        ]
+      },
+      {
+        "title": "维护",
+        "rows": [
+          [
+            "reindex",
+            "重建向量索引",
+            "action",
+            [],
+            "重建",
+            "保留论文与笔记，仅重建索引。"
+          ],
+          [
+            "cache",
+            "缓存",
+            "action",
+            [],
+            "清理",
+            "只清理可重新生成的缓存，不删除论文、译文或笔记。"
+          ],
+          [
+            "trash",
+            "回收站",
+            "action",
+            [],
+            "清空",
+            "永久删除需要单独确认，默认不自动清空。"
+          ]
+        ]
+      }
+    ]
+  }
 ];
-groups.splice(2,0,groups.splice(groups.findIndex(g=>g.id==='companion'),1)[0]);
-const state={};let active='general';let savedTimer;const all=groups.flatMap(g=>g.sections.flatMap(s=>s.rows.map(r=>({g,s,r}))));all.forEach(({r})=>state[r[0]]=r[4]);
+let translated=false,translationTarget=null;const state={};let active='general';let savedTimer;const all=groups.flatMap(g=>g.sections.flatMap(s=>s.rows.map(r=>({g,s,r}))));all.forEach(({r})=>state[r[0]]=r[4]);
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function controls(r){const[id,label,type,options,value,help]=r;if(type==='toggle')return `<button role="switch" aria-label="${label}" aria-checked="${state[id]}" class="switch" data-id="${id}"></button>`;if(type==='select')return `<select aria-label="${label}" data-id="${id}">${options.map(o=>`<option ${o===state[id]?'selected':''}>${o}</option>`).join('')}</select>`;if(type==='secret'||type==='text')return `<input aria-label="${label}" type="${type==='secret'?'password':'text'}" class="textinput" data-id="${id}" value="${esc(state[id])}" autocomplete="off">`;if(type==='action')return `<button class="smallbutton ${id==='trash'?'danger':''}" data-action="${id}">${value}</button>`;if(type==='key')return `<kbd class="shortcut">${value}</kbd>`;return `<span class="muted">${value}</span>`}
+function controls(r){const[id,label,type,options,value,help]=r;if(type==='toggle')return `<button role="switch" aria-label="${label}" aria-checked="${state[id]}" class="switch" data-id="${id}"></button>`;if(type==='select')return `<select aria-label="${label}" data-id="${id}">${options.map(o=>`<option ${o===state[id]?'selected':''}>${o}</option>`).join('')}</select>`;if(type==='number')return `<input aria-label="${label}" type="number" min="1" step="1" required class="textinput" style="width:90px" data-id="${id}" value="${state[id]}">`;if(type==='secret'||type==='text')return `<input aria-label="${label}" type="${type==='secret'?'password':'text'}" class="textinput" data-id="${id}" value="${esc(state[id])}" autocomplete="off">`;if(type==='action')return `<button class="smallbutton ${id==='trash'?'danger':''}" data-action="${id}">${value}</button>`;if(type==='key')return `<kbd class="shortcut">${value}</kbd>`;return `<span class="muted">${value}</span>`}
 function render(){const g=groups.find(g=>g.id===active);document.getElementById('nav').innerHTML=groups.map((g,i)=>`${!i||g.family!==groups[i-1].family?`<div class="caption">${g.family}</div>`:''}<button data-page="${g.id}" class="${active===g.id?'active':''}">${icon(g.icon)}${g.name}</button>`).join('');document.getElementById('content').innerHTML=`<div class="heading"><h2>${g.name}</h2><span class="saved" id="saved">已保存 · 预览</span></div>${g.sections.map(s=>`<h3>${s.title}</h3><div class="group">${s.rows.map(r=>`<div class="row" id="row-${r[0]}"><div class="label">${r[1]}${r[5]?`<span tabindex="0" class="info" aria-label="${r[1]}说明" data-help="${esc(r[5])}">i</span>`:''}</div><div class="control">${controls(r)}</div></div>`).join('')}</div>`).join('')}${active==='general'?'<div class="preview"><h3>显示效果预览</h3><div id="languagePreview"></div></div>':''}${active==='companion'?'<div class="pet-preview" id="petPreview"></div>':''}`;updatePreview();}
 function languageAt(key){return state[key]==='跟随统一设置'?state.language:state[key]}const english='EvoC2Rust: A Skeleton-guided Framework for Project-Level C-to-Rust Translation',chinese='EvoC2Rust：骨架引导的项目级 C 到 Rust 翻译框架';function titleFor(lang,missing=false){return lang==='原文'||missing?english:lang==='中英双语'?chinese+' / '+english:chinese}
-function updatePreview(){const box=document.getElementById('languagePreview');if(box)box.innerHTML=[['论文库','libraryLang'],['标签页','tabLang'],['概览','detailLang'],['阅读历史','historyLang']].map(([name,key])=>`<div class="paperline"><span>${name}</span><strong>${titleFor(languageAt(key))}${key==='detailLang'?`<small>${state.abstractLang==='原文'?'A skeleton-guided framework translates legacy C projects into Rust.':state.abstractLang==='中英双语'?'通过骨架引导将旧 C 项目转为 Rust。 / A skeleton-guided framework translates legacy C projects into Rust.':'通过骨架引导，将旧 C 项目逐步转换为 Rust。'}</small>`:''}</strong></div>`).join('')+'<div class="paperline"><span>没有译文</span><strong>Reading Research with Language Models</strong></div>';const pet=document.getElementById('petPreview');if(pet)pet.innerHTML=state.pet?`<span aria-hidden="true">🦉</span>${state.petReading||state.petTask?'<div class="bubble">正在阅读 EvoC2Rust</div>':''}`:'';document.body.classList.toggle('dark',state.theme==='深色'||state.theme==='跟随系统'&&matchMedia('(prefers-color-scheme:dark)').matches);document.body.style.fontSize=state.font==='大'?'17px':state.font==='小'?'13px':'15px';}
+function updatePreview(){const box=document.getElementById('languagePreview');if(box)box.innerHTML=[['论文库','libraryLang'],['标签页','tabLang'],['概览','detailLang'],['阅读历史','historyLang']].map(([name,key])=>`<div class="paperline"><span>${name}</span><strong>${titleFor(languageAt(key))}${key==='detailLang'?`<small>${state.abstractLang==='原文'?'A skeleton-guided framework translates legacy C projects into Rust.':state.abstractLang==='中英双语'?'通过骨架引导将旧 C 项目转为 Rust。 / A skeleton-guided framework translates legacy C projects into Rust.':'通过骨架引导，将旧 C 项目逐步转换为 Rust。'}</small>`:''}</strong></div>`).join('')+`<div class="paperline"><span>${translated?'已补译':'没有译文'}</span><strong>${translated&&state.language!=='原文'?'利用语言模型阅读研究论文':'Reading Research with Language Models'}</strong>${!translated?'<button class="smallbutton" data-action="missingTranslations">补全中文</button>':''}</div>`;const pet=document.getElementById('petPreview');if(pet)pet.innerHTML=state.pet?`<span aria-hidden="true">🦉</span>${state.petReading||state.petTask?'<div class="bubble">正在阅读 EvoC2Rust</div>':''}`:'';document.body.classList.toggle('dark',state.theme==='深色'||state.theme==='跟随系统'&&matchMedia('(prefers-color-scheme:dark)').matches);document.body.style.fontSize=state.font==='大'?'17px':state.font==='小'?'13px':'15px';}
 function saved(){const el=document.getElementById('saved');if(!el)return;el.classList.add('show');clearTimeout(savedTimer);savedTimer=setTimeout(()=>el.classList.remove('show'),1600)}
 function search(value){const q=value.trim().toLowerCase();document.getElementById('searchHint').hidden=!!q;if(!q){render();return;}const aliases={language:'中文 英文 语言',providers:'api key provider 密钥 模型',mineru:'解析 pdf 密钥 api',pet:'宠物 猫头鹰 桌面',tabLang:'中文 英文 标签',backup:'备份 导出',restore:'重启 启动 标签',rounds:'agent 工具 次数'};const matches=all.filter(({g,s,r})=>(g.name+' '+s.title+' '+r[1]+' '+(r[5]||'')+' '+(aliases[r[0]]||'')).toLowerCase().includes(q));document.getElementById('content').innerHTML=`<div class="heading"><h2>搜索设置</h2><span class="muted">${matches.length} 项</span></div>${matches.map(({g,s,r})=>`<button class="result" data-result="${r[0]}" data-page="${g.id}"><span>${r[1]}</span><span class="muted">${g.name} › ${s.title}</span></button>`).join('')}`;}
-document.getElementById('search').addEventListener('input',e=>search(e.target.value));document.addEventListener('click',e=>{const nav=e.target.closest('[data-page]');if(nav){active=nav.dataset.page;document.getElementById('search').value='';document.getElementById('searchHint').hidden=false;render();document.getElementById('pane').scrollTop=0;if(nav.dataset.result){const el=document.getElementById('row-'+nav.dataset.result);el.scrollIntoView({block:'center'});el.classList.add('highlight');el.querySelector('select,input,button')?.focus();}return;}const toggle=e.target.closest('[role=switch]');if(toggle){state[toggle.dataset.id]=!state[toggle.dataset.id];toggle.setAttribute('aria-checked',state[toggle.dataset.id]);saved();updatePreview();}const action=e.target.closest('[data-action]');if(action)act(action.dataset.action);});document.addEventListener('change',e=>{if(e.target.dataset.id){state[e.target.dataset.id]=e.target.value;updatePreview();saved();}});
-function act(id){if(id==='providers'){document.getElementById('providerDialog').showModal();return;}const label=all.find(({r})=>r[0]===id)?.r[1]||'操作';document.getElementById('confirmTitle').textContent=label;const messages={trash:'确认后将永久删除回收站中的论文。此原型不执行删除。',cache:'仅清理可重新生成的临时缓存；保留论文、译文、笔记与会话。',backup:'完整备份包含 PDF、笔记、会话、译文和阅读状态，默认排除 API 密钥。',restoreBackup:'选择备份后先校验，并备份当前论文库。',reindex:'将在后台重建索引，期间仍可阅读论文。',path:'选择新位置后需要确认迁移方式与目标空间。',extension:'Chrome → 扩展 → 开发者模式 → 加载已解压的文件夹；升级时覆盖同一目录，再点击重新加载。',diagnostics:'先预览诊断内容，确认不包含密钥、论文正文或会话内容，再导出文件。',petPos:'将伙伴恢复到右上角，不改变当前任务。',guide:'在帮助板块按页面查找功能，或使用“问 AI”。'};document.getElementById('confirmText').textContent=messages[id]||'确认后应用所选操作。此处仅演示流程。';document.getElementById('confirmAction').textContent=id==='trash'?'永久删除':'确认';document.getElementById('confirmAction').onclick=()=>{document.getElementById('confirmDialog').close();saved();};document.getElementById('confirmDialog').showModal();}
+document.getElementById('search').addEventListener('input',e=>search(e.target.value));document.addEventListener('click',e=>{const nav=e.target.closest('[data-page]');if(nav){active=nav.dataset.page;document.getElementById('search').value='';document.getElementById('searchHint').hidden=false;render();document.getElementById('pane').scrollTop=0;if(nav.dataset.result){const el=document.getElementById('row-'+nav.dataset.result);el.scrollIntoView({block:'center'});el.classList.add('highlight');el.querySelector('select,input,button')?.focus();}return;}const toggle=e.target.closest('[role=switch]');if(toggle){state[toggle.dataset.id]=!state[toggle.dataset.id];toggle.setAttribute('aria-checked',state[toggle.dataset.id]);saved();updatePreview();}const action=e.target.closest('[data-action]');if(action)act(action.dataset.action);});document.addEventListener('change',e=>{const id=e.target.dataset.id;if(!id)return;if(e.target.type==='number'){if(!e.target.checkValidity()){e.target.reportValidity();e.target.value=state[id];return;}state[id]=Number(e.target.value);}else state[id]=e.target.value;updatePreview();saved();if(['language','libraryLang','tabLang','detailLang','abstractLang','historyLang'].includes(id)&&!translated&&(e.target.value==='中文优先'||e.target.value==='中英双语'||e.target.value==='跟随统一设置'&&state.language!=='原文'))promptTranslation(id);});
+function promptTranslation(id){translationTarget=id;document.getElementById('translationScope').textContent=id==='language'||id==='missingTranslations'?'范围：全部论文，回收站除外。':'范围：该显示位置使用的论文，回收站除外。';document.getElementById('translationFeedback').textContent='';document.getElementById('translationDialog').showModal();}
+document.getElementById('keepEnglish').onclick=()=>{document.getElementById('translationDialog').close();render();saved();};
+document.getElementById('translateAll').onclick=()=>{translated=true;document.getElementById('translationDialog').close();render();saved();};
+document.getElementById('translationDialog').addEventListener('cancel',()=>{document.getElementById('keepEnglish').click();});
+function act(id){if(id==='missingTranslations'){promptTranslation(id);return;}if(id==='providers'){document.getElementById('providerDialog').showModal();return;}const label=all.find(({r})=>r[0]===id)?.r[1]||'操作';document.getElementById('confirmTitle').textContent=label;const messages={trash:'确认后将永久删除回收站中的论文。此原型不执行删除。',cache:'仅清理可重新生成的临时缓存；保留论文、译文、笔记与会话。',backup:'完整备份包含 PDF、笔记、会话、译文和阅读状态，默认排除 API 密钥。',restoreBackup:'选择备份后先校验，并备份当前论文库。',reindex:'将在后台重建索引，期间仍可阅读论文。',path:'选择新位置后需要确认迁移方式与目标空间。',extension:'准备固定的扩展文件夹，并协助打开 Chrome 扩展管理页。首次安装仍需你打开开发者模式，点击“加载已解压的扩展”并选择该文件夹。此处只演示安装引导，不实际安装。',extensionDir:'在文件管理器中打开固定扩展目录；升级覆盖这个目录后，在 Chrome 点击重新加载。',diagnostics:'先预览诊断内容，确认不包含密钥、论文正文或会话内容，再导出文件。',petPos:'将伙伴恢复到右上角，不改变当前任务。',guide:'在帮助板块按页面查找功能，或使用“问 AI”。'};document.getElementById('confirmText').textContent=messages[id]||'确认后应用所选操作。此处仅演示流程。';document.getElementById('confirmAction').textContent=id==='trash'?'永久删除':'确认';document.getElementById('confirmAction').onclick=()=>{document.getElementById('confirmDialog').close();saved();};document.getElementById('confirmDialog').showModal();}
 document.getElementById('review').onclick=()=>document.getElementById('reviewDialog').showModal();document.getElementById('testApi').onclick=()=>document.getElementById('apiStatus').textContent='预览模式，不发出网络请求。实际版本将检查认证和模型可用性。';document.getElementById('saveApi').onclick=()=>{document.getElementById('pkey').value='';document.getElementById('providerDialog').close();saved();};document.getElementById('providerDialog').addEventListener('close',()=>document.getElementById('pkey').value='');render();
 </script></body></html>
