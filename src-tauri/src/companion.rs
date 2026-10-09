@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 #[derive(Clone, serde::Deserialize)]
 pub struct HitRegion { x: f64, y: f64, width: f64, height: f64, ellipse: bool }
 impl HitRegion {
@@ -27,7 +27,7 @@ pub fn start(app: tauri::AppHandle) {
                 if let (Ok(cursor), Ok(position), Ok(scale)) = (app.cursor_position(), window.outer_position(), window.scale_factor()) {
                     let x = (cursor.x-position.x as f64)/scale; let y = (cursor.y-position.y as f64)/scale;
                     let hit = app.state::<Regions>().0.lock().map(|regions| regions.iter().any(|r| r.contains(x,y))).unwrap_or(false);
-                    if previous != Some(hit) { if window.set_ignore_cursor_events(!hit).is_ok() { previous = Some(hit); } }
+                    if previous != Some(hit) { if window.set_ignore_cursor_events(!hit).is_ok() { previous = Some(hit); let _ = window.emit("companion:pointer-region", hit); } }
                 }
             }
             std::thread::sleep(std::time::Duration::from_millis(30));

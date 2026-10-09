@@ -22,7 +22,8 @@ it('dismisses busy status without canceling tasks and can restore the task bubbl
 });
 it('shows current reading when no background task is running', () => {
   render(<ReadingCompanion jobs={[]} notice={null} readingTitle="Another Paper" onDismiss={vi.fn()} onOpenPaper={vi.fn()} />);
-  expect(screen.queryByLabelText('任务气泡')).toBeNull();
+  expect(screen.getByLabelText('任务气泡')).toBeTruthy();
+  expect(screen.getByText('正在阅读 Another Paper')).toBeTruthy();
   expect(screen.getByLabelText('阅读伙伴')).toBeTruthy();
 });
 it('distinguishes postprocessing from parsing', () => {
@@ -87,6 +88,22 @@ it('starts native dragging only beyond six pixels and never activates actions af
   expect(screen.queryByLabelText('导入论文')).toBeNull();
   fireEvent.pointerDown(pet, {button:0,screenX:10,screenY:10});
   fireEvent.pointerUp(pet);
+  expect(screen.queryByLabelText('导入论文')).toBeNull();
+  fireEvent.pointerEnter(pet);
   expect(screen.getByLabelText('导入论文')).toBeTruthy();
   window.PointerEvent = original;
+});
+
+it('shows local translation progress without exposing a backend cancel action', () => {
+  render(<ReadingCompanion jobs={[{...job,kind:'full_translation',local:true,completed_pages:2,total_pages:5}]} notice={null} readingTitle={null} onDismiss={vi.fn()} onOpenPaper={vi.fn()} />);
+  fireEvent.click(screen.getByLabelText('展开任务内容'));
+  expect(screen.getByText(/2\/5 段/)).toBeTruthy();
+  expect(screen.queryByLabelText('取消 全文翻译')).toBeNull();
+});
+it('leaves the idle pet without a bubble or action buttons', () => {
+  render(<ReadingCompanion jobs={[]} notice={null} readingTitle={null} onDismiss={vi.fn()} onOpenPaper={vi.fn()} />);
+  expect(screen.queryByLabelText('任务气泡')).toBeNull();
+  expect(screen.queryByLabelText('导入论文')).toBeNull();
+  fireEvent.pointerEnter(screen.getByLabelText('阅读伙伴'));
+  expect(screen.getByLabelText('导入论文').className).toContain('companion-glass');
 });

@@ -11,7 +11,7 @@ it('sends current state on companion readiness and opens a paper in the main win
   await waitFor(() => expect(mocks.handlers.has('companion:ready')).toBe(true));
   view.rerender(<CompanionBridge jobs={[]} notice={null} readingTitle="Paper B" onOpenPaper={open} onDismiss={dismiss} onImport={vi.fn()} onContinue={vi.fn()} />);
   mocks.handlers.get('companion:ready')!({ payload: '' });
-  expect(mocks.emit).toHaveBeenCalledWith('companion', 'companion:state', { jobs: [], notice: null, readingTitle: 'Paper B' });
+  expect(mocks.emit).toHaveBeenCalledWith('companion', 'companion:state', { tasks: [], jobs: [], notice: null, readingTitle: 'Paper B' });
   mocks.handlers.get('companion:open')!({ payload: 'paper-id' });
   await waitFor(() => expect(mocks.focus).toHaveBeenCalled());
   expect(open).toHaveBeenCalledWith('paper-id');

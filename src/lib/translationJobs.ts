@@ -17,6 +17,9 @@ interface Dependencies {
 export class TranslationJobStore {
   private snapshots = new Map<string, TranslationJob>();
   private tasks = new Map<string, Promise<TranslationChunk[]>>();
+  private globalListeners = new Set<() => void>();
+  getEntries() { return [...this.snapshots.entries()]; }
+  subscribeAll(listener: () => void) { this.globalListeners.add(listener); return () => { this.globalListeners.delete(listener); }; }
   private listeners = new Map<string, Set<() => void>>();
   constructor(private deps: Dependencies) {}
   getSnapshot(id: string) { return this.snapshots.get(id) ?? idle; }
@@ -27,6 +30,7 @@ export class TranslationJobStore {
   }
   private publish(id: string, job: TranslationJob) {
     this.snapshots.set(id, job);
+    for (const listener of this.globalListeners) listener();
     for (const listener of this.listeners.get(id) ?? []) listener();
   }
   start(id: string, markdown: string, cached: TranslationChunk[] | null = null, repairOnly = false) {

@@ -13,3 +13,16 @@ export function closeWorkspacePaper(state: WorkspaceState, id: string): Workspac
   const active = state.active === id ? tabs[Math.max(0, index - 1)] ?? 'library' : state.active;
   return { tabs, active, lastRead: state.lastRead === id ? (active !== 'library' ? active : tabs[tabs.length - 1] ?? null) : state.lastRead };
 }
+
+/** Give the active tab enough room, then expose the remaining tabs through the searchable list. */
+export function layoutWorkspaceTabs(tabs: string[], active: string, width: number) {
+  if (!tabs.length || width <= 0) return { visible: [] as string[], widths: {} as Record<string, number> };
+  const activeWidth = Math.min(tabs.length * 220 <= width ? 220 : 160, width);
+  const capacity = width >= activeWidth + (tabs.length - 1) * 110 ? tabs.length : Math.max(1, 1 + Math.floor((width - activeWidth) / 110));
+  const index = Math.max(0, tabs.indexOf(active));
+  const start = Math.max(0, Math.min(index - Math.floor(capacity / 2), tabs.length - capacity));
+  const visible = tabs.slice(start, start + capacity);
+  const hasActive = visible.includes(active);
+  const normalWidth = Math.min(220, (width - (hasActive ? activeWidth : 0)) / Math.max(1, visible.length - (hasActive ? 1 : 0)));
+  return { visible, widths: Object.fromEntries(visible.map(id => [id, id === active ? activeWidth : normalWidth])) };
+}

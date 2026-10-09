@@ -473,3 +473,21 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--primary); outli
 
 /* The detached companion is a transparent desktop window. */
 html.companion-window, html.companion-window body, html.companion-window #root { background: transparent !important; overflow: hidden; }
+
+/* A readable translucent material shared by the companion controls and bubble. */
+.companion-glass {
+  background: linear-gradient(140deg, rgba(255,255,255,.9), rgba(238,247,235,.78));
+  border: 1px solid rgba(255,255,255,.9);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,.9), 0 3px 12px rgba(35,60,42,.14), 0 0 0 1px rgba(115,140,116,.16);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+}
+.dark .companion-glass {
+  background: linear-gradient(140deg, rgba(49,57,49,.96), rgba(31,40,32,.9));
+  border-color: rgba(209,225,209,.16);
+  box-shadow: inset 0 1px rgba(255,255,255,.08), 0 3px 12px rgba(0,0,0,.25);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .companion-glass { background: #f5f8f2; backdrop-filter: none; }
+  .dark .companion-glass { background: #263027; }
+}
