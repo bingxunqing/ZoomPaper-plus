@@ -71,7 +71,7 @@ impl DragState {
     ) -> Option<tauri::PhysicalPosition<i32>> {
         let dx = cursor.x - self.cursor.x;
         let dy = cursor.y - self.cursor.y;
-        self.moved |= dx.hypot(dy) > 6.0;
+        self.moved |= dx.hypot(dy) >= 1.0;
         self.moved.then(|| {
             tauri::PhysicalPosition::new(
                 (self.origin.x as f64 + dx).round() as i32,
@@ -277,8 +277,12 @@ mod tests {
             moved: false,
         };
         assert!(drag
-            .position(tauri::PhysicalPosition::new(204., 100.))
+            .position(tauri::PhysicalPosition::new(200., 100.))
             .is_none());
+        assert_eq!(
+            drag.position(tauri::PhysicalPosition::new(201., 100.)),
+            Some(tauri::PhysicalPosition::new(171, 80))
+        );
         assert_eq!(
             drag.position(tauri::PhysicalPosition::new(210., 115.)),
             Some(tauri::PhysicalPosition::new(180, 95))

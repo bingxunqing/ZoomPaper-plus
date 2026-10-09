@@ -72,7 +72,7 @@ it('offers only import and resume actions after activating the pet', () => {
   expect(hide).toHaveBeenCalledOnce();
 });
 
-it('starts native dragging only beyond six pixels and never activates actions after a drag', () => {
+it('starts dragging on the first pixel of movement and never activates actions after a drag', () => {
   const original = window.PointerEvent;
   window.PointerEvent = MouseEvent as typeof PointerEvent;
   const drag = vi.fn();
@@ -80,9 +80,9 @@ it('starts native dragging only beyond six pixels and never activates actions af
   const pet = screen.getByLabelText('阅读伙伴');
   fireEvent.pointerDown(pet, {button:0,screenX:10,screenY:10});
   expect(drag).not.toHaveBeenCalled();
-  fireEvent.pointerMove(pet, {screenX:16,screenY:10});
+  fireEvent.pointerMove(pet, {screenX:10,screenY:10});
   expect(drag).not.toHaveBeenCalled();
-  fireEvent.pointerMove(pet, {screenX:17,screenY:10});
+  fireEvent.pointerMove(pet, {screenX:11,screenY:10});
   expect(drag).toHaveBeenCalledOnce();
   fireEvent.pointerUp(pet);
   expect(screen.queryByLabelText('导入论文')).toBeNull();
@@ -118,4 +118,15 @@ it('uses the whole pet surface to begin a desktop gesture and waits for the nati
  fireEvent(window,new CustomEvent('companion:gesture-end',{detail:false}));expect(screen.getByLabelText('导入论文')).toBeTruthy();
  fireEvent.pointerDown(pet,{button:0,clientX:160,clientY:46});fireEvent(window,new Event('companion:gesture-dragging'));fireEvent(window,new CustomEvent('companion:gesture-end',{detail:true}));expect(screen.queryByLabelText('导入论文')).toBeNull();
  window.PointerEvent=original;
+});
+
+// The transparent gap between quick actions overlaps the owl's body.
+it('keeps the quick-action gap transparent to pointer input while buttons remain clickable', () => {
+  render(<ReadingCompanion jobs={[]} notice={null} readingTitle={null} onDismiss={vi.fn()} onOpenPaper={vi.fn()} />);
+  fireEvent.pointerEnter(screen.getByLabelText('阅读伙伴'));
+  const button = screen.getByLabelText('导入论文');
+  expect(button.className).toContain('pointer-events-auto');
+  expect(button.closest('.pointer-events-none')).toBeTruthy();
+  expect(screen.getByLabelText('继续阅读').className).toContain('pointer-events-auto');
+  expect(screen.getByLabelText('阅读伙伴').className).toContain('cursor-grab');
 });
