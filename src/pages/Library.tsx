@@ -20,7 +20,7 @@ import {
   addPapersToFolder,
   createReadingPlan,
   deleteFolder,
-  deletePaper,
+  deletePapers,
   emptyTrash,
   exportNotes,
   importPdf,
@@ -36,6 +36,8 @@ import {
   restorePaper,
   setPaperStarred,
   setPaperStatus,
+  setPaperStatuses,
+  clearPaperFolders,
   updateFolder,
   type BackgroundJob,
   type Folder,
@@ -282,7 +284,7 @@ export function Library({ onOpenPaper, onOpenPapers, refreshSignal = 0, jobs = [
       ps.map((p) => (ids.has(p.id) ? { ...p, reading_status: status } : p))
     );
     try {
-      await Promise.all(targets.map((p) => setPaperStatus(p.id, status)));
+      await setPaperStatuses(targets.map(p => p.id), status);
       exitSelection();
     } catch (e) {
       setError(String(e));
@@ -440,9 +442,7 @@ export function Library({ onOpenPaper, onOpenPapers, refreshSignal = 0, jobs = [
     setDeleting(true);
     setError(null);
     try {
-      for (const p of deleteTargets) {
-        await deletePaper(p.id);
-      }
+      await deletePapers(deleteTargets.map(p => p.id));
       exitSelection();
       setDeleteTargets(null);
       await refresh();
@@ -528,18 +528,7 @@ export function Library({ onOpenPaper, onOpenPapers, refreshSignal = 0, jobs = [
     setPapers(apply(prev));
     try {
       if (folderId === null) {
-        const byFolder = new Map<string, string[]>();
-        for (const pid of paperIds) {
-          const p = prev.find((x) => x.id === pid);
-          for (const fid of p?.folder_ids ?? []) {
-            const arr = byFolder.get(fid) ?? [];
-            arr.push(pid);
-            byFolder.set(fid, arr);
-          }
-        }
-        for (const [fid, ids] of byFolder) {
-          await removePapersFromFolder(ids, fid);
-        }
+        await clearPaperFolders(paperIds);
       } else {
         await addPapersToFolder(paperIds, folderId);
       }

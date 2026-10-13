@@ -11,6 +11,7 @@ mod feynman;
 mod fs;
 mod jobs;
 mod library;
+mod undo;
 mod metadata;
 mod publication;
 mod qa;
@@ -119,6 +120,8 @@ pub fn run() {
             commands::set_active_provider,
             commands::list_papers,
             library::library_page,
+            undo::apply_library_action,
+            undo::undo_library_action,
             commands::get_paper,
             commands::open_paper,
             commands::set_reading_status,

@@ -75,10 +75,14 @@ export function Reader({ paperId, initialPageIdx, onBack, refreshSignal, onTitle
     return () => { canceled = true; };
   }, [active, paperId]);
 
+  const markedOpening=useRef<string|null>(null);
   // 打开论文即进入「在读」状态（未读 → 在读；已读保持不变）。失败静默，不影响阅读。
   useEffect(() => {
-    if (!prefs.markReading || !active || !paper || paper.reading_status === "reading" || paper.reading_status === "read") return;
-    setPaperStatus(paper.id, "reading").catch(() => {});
+    if(!active || !prefs.markReading){markedOpening.current=null;return;}
+    if(!paper || markedOpening.current===paper.id)return;
+    markedOpening.current=paper.id;
+    if(paper.reading_status === "reading" || paper.reading_status === "read")return;
+    setPaperStatus(paper.id, "reading", false).catch(() => {});
   }, [paper, active, prefs.markReading]);
 
   // 阅读时长累计：仅页面可见时计时，每 30s 上报一次，卸载/换论文时上报零头。失败静默。
@@ -220,7 +224,7 @@ export function Reader({ paperId, initialPageIdx, onBack, refreshSignal, onTitle
               {visited && <PdfViewer
                 ref={pdfRef}
                 active={active && readerMode === "pdf"}
-                onReachEnd={() => {if(prefs.markReadAtEnd && active && !endMarked.current && paper.reading_status!=="read"){endMarked.current=true;void markPaperRead(paper.id,true).then(setPaper).catch(()=>{endMarked.current=false;});}}}
+                onReachEnd={() => {if(prefs.markReadAtEnd && active && !endMarked.current && paper.reading_status!=="read"){endMarked.current=true;void markPaperRead(paper.id,true,false).then(setPaper).catch(()=>{endMarked.current=false;});}}}
                 pdfPath={paper.pdf_path}
                 paperId={paperId}
                 initialPageIdx={initialPageIdx}

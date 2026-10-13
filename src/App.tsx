@@ -1,3 +1,4 @@
+import { bindUndoShortcut } from "./lib/undoShortcut";
 import { listen } from "@tauri-apps/api/event";
 import { libraryCache } from "./lib/libraryCache";
 import { useEffect, useRef, useState } from "react";
@@ -70,6 +71,7 @@ function App() {
   }, []);
   useEffect(()=>{const changed=()=>{libraryCache.reset();setLibraryRefreshSignal(v=>v+1);};window.addEventListener("zoompaper-library-changed",changed);return()=>window.removeEventListener("zoompaper-library-changed",changed);},[]);
   useEffect(()=>{let stopped=false;let remove:(()=>void)|undefined;void listen("library-changed",()=>setLibraryRefreshSignal(v=>v+1)).then(unlisten=>{if(stopped)unlisten();else remove=unlisten;}).catch(()=>{});return()=>{stopped=true;remove?.();};},[]);
+  useEffect(()=>bindUndoShortcut(()=>invoke<boolean>("undo_library_action"),()=>setLibraryRefreshSignal(v=>v+1),error=>window.alert(String(error))),[]);
   const handledLinks = useRef(new Set<string>());
 
 
@@ -160,7 +162,7 @@ function App() {
             className="flex min-h-0 min-w-0 flex-1 flex-col"
           >
             {view.name === "search" && <SearchPage onOpenPaper={openPaper} />}
-            {view.name === "timeline" && <TimelinePage onOpenPaper={openPaper} />}
+            {view.name === "timeline" && <TimelinePage onOpenPaper={openPaper} refreshSignal={libraryRefreshSignal} />}
             {view.name === "ask" && <AskPage onOpenPaper={openPaper} />}
             {view.name === "settings" && <SettingsPage />}
             {view.name === "help" && <HelpPage />}

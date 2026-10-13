@@ -6,8 +6,7 @@ import { cn } from "@/lib/utils";
 import { folderColor } from "@/lib/folderColors";
 import { buildFolderTree, type FolderNode } from "@/lib/folders";
 import {
-  addPapersToFolder,
-  removePapersFromFolder,
+  applyFolderChanges,
   type Folder,
   type Paper,
 } from "@/lib/api";
@@ -25,7 +24,7 @@ interface Props {
 
 /**
  * 论文归属面板：列出全部文件夹（缩进展示层级），勾选 = 把选中论文加入，
- * 取消勾选 = 移除。多归属集合式语义，变更即时生效。
+ * 取消勾选 = 移除。点击完成后原子提交，整个操作可撤销。
  */
 export function PaperFolderPicker({ open, onOpenChange, papers, folders, onChanged, onError }: Props) {
   const [busy, setBusy] = useState(false);
@@ -53,14 +52,8 @@ export function PaperFolderPicker({ open, onOpenChange, papers, folders, onChang
     if (busy) return;
     setBusy(true);
     try {
-      for (const [folderId, shouldContain] of Object.entries(intent)) {
-        const ids = papers.filter((paper) => shouldContain
-          ? !paper.folder_ids.includes(folderId)
-          : paper.folder_ids.includes(folderId)).map((paper) => paper.id);
-        if (!ids.length) continue;
-        if (shouldContain) await addPapersToFolder(ids, folderId);
-        else await removePapersFromFolder(ids, folderId);
-      }
+      const changes=Object.entries(intent).map(([folderId,contains])=>({folderId,contains}));
+      if(changes.length)await applyFolderChanges(papers.map(p=>p.id),changes);
       await onChanged();
       onOpenChange(false);
     } catch (e) {

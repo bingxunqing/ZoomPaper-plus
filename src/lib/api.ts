@@ -328,8 +328,9 @@ export const parsePdf = (
 export const translatePaperMetadata = (paperId: string) =>
   invoke<Paper>("translate_paper_metadata", { paperId });
 
-export const deletePaper = (paperId: string) => invoke<void>("delete_paper", { paperId });
-export const restorePaper = (paperId: string) => invoke<void>("restore_paper", { paperId });
+export const deletePapers = (paperIds: string[]) => invoke<number>("apply_library_action", { action: { kind: "trash", paperIds } });
+export const deletePaper = (paperId: string) => deletePapers([paperId]);
+export const restorePaper = (paperId: string) => invoke<number>("apply_library_action", { action: { kind: "restore", paperIds: [paperId] } });
 export const permanentlyDeletePaper = (paperId: string) => invoke<void>("permanently_delete_paper", { paperId });
 export const emptyTrash = () => invoke<number>("empty_trash");
 export const askAppHelp = (question: string) => invoke<string>("ask_app_help", { question });
@@ -360,9 +361,12 @@ export const updateFolder = (
 export const deleteFolder = (folderId: string) =>
   invoke<void>("delete_folder", { folderId });
 export const addPapersToFolder = (paperIds: string[], folderId: string) =>
-  invoke<number>("add_papers_to_folder", { paperIds, folderId });
+  applyFolderChanges(paperIds, [{ folderId, contains: true }]);
 export const removePapersFromFolder = (paperIds: string[], folderId: string) =>
-  invoke<number>("remove_papers_from_folder", { paperIds, folderId });
+  applyFolderChanges(paperIds, [{ folderId, contains: false }]);
+export const applyFolderChanges = (paperIds: string[], changes: { folderId: string; contains: boolean }[]) =>
+  invoke<number>("apply_library_action", { action: { kind: "folders", paperIds, changes } });
+export const clearPaperFolders = (paperIds: string[]) => invoke<number>("apply_library_action", { action: { kind: "clearFolders", paperIds } });
 export const renamePaper = (paperId: string, newTitle: string) =>
   invoke<Paper>("rename_paper", { paperId, newTitle });
 
@@ -371,12 +375,13 @@ export const renamePaper = (paperId: string, newTitle: string) =>
 export type ReadingStatus = "unread" | "reading" | "read";
 
 /** 更新论文阅读状态，返回更新后的论文 */
-export const setPaperStatus = (paperId: string, status: ReadingStatus) =>
-  invoke<Paper>("set_paper_status", { paperId, status });
+export const setPaperStatuses = (paperIds: string[], status: ReadingStatus) => invoke<number>("apply_library_action", { action: { kind: "status", paperIds, status } });
+export const setPaperStatus = (paperId: string, status: ReadingStatus, undoable = true) =>
+  undoable ? setPaperStatuses([paperId], status).then(() => getPaper(paperId)) : invoke<Paper>("set_paper_status", { paperId, status });
 
 /** 设置论文星标，返回更新后的论文 */
 export const setPaperStarred = (paperId: string, starred: boolean) =>
-  invoke<Paper>("set_paper_starred", { paperId, starred });
+  invoke<number>("apply_library_action", { action: { kind: "star", paperIds: [paperId], starred } }).then(() => getPaper(paperId));
 
 // ---------- 阅读时间线 ----------
 
@@ -432,8 +437,8 @@ export const addReadingTime = (paperId: string, seconds: number) =>
   invoke<void>("add_reading_time", { paperId, seconds });
 
 /** 标记/取消「已读」（同步维护 finished_at），返回更新后的论文 */
-export const markPaperRead = (paperId: string, read: boolean) =>
-  invoke<Paper>("mark_paper_read", { paperId, read });
+export const markPaperRead = (paperId: string, read: boolean, undoable = true) =>
+  undoable ? setPaperStatus(paperId, read ? "read" : "reading") : invoke<Paper>("mark_paper_read", { paperId, read });
 
 export const createReadingPlan = (
   type: "daily" | "papers",

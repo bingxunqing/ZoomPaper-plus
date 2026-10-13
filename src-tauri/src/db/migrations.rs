@@ -270,6 +270,8 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         conn.execute_batch(crate::library::SCHEMA)?;
         conn.pragma_update(None, "user_version", 19)?;
     }
+    let version:i64=conn.query_row("PRAGMA user_version",[],|r|r.get(0))?;
+    if version<20 {conn.execute_batch(crate::undo::SCHEMA)?;conn.pragma_update(None,"user_version",20)?;}
     Ok(())
 }
 
@@ -303,7 +305,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            19
+            20
         );
 
         // 论文数据无损
@@ -468,7 +470,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            19
+            20
         );
 
         let items: Vec<(String, Option<i64>)> = conn
@@ -507,7 +509,7 @@ mod tests {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 19);
+        assert_eq!(v, 20);
     }
 
     #[test]
@@ -546,7 +548,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            19
+            20
         );
     }
 

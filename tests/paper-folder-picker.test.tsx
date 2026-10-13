@@ -4,11 +4,10 @@ import { PaperFolderPicker } from "@/components/library/PaperFolderPicker";
 import type { Folder, Paper } from "@/lib/api";
 
 vi.mock("@/lib/api", () => ({
-  addPapersToFolder: vi.fn(),
-  removePapersFromFolder: vi.fn(),
+  applyFolderChanges: vi.fn(),
 }));
 
-import { addPapersToFolder } from "@/lib/api";
+import { applyFolderChanges } from "@/lib/api";
 
 const folders: Folder[] = [
   { id: "folder-a", name: "方法", parent_id: null, color: "blue", tags: [], created_at: 1 },
@@ -47,7 +46,7 @@ afterEach(() => {
 
 describe("PaperFolderPicker", () => {
   it("shows the new check after adding a paper when several folders exist", async () => {
-    vi.mocked(addPapersToFolder).mockResolvedValue(1);
+    vi.mocked(applyFolderChanges).mockResolvedValue(1);
     const onChanged = vi.fn().mockResolvedValue(undefined);
     render(
       <PaperFolderPicker
@@ -66,16 +65,16 @@ describe("PaperFolderPicker", () => {
 
     fireEvent.click(second);
     expect(second.getAttribute("aria-checked")).toBe("true");
-    expect(addPapersToFolder).not.toHaveBeenCalled();
+    expect(applyFolderChanges).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "完成" }));
-    await waitFor(() => expect(addPapersToFolder).toHaveBeenCalledOnce());
+    await waitFor(() => expect(applyFolderChanges).toHaveBeenCalledOnce());
     expect(first.getAttribute("aria-checked")).toBe("true");
-    expect(addPapersToFolder).toHaveBeenCalledWith(["paper-1"], "folder-b");
+    expect(applyFolderChanges).toHaveBeenCalledWith(["paper-1"], [{folderId:"folder-b",contains:true}]);
     expect(onChanged).toHaveBeenCalledTimes(1);
   });
 
-  it("shows mixed membership and adds only papers missing from the folder", async () => {
-    vi.mocked(addPapersToFolder).mockResolvedValue(1);
+  it("shows mixed membership and submits the batch atomically", async () => {
+    vi.mocked(applyFolderChanges).mockResolvedValue(1);
     const existing = paper(["folder-a"], "paper-1");
     const missing = paper([], "paper-2");
     const onChanged = vi.fn().mockResolvedValue(undefined);
@@ -94,9 +93,9 @@ describe("PaperFolderPicker", () => {
     const checkbox = screen.getByRole("checkbox", { name: /方法/ });
     expect(checkbox.getAttribute("aria-checked")).toBe("mixed");
     fireEvent.click(checkbox);
-    expect(addPapersToFolder).not.toHaveBeenCalled();
+    expect(applyFolderChanges).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "完成" }));
-    await waitFor(() => expect(addPapersToFolder).toHaveBeenCalledWith(["paper-2"], "folder-a"));
+    await waitFor(() => expect(applyFolderChanges).toHaveBeenCalledWith(["paper-1","paper-2"], [{folderId:"folder-a",contains:true}]));
     expect(onChanged).toHaveBeenCalledOnce();
   });
 });

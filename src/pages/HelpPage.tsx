@@ -5,7 +5,7 @@ import {
   HelpCircle, Highlighter, History, KeyRound, Languages, LayoutGrid, Library,
   ListChecks, ListPlus, Loader2, MessageSquare, MonitorDown, Newspaper, Pencil, RefreshCw,
   Search, Settings2, SlidersHorizontal, Sparkles, Square, Star, StickyNote,
-  TableOfContents, Trash2, Upload, ZoomIn, type LucideIcon,
+  TableOfContents, Trash2, Undo2, Upload, ZoomIn, type LucideIcon,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -37,6 +37,7 @@ const guideSections: GuideSection[] = [
       { id: "folder", title: "添加到文件夹", icon: FolderPlus, summary: "一篇论文可以属于多个文件夹。", steps: ["右键论文，或长按论文进入多选。", "点击文件夹图标。", "勾选目标文件夹。", "点击“完成”应用更改。"] },
       { id: "status", title: "阅读状态", icon: CircleDot, summary: "标记未读、在读或已读。", steps: ["右键论文，或在多选工具栏点击状态图标。", "选择未读、在读或已读。", "可用论文库顶部筛选器查看对应状态。"] },
       { id: "plan", title: "加入阅读计划", icon: ListPlus, summary: "为论文安排阅读日期。", steps: ["右键论文并打开阅读计划菜单。", "选择计划或新建计划。", "选择今天、明天或自定义日期。"] },
+      { id: "undo", title: "撤销操作", icon: Undo2, summary: "撤销最近一次论文整理操作。", steps: ["按 Ctrl + Z；Mac 也支持 Command + Z。", "支持文件夹归属、收藏、阅读状态、移入回收站和恢复；批量操作整体撤销。", "输入框中撤销文字，永久删除无法撤销。"] },
       { id: "multi", title: "快速多选", icon: ListChecks, summary: "批量整理多篇论文。", steps: ["长按任意论文，保持按住并向上或向下滑动，即可连续选择。", "也可以进入多选后按住复选框拖动。", "执行操作后自动退出；点击空白处或按 Esc 也可退出。"] },
       { id: "rename", title: "重命名", icon: Pencil, summary: "修改论文在库中的标题。", steps: ["右键论文。", "点击重命名。", "输入标题并确认。"] },
       { id: "notes", title: "导出笔记", icon: Download, summary: "导出论文的高亮和批注。", steps: ["右键论文或选中多篇论文。", "点击下载图标。", "选择保存位置。"] },

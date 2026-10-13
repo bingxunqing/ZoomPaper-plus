@@ -55,6 +55,7 @@ const HEATMAP_WEEKS = 52;
 const STATS_DAYS = HEATMAP_WEEKS * 7 + 7;
 
 interface Props {
+  refreshSignal?: number;
   onOpenPaper: (paperId: string) => void;
 }
 
@@ -91,7 +92,7 @@ function readingTitleClass(status: string): string {
       : "font-medium text-zp-primary";
 }
 
-export function TimelinePage({ onOpenPaper }: Props) {
+export function TimelinePage({ onOpenPaper, refreshSignal = 0 }: Props) {
   const prefs=usePreferences();
   const [stats, setStats] = useState<TimelineStats | null>(null);
   const [plans, setPlans] = useState<ReadingPlan[]>([]);
@@ -109,7 +110,7 @@ export function TimelinePage({ onOpenPaper }: Props) {
       .catch((e) => setError(String(e)));
   }, []);
 
-  useEffect(reload, [reload]);
+  useEffect(reload, [reload, refreshSignal]);
 
   const todayStr = dateStr(new Date());
   const dayMap = useMemo(
