@@ -4,6 +4,102 @@ use serde_json::Value;
 use std::path::Path;
 use std::sync::OnceLock;
 
+#[derive(Deserialize)]
+struct Atom {
+    #[serde(default)]
+    entry: Vec<AtomEntry>,
+}
+#[derive(Deserialize)]
+struct AtomEntry {
+    id: String,
+    title: String,
+    summary: String,
+    #[serde(default)]
+    author: Vec<AtomAuthor>,
+    published: String,
+}
+#[derive(Deserialize)]
+struct AtomAuthor {
+    name: String,
+}
+pub fn arxiv_record(xml: &str, id: &str) -> Option<crate::metadata::Candidate> {
+    let feed: Atom = quick_xml::de::from_str(xml).ok()?;
+    let entry = feed.entry.into_iter().find(|entry| {
+        entry.id.rsplit("/abs/").next().is_some_and(|found| {
+            found == id
+                || found.rsplit_once('v').is_some_and(|(base, version)| {
+                    base == id && version.chars().all(|c| c.is_ascii_digit())
+                })
+        })
+    })?;
+    Some(crate::metadata::Candidate {
+        title: Some(clean(&entry.title)),
+        authors: Some(
+            entry
+                .author
+                .into_iter()
+                .map(|a| a.name)
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
+        abstract_text: Some(clean(&entry.summary)),
+        arxiv_id: Some(id.into()),
+        year: entry.published.get(..4).and_then(|s| s.parse().ok()),
+        venue: Some("arXiv".into()),
+        ..Default::default()
+    })
+}
+pub async fn lookup_arxiv(
+    id: &str,
+    cache_dir: &Path,
+) -> Result<Option<crate::metadata::Candidate>, String> {
+    if id.is_empty()
+        || id.len() > 80
+        || !id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '/' | '-'))
+    {
+        return Ok(None);
+    }
+    let path = cache_dir.join(format!(
+        "arxiv-{}.json",
+        id.bytes().map(|b| format!("{b:02x}")).collect::<String>()
+    ));
+    if let Ok(raw) = std::fs::read(&path) {
+        if let Ok((stamp, candidate)) =
+            serde_json::from_slice::<(i64, Option<crate::metadata::Candidate>)>(&raw)
+        {
+            if chrono::Utc::now().timestamp() - stamp < 86400 {
+                return Ok(candidate);
+            }
+        }
+    }
+    let mut url = reqwest::Url::parse("https://export.arxiv.org/api/query").unwrap();
+    url.query_pairs_mut().append_pair("id_list", id);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = client.get(url).send().await.map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("arXiv 元数据查询失败：{}", response.status()));
+    }
+    let mut response = response;
+    let mut body = Vec::new();
+    while let Some(bytes) = response.chunk().await.map_err(|e| e.to_string())? {
+        if body.len() + bytes.len() > 512000 {
+            return Err("arXiv 响应过大".into());
+        }
+        body.extend_from_slice(&bytes);
+    }
+    let candidate = arxiv_record(std::str::from_utf8(&body).map_err(|e| e.to_string())?, id);
+    let _ = std::fs::create_dir_all(cache_dir);
+    if let Ok(raw) = serde_json::to_vec(&(chrono::Utc::now().timestamp(), &candidate)) {
+        let _ = std::fs::write(path, raw);
+    }
+    Ok(candidate)
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Publication {
     pub doi: String,
@@ -248,18 +344,26 @@ pub async fn lookup(doi: &str, cache_dir: &Path) -> Result<Option<Publication>, 
         .build()
         .map_err(|e| e.to_string())?;
     let mut publication = None;
-    static RETRY_AFTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+    static RETRY_AFTER: [std::sync::atomic::AtomicI64; 2] =
+        [const { std::sync::atomic::AtomicI64::new(0) }; 2];
+    let mut limited = false;
     for (base, crossref) in [
         ("https://api.crossref.org/works/", true),
         ("https://api.datacite.org/dois/", false),
     ] {
-        if chrono::Utc::now().timestamp() < RETRY_AFTER.load(std::sync::atomic::Ordering::Relaxed) {
-            return Err("DOI 服务限流，稍后重试".into());
+        let retry_after = &RETRY_AFTER[usize::from(!crossref)];
+        if chrono::Utc::now().timestamp() < retry_after.load(std::sync::atomic::Ordering::Relaxed) {
+            limited = true;
+            continue;
         }
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         let mut url = reqwest::Url::parse(base).unwrap();
         url.path_segments_mut().unwrap().pop_if_empty().push(&doi);
-        let response = client.get(url).send().await.map_err(|e| e.to_string())?;
+        let response = match client.get(url).send().await {
+            Ok(r) => r,
+            Err(_) if crossref => continue,
+            Err(e) => return Err(e.to_string()),
+        };
         if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
             let seconds = response
                 .headers()
@@ -268,15 +372,22 @@ pub async fn lookup(doi: &str, cache_dir: &Path) -> Result<Option<Publication>, 
                 .and_then(|v| v.parse::<i64>().ok())
                 .unwrap_or(60)
                 .clamp(1, 3600);
-            RETRY_AFTER.store(
+            limited = true;
+            retry_after.store(
                 chrono::Utc::now().timestamp() + seconds,
                 std::sync::atomic::Ordering::Relaxed,
             );
+        }
+        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            continue;
         }
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             continue;
         }
         if !response.status().is_success() {
+            if crossref {
+                continue;
+            }
             return Err(format!("DOI 查询状态 {}", response.status()));
         }
         // Bound response memory, including chunked responses without Content-Length.
@@ -298,6 +409,9 @@ pub async fn lookup(doi: &str, cache_dir: &Path) -> Result<Option<Publication>, 
             break;
         }
     }
+    if publication.is_none() && limited {
+        return Err("DOI 服务限流，稍后重试".into());
+    }
     let cached = Cached {
         fetched_at: chrono::Utc::now().timestamp(),
         publication: publication.clone(),
@@ -312,6 +426,14 @@ pub async fn lookup(doi: &str, cache_dir: &Path) -> Result<Option<Publication>, 
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn arxiv_feed_matches_unversioned_identifier_and_rejects_other_entries() {
+        let xml = r#"<feed><entry><id>http://arxiv.org/abs/2601.12345v2</id><title> Paper title </title><summary> Abstract text </summary><published>2026-01-01</published><author><name>Author</name></author></entry></feed>"#;
+        let result = arxiv_record(xml, "2601.12345").unwrap();
+        assert_eq!(result.year, Some(2026));
+        assert_eq!(result.authors.as_deref(), Some("Author"));
+        assert!(arxiv_record(xml, "2601.99999").is_none());
+    }
     #[test]
     fn doi_extraction_and_validation() {
         assert_eq!(

@@ -1,3 +1,4 @@
+import { libraryCache } from '@/lib/libraryCache';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { AnimatePresence } from "motion/react";
@@ -25,7 +26,6 @@ import {
   importPdf,
   getSettings,
   listFolders,
-  listPapers,
   listReadingPlans,
   parsePdf,
   permanentlyDeletePaper,
@@ -97,7 +97,6 @@ export function Library({ onOpenPaper, onOpenPapers, refreshSignal = 0, jobs = [
   );
   const [focusedPaperId, setFocusedPaperId] = useState<string | null>(null);
   const { selected, toggle, setSelectedState, clear, selectAll, isSelected, size: selectedSize } = usePaperSelection();
-  const selectionDrag = useDragPaperSelection(setSelectedState);
   const [selectionMode, setSelectionMode] = useState(false);
   const suppressBlankExitUntil = useRef(0);
   const exitSelection = () => { clear(); setSelectionMode(false); };
@@ -132,7 +131,7 @@ export function Library({ onOpenPaper, onOpenPapers, refreshSignal = 0, jobs = [
 
   const refresh = useCallback(async () => {
     try {
-      const [ps, fs, pls] = await Promise.all([listPapers(), listFolders(), listReadingPlans()]);
+      const [ps, fs, pls] = await Promise.all([libraryCache.refresh(), listFolders(), listReadingPlans()]);
       setPapers(ps);
       setFolders(fs);
       setPlans(pls);
@@ -200,6 +199,8 @@ export function Library({ onOpenPaper, onOpenPapers, refreshSignal = 0, jobs = [
     const rest = sorted.filter((p) => !p.starred);
     return [...starred, ...rest];
   }, [papers, view, filter, query, sortBy]);
+
+  const selectionDrag = useDragPaperSelection(setSelectedState, visiblePapers.map(p => p.id));
 
   const selectedPapers = useMemo(
     () => papers.filter((p) => selected.has(p.id)),

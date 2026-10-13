@@ -1,12 +1,9 @@
-/**
- * 卡片网格容器（PaperGrid）：自适应列 minmax(300px, 1fr)，gap 16px。
- */
-import type { ReactNode } from "react";
-
+import { Children, type ReactNode } from "react";
+import { useVirtualRows } from '@/hooks/useVirtualRows';
 export function PaperGrid({ children }: { children: ReactNode }) {
-  return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
-      {children}
-    </div>
-  );
+  const items = Children.toArray(children);
+  const window = useVirtualRows(items.length, 156, true);
+  return <div ref={window.ref} style={{paddingTop: window.top, paddingBottom: window.bottom}}>
+    <div className="grid auto-rows-[140px] gap-4" style={{gridTemplateColumns:`repeat(${window.columns}, minmax(0,1fr))`}}>{items.slice(window.start, window.end)}</div>
+  </div>;
 }

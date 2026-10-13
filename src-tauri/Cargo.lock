@@ -4137,6 +4137,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
 dependencies = [
  "memchr",
+ "serde",
 ]
 
 [[package]]
@@ -7568,6 +7569,7 @@ dependencies = [
  "futures-util",
  "html5ever",
  "objc2-web-kit 0.2.2",
+ "quick-xml",
  "reqwest 0.12.24",
  "rusqlite",
  "serde",

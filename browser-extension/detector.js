@@ -1,3 +1,4 @@
+import { resolveLandingPdf } from './adapters/registry.js';
 export function absoluteUrl(value, base) {
   if (!value) return null;
   try {
@@ -22,52 +23,7 @@ function looksLikePdfEndpoint(value) {
   return isPdfUrl(value) || /\/pdf(?:\/|\?|$)|download.?pdf|pdfdirect|[?&](?:format|type)=pdf(?:&|$)/i.test(value || "");
 }
 
-/** Convert a known paper landing page to its stable PDF endpoint. */
-function landingPagePdf(value) {
-  try {
-    const url = new URL(value);
-    if (["arxiv.org", "export.arxiv.org"].includes(url.hostname) && url.pathname.startsWith("/abs/")) {
-      return `${url.origin}/pdf/${url.pathname.slice(5)}`;
-    }
-    if (url.hostname === "openreview.net" && url.pathname === "/forum" && url.searchParams.has("id")) {
-      return `${url.origin}/pdf?id=${encodeURIComponent(url.searchParams.get("id"))}`;
-    }
-    if (url.hostname === "aclanthology.org" && !isPdfUrl(url.href) && /^\/[^/]+\/$/.test(url.pathname)) {
-      return `${url.origin}${url.pathname.replace(/\/$/, "")}.pdf`;
-    }
-  } catch {
-    // Ignore malformed candidate URLs.
-  }
-  return null;
-}
-
-const SITE_ADAPTERS = [
-  {
-    id: "acl-anthology",
-    match: (url) => url.hostname === "aclanthology.org" && /^\/\d{4}[^/]+\/$/.test(url.pathname),
-    pdf: (url) => `${url.origin}${url.pathname.replace(/\/$/, "")}.pdf`,
-  },
-  {
-    id: "arxiv",
-    match: (url) => ["arxiv.org", "export.arxiv.org"].includes(url.hostname) && url.pathname.startsWith("/abs/"),
-    pdf: (url) => `${url.origin}/pdf/${url.pathname.slice(5)}`,
-  },
-  {
-    id: "openreview",
-    match: (url) => url.hostname === "openreview.net" && url.pathname === "/forum" && url.searchParams.has("id"),
-    pdf: (url) => `${url.origin}/pdf?id=${encodeURIComponent(url.searchParams.get("id"))}`,
-  },
-  {
-    id: "cvf-open-access",
-    match: (url) => url.hostname === "openaccess.thecvf.com" && url.pathname.includes("/html/") && url.pathname.endsWith(".html"),
-    pdf: (url) => `${url.origin}${url.pathname.replace("/html/", "/papers/").replace(/\.html$/, ".pdf")}`,
-  },
-  {
-    id: "neurips",
-    match: (url) => /^(papers|proceedings)\.(?:neurips|nips|iclr)\.cc$/.test(url.hostname) && /-Abstract(?:-Conference)?\.html$/.test(url.pathname),
-    pdf: (url) => `${url.origin}${url.pathname.replace("/hash/", "/file/").replace("-Abstract", "-Paper").replace(/\.html$/, ".pdf")}`,
-  },
-];
+function landingPagePdf(value) { return resolveLandingPdf(value)?.url || null; }
 
 function candidateScore(link) {
   const description = `${link.text || ""} ${link.title || ""} ${link.rel || ""} ${link.type || ""}`;
@@ -92,6 +48,9 @@ export function detectPaper({
   venue,
   publicationDate,
   doi,
+  authors,
+  abstract,
+  arxivId,
   metaPdfUrls = [],
   links = [],
 }) {
@@ -121,6 +80,10 @@ export function detectPaper({
     ...(githubUrl ? { githubUrl } : {}),
     ...(normalizedVenue ? { venue: normalizedVenue } : {}),
     ...(doi ? { doi } : {}),
+    ...(authors ? { authors } : {}),
+    ...(abstract ? { abstract } : {}),
+    ...((arxivId || resolveLandingPdf(page)?.adapterId === 'arxiv') ? { arxivId: arxivId || new URL(page).pathname.slice(5) } : {}),
+    ...(year ? { year: Number(year) } : {}),
   } : null;
 }
 
@@ -131,7 +94,7 @@ export function detectPdfCandidates({ pageUrl, linkUrl, citationPdfUrl, metaPdfU
     const safe = absoluteUrl(raw, pageUrl);
     if (!safe) return;
     const url = landingPagePdf(safe) || safe;
-    ranked.push({ url, score, label, automatic });
+    ranked.push({ url, score, label, automatic, adapterId: resolveLandingPdf(safe)?.adapterId || null });
   };
   if (linkUrl) add(linkUrl, 100, "选中的链接", true);
   if (citationPdfUrl) add(citationPdfUrl, 90, "论文全文", true);
@@ -139,8 +102,8 @@ export function detectPdfCandidates({ pageUrl, linkUrl, citationPdfUrl, metaPdfU
   const page = absoluteUrl(pageUrl, pageUrl);
   if (page) {
     const url = new URL(page);
-    const adapter = SITE_ADAPTERS.find((candidate) => candidate.match(url));
-    if (adapter) add(adapter.pdf(url), 80, "官方全文", true);
+    const adapter = resolveLandingPdf(page);
+    if (adapter) add(page, 80, "官方全文", true);
     else if (isPdfUrl(page) || looksLikePdfEndpoint(page)) add(page, 80, "当前 PDF", true);
   }
   for (const link of links) {

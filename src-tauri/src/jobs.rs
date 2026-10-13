@@ -6,7 +6,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 pub const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS background_jobs (
@@ -165,6 +165,11 @@ fn progress(db: &Db, id: &str, p: crate::ai::mineru::ParseProgress) {
     let _=db.conn().execute("UPDATE background_jobs SET stage=?2,completed_pages=?3,total_pages=?4,updated_at=?5 WHERE id=?1 AND status='running'",params![id,p.stage,p.extracted_pages,p.total_pages,chrono::Utc::now().timestamp()]);
 }
 pub fn start(app: AppHandle) {
+    let backfill = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = crate::commands::backfill_library_metadata(&backfill.state::<Db>());
+        let _ = backfill.emit("library-changed", ());
+    });
     // Restart interrupted workers. Persisted batch IDs allow resuming cloud polling.
     let _ = app.state::<Db>().conn().execute(
         "UPDATE background_jobs SET status='queued',stage='queued' WHERE status='running'",
@@ -283,6 +288,9 @@ async fn run(app: &AppHandle, job: &Job) {
         "UPDATE background_jobs SET status='canceled' WHERE id=?1 AND status='canceling'",
         [&job.id],
     );
+    if completed == 1 {
+        let _ = app.emit("library-changed", ());
+    }
     if completed == 1 && status == "done" && job.kind == "parse" {
         for kind in ["index", "translate", "doi", "full_translation"] {
             if !follow_up_enabled(kind) {
@@ -426,7 +434,9 @@ pub fn claim_frontend_translation(db: State<'_, Db>, job_id: String) -> Result<b
         return Ok(false);
     }
     let conn = db.conn();
-    if crate::storage::MAINTENANCE.load(Ordering::SeqCst) { return Ok(false); }
+    if crate::storage::MAINTENANCE.load(Ordering::SeqCst) {
+        return Ok(false);
+    }
     let changed=conn.execute("UPDATE background_jobs SET status='running',stage='translate',updated_at=?2 WHERE id=?1 AND kind='full_translation' AND status='queued'",params![job_id,chrono::Utc::now().timestamp()]).map_err(|e|e.to_string())?;
     Ok(changed == 1)
 }

@@ -2,6 +2,7 @@ import { scrapePaperPage } from "./scrape.js";
 import { detectPaper, detectPdfCandidates } from "./detector.js";
 import { createImporter } from "./importer.js";
 const importer = createImporter(chrome);
+void importer.resume().catch(() => {});
 
 const MENU_ID = "add-to-zoompaper";
 
@@ -48,7 +49,7 @@ async function detectFromTab(tab, linkUrl) {
     result = { pageUrl: tab.url, title: tab.title };
   }
   const paper = detectPaper({ ...result, linkUrl });
-  return { ...(paper || { title: result.title || "论文", sourceUrl: result.pageUrl }), candidates: detectPdfCandidates({ ...result, linkUrl }), doi: result.doi || null, iconUrl: result.iconUrl || tab.favIconUrl || null };
+  return { ...(paper || { title: result.title || "论文", sourceUrl: result.pageUrl, authors: result.authors, abstract: result.abstract, arxivId: result.arxivId, year: Number(result.year) || null, venue: result.venue }), candidates: detectPdfCandidates({ ...result, linkUrl }), doi: result.doi || null, iconUrl: result.iconUrl || tab.favIconUrl || null };
 }
 
 chrome.runtime.onInstalled.addListener(setupMenu);

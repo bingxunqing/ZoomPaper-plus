@@ -200,6 +200,7 @@ export function PaperCard(props: PaperCardProps) {
               onDragStart={handleDragStart}
               tabIndex={0}
               role="button"
+              data-paper-id={paper.id}
               data-paper-item
               aria-label={paper.title}
               onClick={(event) => {

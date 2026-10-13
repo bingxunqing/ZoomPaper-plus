@@ -1,3 +1,5 @@
+import { listen } from "@tauri-apps/api/event";
+import { libraryCache } from "./lib/libraryCache";
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
@@ -66,7 +68,8 @@ function App() {
     void poll();
     return () => { stopped = true; clearTimeout(timer); };
   }, []);
-  useEffect(()=>{const changed=()=>setLibraryRefreshSignal(v=>v+1);window.addEventListener("zoompaper-library-changed",changed);return()=>window.removeEventListener("zoompaper-library-changed",changed);},[]);
+  useEffect(()=>{const changed=()=>{libraryCache.reset();setLibraryRefreshSignal(v=>v+1);};window.addEventListener("zoompaper-library-changed",changed);return()=>window.removeEventListener("zoompaper-library-changed",changed);},[]);
+  useEffect(()=>{let stopped=false;let remove:(()=>void)|undefined;void listen("library-changed",()=>setLibraryRefreshSignal(v=>v+1)).then(unlisten=>{if(stopped)unlisten();else remove=unlisten;}).catch(()=>{});return()=>{stopped=true;remove?.();};},[]);
   const handledLinks = useRef(new Set<string>());
 
 
@@ -98,6 +101,7 @@ function App() {
         const venue = link.searchParams.get("venue");
         const sourceIconUrl = link.searchParams.get("icon");
         const doi = link.searchParams.get("doi");
+        const metadataFile = link.searchParams.get("metadataFile");
         const requestId = link.searchParams.get("request") || rawLink;
         if (handledLinks.current.has(requestId)) continue;
         handledLinks.current.add(requestId);
@@ -107,7 +111,7 @@ function App() {
           setBrowserImport({ phase: "downloading", title, message: "正在安全下载 PDF…" });
           try {
             const paper = localFile
-              ? await importBrowserDownload(localFile, title, sourceUrl, githubUrl, venue, sourceIconUrl, doi, requestId)
+              ? await importBrowserDownload(localFile, title, sourceUrl, githubUrl, venue, sourceIconUrl, doi, requestId, metadataFile)
               : await importPdfUrl(pdfUrl!, title, sourceUrl, githubUrl, venue, sourceIconUrl, doi, requestId);
             if (disposed) return;
             setLibraryRefreshSignal((value) => value + 1);

@@ -264,6 +264,12 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         conn.execute_batch("ALTER TABLE papers ADD COLUMN content_hash TEXT; ALTER TABLE papers ADD COLUMN parse_revision INTEGER NOT NULL DEFAULT 0; CREATE INDEX IF NOT EXISTS paper_hash ON papers(content_hash);")?;
         conn.pragma_update(None, "user_version", 18)?;
     }
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version < 19 {
+        conn.execute_batch(crate::metadata::SCHEMA)?;
+        conn.execute_batch(crate::library::SCHEMA)?;
+        conn.pragma_update(None, "user_version", 19)?;
+    }
     Ok(())
 }
 
@@ -297,7 +303,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            18
+            19
         );
 
         // 论文数据无损
@@ -462,7 +468,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            18
+            19
         );
 
         let items: Vec<(String, Option<i64>)> = conn
@@ -501,7 +507,7 @@ mod tests {
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 18);
+        assert_eq!(v, 19);
     }
 
     #[test]
@@ -519,7 +525,15 @@ mod tests {
                 .unwrap(),
             1
         );
-        for column in ["source_url", "github_url", "venue", "deleted_at", "source_icon_url", "title_zh", "abstract_zh"] {
+        for column in [
+            "source_url",
+            "github_url",
+            "venue",
+            "deleted_at",
+            "source_icon_url",
+            "title_zh",
+            "abstract_zh",
+        ] {
             let cols: Vec<String> = conn
                 .prepare("PRAGMA table_info(papers)")
                 .unwrap()
@@ -532,7 +546,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            18
+            19
         );
     }
 

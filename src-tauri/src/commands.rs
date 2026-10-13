@@ -240,7 +240,7 @@ pub fn set_active_provider(id: String) -> Result<Settings, String> {
 /// 论文查询公共前缀：LEFT JOIN paper_folders 聚合所属文件夹（多归属）。
 /// 调用方需追加 GROUP BY p.id（及可选 WHERE / ORDER BY）。
 /// total_read_seconds 由 reading_sessions 子查询聚合（非 papers 列）。
-const PAPER_SELECT: &str = "
+pub(crate) const PAPER_SELECT: &str = "
     SELECT p.id, p.title, p.authors, p.abstract, p.pdf_path, p.md_path, p.blog_md_path,
            p.created_at, p.last_read_at, p.reading_status, p.parse_status, p.starred,
            p.finished_at,
@@ -252,7 +252,7 @@ const PAPER_SELECT: &str = "
     LEFT JOIN paper_folders pf ON pf.paper_id = p.id
 ";
 
-fn row_to_paper(row: &rusqlite::Row) -> rusqlite::Result<Paper> {
+pub(crate) fn row_to_paper(row: &rusqlite::Row) -> rusqlite::Result<Paper> {
     let folder_ids: Option<String> = row.get(21)?;
     let folder_ids = folder_ids
         .map(|s| {
@@ -300,13 +300,10 @@ fn list_papers_inner(db: &Db) -> Result<Vec<Paper>, String> {
     let rows = stmt
         .query_map([], row_to_paper)
         .map_err(|e| e.to_string())?;
-    let mut papers = rows
+    let papers = rows
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
     drop(stmt);
-    for paper in &mut papers {
-        backfill_paper_venue(&conn, paper)?;
-    }
     Ok(papers)
 }
 
@@ -318,24 +315,8 @@ pub fn get_paper(db: State<'_, Db>, paper_id: String) -> Result<Paper, String> {
 pub(crate) fn get_paper_inner(db: &Db, paper_id: &str) -> Result<Paper, String> {
     let conn = db.conn();
     let sql = format!("{PAPER_SELECT} WHERE p.id = ?1 GROUP BY p.id");
-    let mut paper = conn
-        .query_row(&sql, [paper_id], row_to_paper)
-        .map_err(|e| e.to_string())?;
-    // 旧库论文没有 github_url；首次打开时从已有 Markdown 轻量回填，无需重新解析。
-    if paper.github_url.is_none() && paper.parse_status == "ready" {
-        if let Ok(markdown) = std::fs::read_to_string(&paper.md_path) {
-            if let Some(url) = extract_github_repo_url(&markdown) {
-                conn.execute(
-                    "UPDATE papers SET github_url = ?2 WHERE id = ?1",
-                    params![paper_id, &url],
-                )
-                .map_err(|e| e.to_string())?;
-                paper.github_url = Some(url);
-            }
-        }
-    }
-    backfill_paper_venue(&conn, &mut paper)?;
-    Ok(paper)
+    conn.query_row(&sql, [paper_id], row_to_paper)
+        .map_err(|e| e.to_string())
 }
 
 /// 阅读入口记录最近访问时间，普通元数据查询保持只读。
@@ -628,6 +609,10 @@ fn import_pdf_inner_with_metadata(
         params![paper.id, hash],
     )
     .map_err(|e| e.to_string())?;
+    drop(conn);
+    if source_url.is_some() {
+        crate::metadata::apply(db,&paper.id,&crate::metadata::Candidate{title:suggested_title.map(str::to_owned),venue:paper.venue.clone(),..Default::default()},"browser")?;
+    }
     Ok(paper)
 }
 
@@ -931,53 +916,81 @@ fn venue_from_paper_dir(md_path: &str) -> Option<String> {
         })
 }
 
-fn backfill_paper_venue(conn: &rusqlite::Connection, paper: &mut Paper) -> Result<(), String> {
-    if paper.parse_status != "ready" {
+pub(crate) fn backfill_library_metadata(db: &Db) -> Result<(), String> {
+    let completed: bool = db
+        .conn()
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM metadata_backfill WHERE version=1)",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if completed {
         return Ok(());
     }
-    if let Some(dir) = Path::new(&paper.md_path).parent() {
-        if let Ok(bytes) = std::fs::read(dir.join("publication.json")) {
-            if let Ok(record) = serde_json::from_slice::<crate::publication::Publication>(&bytes) {
-                if record.venue.is_some()
-                    && crate::publication::title_matches(
-                        &extract_metadata(
-                            &std::fs::read_to_string(&paper.md_path).unwrap_or_default(),
+    let papers = list_papers_inner(db)?;
+    for paper in papers {
+        if paper.deleted_at.is_some() {
+            continue;
+        }
+        if paper.github_url.is_none() && paper.parse_status == "ready" {
+            if let Ok(markdown) = std::fs::read_to_string(&paper.md_path) {
+                if let Some(url) = extract_github_repo_url(&markdown) {
+                    db.conn()
+                        .execute(
+                            "UPDATE papers SET github_url=?2 WHERE id=?1 AND github_url IS NULL",
+                            params![paper.id, url],
                         )
-                        .0,
-                        &record.title,
-                    )
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+        }
+        // Discovery happens outside the shared DB lock; apply uses a short transaction.
+        let detected = paper
+            .source_url
+            .as_deref()
+            .and_then(infer_venue_from_source)
+            .or_else(|| venue_from_paper_dir(&paper.md_path));
+        if paper.venue.is_none() {
+            if let Some(venue) = detected {
+                crate::metadata::apply(
+                    db,
+                    &paper.id,
+                    &crate::metadata::Candidate {
+                        venue: Some(venue),
+                        ..Default::default()
+                    },
+                    "pdf",
+                )?;
+            }
+        }
+        if let Some(dir) = Path::new(&paper.md_path).parent() {
+            if let Ok(raw) = std::fs::read(dir.join("publication.json")) {
+                if let Ok(record) = serde_json::from_slice::<crate::publication::Publication>(&raw)
                 {
-                    return Ok(());
+                    if crate::publication::title_matches(&paper.title, &record.title) {
+                        crate::metadata::apply(
+                            db,
+                            &paper.id,
+                            &crate::metadata::Candidate {
+                                doi: Some(record.doi),
+                                authors: record.authors,
+                                venue: record.venue,
+                                ..Default::default()
+                            },
+                            "doi",
+                        )?;
+                    }
                 }
             }
         }
     }
-    let detected = paper
-        .source_url
-        .as_deref()
-        .and_then(infer_venue_from_source)
-        .or_else(|| venue_from_paper_dir(&paper.md_path));
-    let auto_label = paper.venue.as_deref().is_some_and(|current| {
-        let short = current.split_whitespace().next().unwrap_or("");
-        [
-            "ACL", "EMNLP", "NAACL", "ICML", "ICLR", "NeurIPS", "CVPR", "AAAI",
-        ]
-        .contains(&short)
-    });
-    let should_update = match (&paper.venue, &detected) {
-        (None, Some(_)) => true,
-        (Some(current), Some(next)) => current != next && auto_label,
-        (Some(_), None) => false,
-        _ => false,
-    };
-    if should_update {
-        conn.execute(
-            "UPDATE papers SET venue = ?2 WHERE id = ?1",
-            params![&paper.id, &detected],
+    db.conn()
+        .execute(
+            "INSERT OR IGNORE INTO metadata_backfill(version) VALUES(1)",
+            [],
         )
-        .map_err(|error| error.to_string())?;
-        paper.venue = detected;
-    }
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1010,6 +1023,41 @@ fn is_browser_import_path(path: &Path) -> bool {
         .any(|component| component.as_os_str() == "ZoomPaper Plus Imports")
 }
 
+fn read_import_metadata(
+    path: Option<&str>,
+    pdf: &str,
+    request: Option<&str>,
+) -> Result<Option<crate::metadata::Candidate>, String> {
+    let Some(path) = path else { return Ok(None) };
+    let path = Path::new(path);
+    if std::fs::symlink_metadata(path)
+        .map_err(|e| e.to_string())?
+        .file_type()
+        .is_symlink()
+    {
+        return Err("元数据文件不能是链接".into());
+    }
+    let real = path.canonicalize().map_err(|e| e.to_string())?;
+    let pdf = Path::new(pdf).canonicalize().map_err(|e| e.to_string())?;
+    if !is_browser_import_path(&real)
+        || real.parent() != pdf.parent()
+        || real.extension().and_then(|s| s.to_str()) != Some("json")
+        || std::fs::metadata(&real).map_err(|e| e.to_string())?.len() > 65536
+    {
+        return Err("导入元数据路径或大小无效".into());
+    }
+    let value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&real).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    if request.is_none() || value["requestId"].as_str() != request || value["protocolVersion"] != 2
+    {
+        return Err("导入元数据与请求不匹配".into());
+    }
+    let candidate = serde_json::from_value(value["metadata"].clone())
+        .map_err(|e| format!("元数据格式无效：{e}"))?;
+    Ok(Some(candidate))
+}
+
 /// 导入由 Connector 通过浏览器会话下载的 PDF。
 /// 文件必须位于扩展专用下载目录，避免任意网页通过深链读取其他本地文件。
 #[tauri::command]
@@ -1023,6 +1071,7 @@ pub async fn import_browser_download(
     source_icon_url: Option<String>,
     doi: Option<String>,
     request_id: Option<String>,
+    metadata_file: Option<String>,
 ) -> Result<Paper, String> {
     use tauri::Manager;
     tauri::async_runtime::spawn_blocking(move || {
@@ -1030,6 +1079,18 @@ pub async fn import_browser_download(
         if let Some(paper) = crate::connector::existing_receipt(&db, request_id.as_deref())? {
             return Ok(paper);
         }
+        let candidate = match read_import_metadata(
+            metadata_file.as_deref(),
+            &source_path,
+            request_id.as_deref(),
+        ) {
+            Ok(candidate) => candidate,
+            Err(error) => {
+                let result = Err(error);
+                crate::connector::record_receipt(&db, request_id.as_deref(), &result);
+                return result;
+            }
+        };
         let result = import_browser_download_inner(
             db.clone(),
             source_path,
@@ -1038,9 +1099,32 @@ pub async fn import_browser_download(
             github_url,
             venue,
             source_icon_url,
-            doi,
+            doi.clone(),
         );
+        let result = result.and_then(|paper| {
+            if let Some(candidate) = &candidate {
+                crate::metadata::apply(&db, &paper.id, candidate, "browser")?;
+            }
+            let workflow = Settings::load().map_err(|e| e.to_string())?.workflow;
+            if workflow.auto_doi
+                && (doi.is_some()
+                    || candidate
+                        .as_ref()
+                        .is_some_and(|m| m.doi.is_some() || m.arxiv_id.is_some()))
+            {
+                let _ = crate::jobs::enqueue(&db, &paper.id, "doi");
+            }
+            if workflow.auto_metadata_translation && candidate.is_some() {
+                let _ = crate::jobs::enqueue(&db, &paper.id, "translate");
+            }
+            get_paper_inner(&db, &paper.id)
+        });
         crate::connector::record_receipt(&db, request_id.as_deref(), &result);
+        if result.is_ok() {
+            if let Some(path) = metadata_file {
+                let _ = std::fs::remove_file(path);
+            }
+        }
         result
     })
     .await
@@ -1114,7 +1198,7 @@ fn import_browser_download_inner(
             .auto_parse
             && paper.parse_status != "ready"
         {
-            crate::jobs::enqueue(&db, &paper.id, "parse")?;
+            let _ = crate::jobs::enqueue(&db, &paper.id, "parse");
         }
     }
     result
@@ -1273,7 +1357,6 @@ pub async fn refresh_paper_publication(
         .map_err(|e| e.to_string())?
         .workflow
         .auto_doi
-        && get_paper_inner(&db, &paper_id)?.parse_status == "ready"
     {
         crate::jobs::ensure(&db, &paper_id, "doi")?;
     }
@@ -1293,12 +1376,16 @@ async fn refresh_publication_with_cache(
     cache_dir: &Path,
 ) -> Result<(), String> {
     let paper = get_paper_inner(db, paper_id)?;
-    if paper.parse_status != "ready" || paper.deleted_at.is_some() {
+    if paper.deleted_at.is_some() {
         return Ok(());
     }
     let dir = Path::new(&paper.md_path).parent().ok_or("论文目录无效")?;
-    let markdown = std::fs::read_to_string(&paper.md_path).map_err(|e| e.to_string())?;
-    let parsed_title = extract_metadata(&markdown).0;
+    let markdown = std::fs::read_to_string(&paper.md_path).unwrap_or_default();
+    let parsed_title = if markdown.is_empty() {
+        paper.title.clone()
+    } else {
+        extract_metadata(&markdown).0
+    };
     // Verified per-paper cache avoids repeat requests even if another DOI exists in the header.
     if let Ok(raw) = std::fs::read(dir.join("publication.json")) {
         if let Ok(record) = serde_json::from_slice::<crate::publication::Publication>(&raw) {
@@ -1307,7 +1394,20 @@ async fn refresh_publication_with_cache(
             }
         }
     }
-    let mut candidates = Vec::new();
+    if let Some(arxiv) = crate::metadata::candidate(db, paper_id)?.and_then(|m| m.arxiv_id) {
+        if let Ok(Some(candidate)) = crate::publication::lookup_arxiv(&arxiv, cache_dir).await {
+            if crate::publication::title_matches(
+                &paper.title,
+                candidate.title.as_deref().unwrap_or(""),
+            ) {
+                crate::metadata::apply(db, paper_id, &candidate, "doi")?;
+            }
+        }
+    }
+    let mut candidates = crate::metadata::candidate(db, paper_id)?
+        .and_then(|m| m.doi)
+        .into_iter()
+        .collect::<Vec<_>>();
     if let Ok(raw) = std::fs::read(dir.join("doi-hint.json")) {
         if let Ok(hint) = serde_json::from_slice::<String>(&raw) {
             if let Some(doi) = crate::publication::normalize_doi(&hint) {
@@ -1380,9 +1480,18 @@ async fn refresh_publication_with_cache(
     .map_err(|_| "DOI 查询超时".to_string())??;
     if let Some(mut record) = record {
         record.venue = record.venue.as_deref().and_then(normalize_venue);
+        crate::metadata::apply(
+            db,
+            paper_id,
+            &crate::metadata::Candidate {
+                doi: Some(record.doi.clone()),
+                authors: record.authors.clone(),
+                venue: record.venue.clone(),
+                ..Default::default()
+            },
+            "doi",
+        )?;
         let conn = db.conn();
-        // Keep specific page metadata. DOI may replace only missing or repository labels.
-        conn.execute("UPDATE papers SET venue = CASE WHEN venue IS NULL OR trim(venue) = '' OR lower(venue) IN ('arxiv', 'openreview') THEN COALESCE(?2, venue) ELSE venue END, authors = CASE WHEN authors IS NULL OR authors = '[]' OR trim(authors) = '' THEN COALESCE(?3, authors) ELSE authors END WHERE id = ?1", params![paper_id, &record.venue, &record.authors]).map_err(|e| e.to_string())?;
         // Remember the actual saved venue, including more specific browser metadata.
         record.venue = conn
             .query_row("SELECT venue FROM papers WHERE id = ?1", [paper_id], |r| {
@@ -1491,15 +1600,20 @@ pub(crate) async fn parse_background(
     let venue = extract_venue_from_files(&output.files);
     {
         let conn = db.conn();
-        conn.execute(
-            "UPDATE papers SET parse_status = 'ready', title = ?2, authors = COALESCE(?3, authors), abstract = ?4, \
-             title_zh = NULL, abstract_zh = NULL, \
-             github_url = COALESCE(github_url, ?5), venue = COALESCE(venue, ?6) \
-             WHERE id = ?1",
-            params![&paper_id, title, authors, abstract_text, github_url, venue],
-        )
-        .map_err(|e| e.to_string())?;
+        conn.execute("UPDATE papers SET parse_status='ready', github_url=COALESCE(github_url,?2) WHERE id=?1",params![&paper_id,github_url]).map_err(|e|e.to_string())?;
     }
+    crate::metadata::apply(
+        db,
+        &paper_id,
+        &crate::metadata::Candidate {
+            title: Some(title),
+            authors,
+            abstract_text,
+            venue,
+            ..Default::default()
+        },
+        "pdf",
+    )?;
 
     fail_guard.complete = true;
     drop(fail_guard);
@@ -1953,6 +2067,7 @@ fn rename_paper_inner(db: &Db, paper_id: &str, new_title: &str) -> Result<Paper,
     }
     {
         let conn = db.conn();
+        crate::metadata::lock_title(&conn, paper_id)?;
         let n = conn
             .execute(
                 "UPDATE papers SET title = ?2, title_zh = NULL WHERE id = ?1",
@@ -2069,7 +2184,7 @@ fn mark_paper_read_inner(db: &Db, paper_id: &str, read: bool) -> Result<Paper, S
     {
         let conn = db.conn();
         let n = if read {
-            conn.execute(
+        conn.execute(
                 "UPDATE papers SET reading_status = 'read', finished_at = ?2, last_read_at = ?2 WHERE id = ?1",
                 params![paper_id, now],
             )
@@ -5426,9 +5541,16 @@ mod tests {
         fs::create_dir_all(&tmp).unwrap();
         let src = tmp.join("invalid.pdf");
         fs::write(&src, b"<html>Access denied</html>").unwrap();
-        let library=tmp.join("papers");
-        assert!(import_pdf_inner(&db,&library,src.to_str().unwrap()).unwrap_err().contains("PDF"));
-        assert_eq!(db.conn().query_row("SELECT count(*) FROM papers",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+        let library = tmp.join("papers");
+        assert!(import_pdf_inner(&db, &library, src.to_str().unwrap())
+            .unwrap_err()
+            .contains("PDF"));
+        assert_eq!(
+            db.conn()
+                .query_row("SELECT count(*) FROM papers", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
         assert!(!library.exists());
         fs::remove_dir_all(tmp).unwrap();
     }
@@ -5495,6 +5617,28 @@ mod tests {
         let c = import_pdf_inner(&db, &library, second.to_str().unwrap()).unwrap();
         assert_ne!(a.id, c.id);
         fs::remove_dir_all(tmp).ok();
+    }
+
+    #[test]
+    fn import_metadata_validates_request_and_preserves_file_until_saved() {
+        let tmp = std::env::temp_dir()
+            .join(format!("sidecar-{}", uuid::Uuid::new_v4()))
+            .join("ZoomPaper Plus Imports");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let pdf = tmp.join("p.pdf");
+        let meta = tmp.join("p.json");
+        std::fs::write(&pdf, b"%PDF-1.4").unwrap();
+        std::fs::write(&meta,r#"{"requestId":"test","protocolVersion":2,"metadata":{"authors":"Author","abstractText":"Abstract"}}"#).unwrap();
+        assert!(read_import_metadata(meta.to_str(), pdf.to_str().unwrap(), Some("wrong")).is_err());
+        assert!(meta.exists());
+        let result = read_import_metadata(meta.to_str(), pdf.to_str().unwrap(), Some("test"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.authors.as_deref(), Some("Author"));
+        assert!(meta.exists());
+        std::fs::write(&meta, vec![0; 65537]).unwrap();
+        assert!(read_import_metadata(meta.to_str(), pdf.to_str().unwrap(), Some("test")).is_err());
+        std::fs::remove_dir_all(tmp.parent().unwrap()).ok();
     }
 
     #[tokio::test]

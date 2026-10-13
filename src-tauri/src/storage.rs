@@ -391,7 +391,11 @@ pub fn prepare_browser_extension() -> Result<String, String> {
     let dir = crate::settings::app_data_dir()
         .map_err(|e| e.to_string())?
         .join("browser-extension");
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    write_browser_extension(&dir)?;
+    Ok(dir.to_string_lossy().into())
+}
+fn write_browser_extension(dir:&Path)->Result<(),String> {
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     for (name, bytes) in [
         (
             "manifest.json",
@@ -405,6 +409,13 @@ pub fn prepare_browser_extension() -> Result<String, String> {
             "importer.js",
             include_bytes!("../../browser-extension/importer.js").as_slice(),
         ),
+        ("protocol.js", include_bytes!("../../browser-extension/protocol.js").as_slice()),
+        ("adapters/registry.js", include_bytes!("../../browser-extension/adapters/registry.js").as_slice()),
+        ("adapters/acl-anthology.js", include_bytes!("../../browser-extension/adapters/acl-anthology.js").as_slice()),
+        ("adapters/arxiv.js", include_bytes!("../../browser-extension/adapters/arxiv.js").as_slice()),
+        ("adapters/openreview.js", include_bytes!("../../browser-extension/adapters/openreview.js").as_slice()),
+        ("adapters/cvf-open-access.js", include_bytes!("../../browser-extension/adapters/cvf-open-access.js").as_slice()),
+        ("adapters/neurips.js", include_bytes!("../../browser-extension/adapters/neurips.js").as_slice()),
         (
             "scrape.js",
             include_bytes!("../../browser-extension/scrape.js").as_slice(),
@@ -452,7 +463,7 @@ pub fn prepare_browser_extension() -> Result<String, String> {
         }
         fs::write(file, bytes).map_err(|e| e.to_string())?;
     }
-    Ok(dir.to_string_lossy().into())
+    Ok(())
 }
 
 #[cfg(test)]
@@ -462,6 +473,12 @@ mod tests {
         let p = std::env::temp_dir().join(format!("zoom-storage-{}", uuid::Uuid::new_v4()));
         fs::create_dir(&p).unwrap();
         p
+    }
+    #[test]
+    fn embedded_extension_includes_every_static_module_dependency() {
+        let dir=temp();write_browser_extension(&dir).unwrap();let mut pending=vec![dir.join("background.js")];let mut seen=std::collections::HashSet::new();
+        while let Some(file)=pending.pop(){if !seen.insert(file.clone()){continue;}let source=fs::read_to_string(&file).unwrap();for line in source.lines().filter(|line|line.starts_with("import ")){if let Some((_,path))=line.split_once("from "){let path=path.trim().trim_end_matches(';').trim_matches(['\"','\'']);if path.starts_with("./"){let child=file.parent().unwrap().join(path);assert!(child.exists(),"missing module: {}",child.display());pending.push(child);}}}}
+        fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn migration_refuses_nested_destinations_before_copying() {

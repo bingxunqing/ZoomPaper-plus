@@ -10,6 +10,8 @@ mod db;
 mod feynman;
 mod fs;
 mod jobs;
+mod library;
+mod metadata;
 mod publication;
 mod qa;
 mod quiz;
@@ -116,6 +118,7 @@ pub fn run() {
             commands::delete_provider,
             commands::set_active_provider,
             commands::list_papers,
+            library::library_page,
             commands::get_paper,
             commands::open_paper,
             commands::set_reading_status,

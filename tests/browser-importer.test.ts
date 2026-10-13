@@ -121,7 +121,7 @@ it('does not retry or hand off a user-cancelled download', async () => {
 it('confirms app receipt and recovers from a suspended worker without downloading again', async () => {
   const { api, items } = fixture();
   Object.assign(api.runtime, { id: 'test' });
-  const receipt = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'waiting' }) })
+  const receipt = vi.fn().mockResolvedValueOnce({ok:true,json:async()=>({protocolVersion:2,appId:'com.zoompaper.plus'})}).mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'waiting' }) })
     .mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'accepted', paperId: 'saved' }) });
   const importer = createImporter(api, receipt);
   const id = await importer.start(paper, candidates, 10);

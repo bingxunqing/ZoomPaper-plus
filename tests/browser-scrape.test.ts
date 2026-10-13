@@ -21,6 +21,6 @@ describe('academic page metadata', () => {
 });
 
 it('does not use the full text of a related JSON-LD article', () => {
-  document.head.innerHTML = `<script type="application/ld+json">{"@graph":[{"@type":"ScholarlyArticle","headline":"Current paper","encoding":{"contentUrl":"https://example.org/current.pdf"},"citation":{"@type":"ScholarlyArticle","encoding":{"contentUrl":"https://example.org/reference.pdf"}}},{"@type":"ScholarlyArticle","headline":"Related","encoding":{"contentUrl":"https://example.org/related.pdf"}}]}</script>`;
+  document.head.innerHTML = `<script type="application/ld+json">{"@graph":[{"@type":"ScholarlyArticle","headline":"Current paper","url":"${location.href}","encoding":{"contentUrl":"https://example.org/current.pdf"},"citation":{"@type":"ScholarlyArticle","encoding":{"contentUrl":"https://example.org/reference.pdf"}}},{"@type":"ScholarlyArticle","headline":"Related","encoding":{"contentUrl":"https://example.org/related.pdf"}}]}</script>`;
   expect(scrapePaperPage().metaPdfUrls).toEqual(['https://example.org/current.pdf']);
 });

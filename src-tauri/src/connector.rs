@@ -29,32 +29,52 @@ pub fn record_receipt(db: &Db, id: Option<&str>, result: &Result<Paper, String>)
     let _=db.conn().execute("INSERT INTO browser_import_receipts(request_id,paper_id,error,created_at)VALUES(?1,?2,?3,?4) ON CONFLICT(request_id) DO UPDATE SET paper_id=excluded.paper_id,error=excluded.error",params![id,paper,error,chrono::Utc::now().timestamp()]);
 }
 fn receipt(db: &Db, id: &str) -> serde_json::Value {
-    let row: Option<(Option<String>, Option<String>)> = db
+    let row = db
         .conn()
         .query_row(
             "SELECT paper_id,error FROM browser_import_receipts WHERE request_id=?1",
             [id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| {
+                Ok((
+                    r.get::<_, Option<String>>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                ))
+            },
         )
-        .optional()
-        .unwrap_or(None);
+        .optional();
+    let row = match row {
+        Ok(row) => row,
+        Err(e) => {
+            return serde_json::json!({"state":"error","receiptState":"unavailable","error":format!("回执查询失败：{e}"),"retryable":true})
+        }
+    };
     match row {
-        Some((Some(paper), None)) => serde_json::json!({"state":"accepted","paperId":paper}),
+        Some((Some(paper), None)) => {
+            let jobs = crate::jobs::snapshot(db)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|j| j.paper_id == paper)
+                .map(|j| serde_json::json!({"kind":j.kind,"status":j.status,"stage":j.stage}))
+                .collect::<Vec<_>>();
+            serde_json::json!({"state":"accepted","receiptState":"saved","protocolVersion":2,"paperId":paper,"processing":jobs})
+        }
         Some((_, Some(error))) => serde_json::json!({"state":"error","error":error}),
-        _ => serde_json::json!({"state":"waiting"}),
+        _ => serde_json::json!({"state":"waiting","receiptState":"unknown"}),
     }
 }
 #[derive(Debug, PartialEq)]
 enum Request<'a> {
     Receipt(&'a str),
     Preflight,
+    Ping,
 }
 fn allowed(request: &str) -> Option<Request<'_>> {
     let mut lines = request.lines();
     let mut parts = lines.next()?.split_whitespace();
     let method = parts.next()?;
-    let id = parts.next()?.strip_prefix("/imports/")?;
-    if uuid::Uuid::parse_str(id).is_err() {
+    let path = parts.next()?;
+    let id = path.strip_prefix("/imports/").unwrap_or("");
+    if path != "/connector/ping" && uuid::Uuid::parse_str(id).is_err() {
         return None;
     }
     let headers: Vec<_> = lines
@@ -85,7 +105,11 @@ fn allowed(request: &str) -> Option<Request<'_>> {
         return None;
     }
     match method {
-        "GET" if header("x-zoompaper-receipt") == Some("1") => Some(Request::Receipt(id)),
+        "GET" if header("x-zoompaper-receipt") == Some("1") => Some(if path == "/connector/ping" {
+            Request::Ping
+        } else {
+            Request::Receipt(id)
+        }),
         // The non-safelisted marker forces ordinary web pages to preflight.
         // Only our extension may pass it; the random request UUID is the capability.
         "OPTIONS"
@@ -102,6 +126,7 @@ fn allowed(request: &str) -> Option<Request<'_>> {
 fn response(request: &str, read_receipt: impl FnOnce(&str) -> serde_json::Value) -> String {
     let (status, body, cors) = match allowed(request) {
         Some(Request::Receipt(id)) => ("200 OK", read_receipt(id).to_string(), true),
+        Some(Request::Ping) => ("200 OK", serde_json::json!({"appId":"com.zoompaper.plus","scheme":"zoompaper-plus","protocolVersion":2,"minProtocolVersion":1,"capabilities":["metadataEnvelope","separateProcessing","receiptV2"],"limits":{"metadataBytes":65536,"pdfBytes":104857600}}).to_string(), true),
         Some(Request::Preflight) => ("204 No Content", String::new(), true),
         None => ("403 Forbidden", "{}".into(), false),
     };
@@ -121,27 +146,38 @@ pub fn start(app: AppHandle) {
         }
     };
     READY.store(true, std::sync::atomic::Ordering::Relaxed);
+    let clients = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { continue };
-            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
-            let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(2)));
-            let mut bytes = [0u8; 8192];
-            let mut used = 0;
-            while used < bytes.len() {
-                match stream.read(&mut bytes[used..]) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => {
-                        used += n;
-                        if bytes[..used].windows(4).any(|w| w == b"\r\n\r\n") {
-                            break;
+            if clients.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= 16 {
+                clients.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                let _=stream.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                continue;
+            }
+            let clients = clients.clone();
+            let app = app.clone();
+            std::thread::spawn(move || {
+                let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+                let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(2)));
+                let mut bytes = [0u8; 8192];
+                let mut used = 0;
+                while used < bytes.len() {
+                    match stream.read(&mut bytes[used..]) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            used += n;
+                            if bytes[..used].windows(4).any(|w| w == b"\r\n\r\n") {
+                                break;
+                            }
                         }
                     }
                 }
-            }
-            let request = String::from_utf8_lossy(&bytes[..used]);
-            let response = response(&request, |id| receipt(&app.state::<Db>(), id));
-            let _ = stream.write_all(response.as_bytes());
+                let request = String::from_utf8_lossy(&bytes[..used]);
+                let response = response(&request, |id| receipt(&app.state::<Db>(), id));
+                let _ = stream.write_all(response.as_bytes());
+                clients.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            });
         }
     });
 }

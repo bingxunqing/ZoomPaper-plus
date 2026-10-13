@@ -294,8 +294,10 @@ export const importBrowserDownload = (
   sourceIconUrl?: string | null,
   doi?: string | null,
   requestId?: string | null,
+  metadataFile?: string | null,
 ) => invoke<Paper>("import_browser_download", {
   sourcePath,
+  metadataFile: metadataFile ?? null,
   suggestedTitle: suggestedTitle ?? null,
   sourceUrl: sourceUrl ?? null,
   githubUrl: githubUrl ?? null,

@@ -1,7 +1,8 @@
+import { useVirtualRows } from '@/hooks/useVirtualRows';
 import { usePreferences, paperTitle } from "@/lib/preferences";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Check, MoreHorizontal, Star } from "lucide-react";
 import { cn, formatTime } from "@/lib/utils";
 import { folderColor } from "@/lib/folderColors";
@@ -47,7 +48,10 @@ export interface PaperTableProps {
 
 export function PaperTable(props: PaperTableProps) {
   const prefs=usePreferences();
-  const folderById = new Map(props.folders.map((folder) => [folder.id, folder]));
+  const folderById = useMemo(() => new Map(props.folders.map(folder => [folder.id, folder])), [props.folders]);
+  const window = useVirtualRows(props.papers.length, 44);
+  const activePlans = useMemo(() => props.plans.filter(p => p.type === "papers" && p.active), [props.plans]);
+  const planByPaper = useMemo(() => { const map = new Map<string, ReadingPlan>(); for (const plan of props.plans) if(plan.type === "papers") for(const item of plan.items) if(!map.has(item.paper_id)) map.set(item.paper_id,plan); return map; }, [props.plans]);
   const [targetPlans, setTargetPlans] = useState<Record<string, string>>({});
   const longPress = useLongPressSelection((paperId) => {
     props.onLongPress(paperId);
@@ -67,13 +71,12 @@ export function PaperTable(props: PaperTableProps) {
         <span>最后阅读</span>
         <span />
       </div>
-      <div>
-        {props.papers.map((paper) => {
+      <div ref={window.ref} style={{paddingTop: window.top, paddingBottom: window.bottom}}>
+        {props.papers.slice(window.start, window.end).map((paper) => {
           const selected = props.selectedIds.has(paper.id);
           const focused = props.focusedId === paper.id;
           const paperFolders = paper.folder_ids.map((id) => folderById.get(id)).filter((f): f is Folder => Boolean(f));
-          const containingPlan = props.plans.find((p) => p.type === "papers" && p.items.some((item) => item.paper_id === paper.id)) ?? null;
-          const activePlans = props.plans.filter((p) => p.type === "papers" && p.active);
+          const containingPlan = planByPaper.get(paper.id) ?? null;
           const effectivePlan = containingPlan ?? activePlans.find((plan) => plan.id === targetPlans[paper.id]) ?? activePlans[0] ?? null;
           const useBulkActions = props.selectionMode && selected;
           const actions: PaperMenuActions = {
@@ -90,6 +93,7 @@ export function PaperTable(props: PaperTableProps) {
             <ContextMenuPrimitive.Root key={paper.id}>
               <ContextMenuPrimitive.Trigger render={<div
               role="row"
+              data-paper-id={paper.id}
               data-paper-item
               tabIndex={0}
               aria-selected={props.selectionMode ? selected : focused}
@@ -114,7 +118,7 @@ export function PaperTable(props: PaperTableProps) {
                 }
               }}
               className={cn(
-                "group grid min-h-11 cursor-default select-none items-center border-b border-zp-border/70 px-2 outline-none transition-colors",
+                "group grid h-11 cursor-default select-none items-center border-b border-zp-border/70 px-2 outline-none transition-colors",
                 columns,
                 (props.selectionMode ? selected : focused) ? "bg-[#eceeeb] dark:bg-zp-surface-active" : "hover:bg-zp-surface-hover",
               )}

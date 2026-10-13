@@ -40,3 +40,10 @@ it("suppresses the release click after a checkbox drag", () => {
 
   expect(onBlank).not.toHaveBeenCalled();
 });
+
+function RangeHarness({onSet}:{onSet:(id:string,selected:boolean)=>void}){
+ const drag=useDragPaperSelection(onSet,['a','b','c','d']);return <><button onPointerDown={()=>drag.start('a',false)}>Range start</button><button onPointerEnter={()=>drag.enter('d')}>Range end</button></>;
+}
+it('selects skipped rows when fast dragging across a virtual window',()=>{
+ const onSet=vi.fn();render(<RangeHarness onSet={onSet}/>);fireEvent.pointerDown(screen.getByText('Range start'));fireEvent.pointerEnter(screen.getByText('Range end'));expect(new Set(onSet.mock.calls.map(c=>c[0]))).toEqual(new Set(['a','b','c','d']));fireEvent.pointerUp(window);
+});
